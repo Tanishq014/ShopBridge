@@ -10,11 +10,17 @@ from sqlalchemy.orm import Session
 from app.config import BARTENDER_TEMPLATES_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import TemplateMaster
+from app.services.field_config import (
+    SUPPORTED_FIELD_NAMES,
+    SUPPORTED_FIELDS,
+    default_required_fields_csv,
+    merge_required_fields,
+    parse_required_fields,
+)
 
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-DEFAULT_REQUIRED_FIELDS = "brand,item_display_name,article_no,size,mrp,coded_price,barcode"
 
 
 def _template_id_from_path(path: Path) -> str:
@@ -51,6 +57,13 @@ def list_templates(
     if imported is not None and skipped is not None:
         message = f"Imported {imported} template file(s), skipped {skipped} existing file(s)."
 
+    selected_fields = parse_required_fields(
+        template.required_fields if template else default_required_fields_csv()
+    )
+    advanced_fields = [
+        field for field in selected_fields if field not in SUPPORTED_FIELD_NAMES
+    ]
+
     return templates.TemplateResponse(
         request,
         "templates.html",
@@ -60,6 +73,9 @@ def list_templates(
             "template": template,
             "bartender_templates_dir": BARTENDER_TEMPLATES_DIR,
             "message": message,
+            "supported_fields": SUPPORTED_FIELDS,
+            "selected_required_fields": selected_fields,
+            "advanced_required_fields": ",".join(advanced_fields),
         },
     )
 
@@ -73,10 +89,12 @@ def create_template(
     category: str = Form(""),
     bartender_file_path: str = Form(...),
     printer_name: str = Form(""),
-    required_fields: str = Form(""),
+    required_field_names: list[str] = Form(default=[]),
+    raw_required_fields: str = Form(""),
     active_status: bool = Form(False),
     db: Session = Depends(get_db),
 ):
+    required_fields = merge_required_fields(required_field_names, raw_required_fields)
     template = TemplateMaster(
         template_id=template_id.strip(),
         template_name=template_name.strip(),
@@ -121,7 +139,7 @@ def import_bartender_templates(db: Session = Depends(get_db)):
                 category="Imported",
                 bartender_file_path=full_path,
                 printer_name="",
-                required_fields=DEFAULT_REQUIRED_FIELDS,
+                required_fields=default_required_fields_csv(),
                 active_status=True,
             )
         )
@@ -145,7 +163,8 @@ def update_template(
     category: str = Form(""),
     bartender_file_path: str = Form(...),
     printer_name: str = Form(""),
-    required_fields: str = Form(""),
+    required_field_names: list[str] = Form(default=[]),
+    raw_required_fields: str = Form(""),
     active_status: bool = Form(False),
     db: Session = Depends(get_db),
 ):
@@ -160,7 +179,7 @@ def update_template(
     template.category = category.strip() or None
     template.bartender_file_path = bartender_file_path.strip()
     template.printer_name = printer_name.strip() or None
-    template.required_fields = required_fields.strip() or None
+    template.required_fields = merge_required_fields(required_field_names, raw_required_fields) or None
     template.active_status = active_status
     db.add(template)
     db.commit()

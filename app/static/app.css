@@ -564,6 +564,24 @@ tbody tr:last-child td {
   background: #dfe6ef;
 }
 
+.field-config {
+  border: 1px solid #e1e6ee;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.field-config h3 {
+  margin: 0;
+}
+
+.field-checks {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .settings-grid {
   display: grid;
   gap: 14px;
@@ -601,7 +619,8 @@ tbody tr:last-child td {
   .inline-form,
   .stat-grid,
   .workflow-grid,
-  .settings-grid {
+  .settings-grid,
+  .field-checks {
     grid-template-columns: 1fr;
   }
 

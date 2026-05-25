@@ -13,6 +13,7 @@ from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
 from app.services.barcode_service import assign_barcode
 from app.services.bartender_service import create_csv_print_job
+from app.services.field_config import SUPPORTED_FIELDS, parse_required_fields
 from app.services.price_code_service import generate_coded_price
 
 
@@ -25,6 +26,7 @@ CATEGORY_CHOICES = [
     {"value": "gifts", "label": "Gifts"},
     {"value": "toys", "label": "Toys"},
 ]
+FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
 
 
 def _decimal_or_none(value: str | None) -> Decimal | None:
@@ -102,6 +104,7 @@ def _variant_payload(variant: LabelVariant) -> dict[str, object]:
         "article_no": variant.article_no or "",
         "size": variant.size or "",
         "batch_no": variant.batch_no or "",
+        "expiry": variant.expiry or "",
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
@@ -117,6 +120,7 @@ def _template_payload(template: TemplateMaster) -> dict[str, object]:
         "template_name": template.template_name,
         "category": (template.category or "").strip().lower(),
         "label_size": template.label_size or "",
+        "required_fields": parse_required_fields(template.required_fields),
         "recent": False,
     }
 
@@ -276,10 +280,11 @@ def print_new_stock(
     category: str = Form("clothes"),
     barcode: str = Form(""),
     brand: str = Form(""),
-    item_display_name: str = Form(...),
+    item_display_name: str = Form(""),
     article_no: str = Form(""),
     size: str = Form(""),
     batch_no: str = Form(""),
+    expiry: str = Form(""),
     mrp: str = Form(""),
     selling_price: str = Form(""),
     coded_price: str = Form(""),
@@ -308,8 +313,18 @@ def print_new_stock(
         job = _create_print_job(db, source_variant, template, copies)
         return RedirectResponse(f"/new-stock?printed={job.id}", status_code=303)
 
-    selling = _decimal_or_none(selling_price)
-    coded = coded_price.strip() or generate_coded_price(selling)
+    required_fields = parse_required_fields(template.required_fields)
+    required_field_set = set(required_fields)
+
+    def value_or_preserved(field_name: str, raw_value: str, attr_name: str | None = None) -> str:
+        clean_value = (raw_value or "").strip()
+        if clean_value:
+            return clean_value
+        if source_variant and field_name not in required_field_set:
+            stored_value = getattr(source_variant, attr_name or field_name, None)
+            return "" if stored_value is None else str(stored_value)
+        return ""
+
     final_family_name = family_name.strip() or item_display_name.strip()
     if not final_family_name:
         return templates.TemplateResponse(
@@ -319,12 +334,55 @@ def print_new_stock(
             status_code=400,
         )
 
+    brand_value = value_or_preserved("brand", brand)
+    item_name_value = (
+        item_display_name.strip()
+        or value_or_preserved("item_display_name", "", "item_display_name")
+        or final_family_name
+    )
+    article_value = value_or_preserved("article_no", article_no)
+    size_value = value_or_preserved("size", size)
+    batch_value = value_or_preserved("batch_no", batch_no)
+    expiry_value = value_or_preserved("expiry", expiry)
+    mrp_value = _decimal_or_none(value_or_preserved("mrp", mrp))
+    selling = _decimal_or_none(value_or_preserved("selling_price", selling_price))
+    coded = coded_price.strip() or generate_coded_price(selling) or value_or_preserved("coded_price", coded_price)
+
+    field_values = {
+        "brand": brand_value,
+        "item_display_name": item_name_value,
+        "family_name": final_family_name,
+        "article_no": article_value,
+        "size": size_value,
+        "batch_no": batch_value,
+        "expiry": expiry_value,
+        "mrp": _money(mrp_value),
+        "selling_price": _money(selling),
+        "coded_price": coded,
+    }
+    missing_fields = [
+        FIELD_LABELS.get(field_name, field_name)
+        for field_name in required_fields
+        if field_name != "barcode" and not str(field_values.get(field_name, "")).strip()
+    ]
+    if missing_fields:
+        return templates.TemplateResponse(
+            request,
+            "workflow.html",
+            _workflow_context(
+                request,
+                db,
+                error="Required for selected template: " + ", ".join(missing_fields),
+            ),
+            status_code=400,
+        )
+
     family = _find_or_create_family(
         db=db,
         category=category.strip().lower(),
         family_id=_int_or_none(family_id),
         family_name=final_family_name,
-        item_display_name=item_display_name,
+        item_display_name=item_name_value,
     )
 
     update_existing = source_variant is not None and workflow_mode != "duplicate"
@@ -346,16 +404,17 @@ def print_new_stock(
         variant = LabelVariant(
             barcode=final_barcode,
             family_id=family.id,
-            item_display_name=item_display_name.strip(),
+            item_display_name=item_name_value,
         )
 
     variant.family_id = family.id
-    variant.brand = brand.strip() or None
-    variant.item_display_name = item_display_name.strip()
-    variant.article_no = article_no.strip() or None
-    variant.size = size.strip() or None
-    variant.batch_no = batch_no.strip() or None
-    variant.mrp = _decimal_or_none(mrp)
+    variant.brand = brand_value or None
+    variant.item_display_name = item_name_value
+    variant.article_no = article_value or None
+    variant.size = size_value or None
+    variant.batch_no = batch_value or None
+    variant.expiry = expiry_value or None
+    variant.mrp = mrp_value
     variant.selling_price = selling
     variant.coded_price = coded or None
     variant.template_id = template.id

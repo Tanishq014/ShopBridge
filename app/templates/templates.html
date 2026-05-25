@@ -40,10 +40,24 @@
         Printer name
         <input name="printer_name" value="{{ template.printer_name if editing and template.printer_name else '' }}">
       </label>
-      <label>
-        Required fields
-        <textarea name="required_fields" rows="4">{{ template.required_fields if editing and template.required_fields else '' }}</textarea>
-      </label>
+      <div class="field-config">
+        <div class="section-line">
+          <h3>Template Fields</h3>
+          <button class="button small" type="button" disabled>Extract fields from BarTender template - coming soon</button>
+        </div>
+        <div class="field-checks">
+          {% for field in supported_fields %}
+            <label class="checkline">
+              <input type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
+              {{ field.label }}
+            </label>
+          {% endfor %}
+        </div>
+        <label>
+          Advanced raw fields
+          <textarea name="raw_required_fields" rows="3" placeholder="extra_field_one,extra_field_two">{{ advanced_required_fields }}</textarea>
+        </label>
+      </div>
       <label class="checkline">
         <input type="checkbox" name="has_logo" value="true" {% if editing and template.has_logo %}checked{% endif %}>
         Has logo

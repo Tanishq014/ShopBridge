@@ -48,6 +48,7 @@ class LabelVariantBase(BaseModel):
     color: Optional[str] = None
     batch_no: Optional[str] = None
     season: Optional[str] = None
+    expiry: Optional[str] = None
     mrp: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
     coded_price: Optional[str] = None
@@ -74,4 +75,3 @@ class PrintJobRead(PrintJobBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
-

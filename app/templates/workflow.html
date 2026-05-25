@@ -44,7 +44,7 @@
         </div>
         <div class="form-grid three">
           <label>
-            Billing item
+            Billing Item
             <input name="family_name" id="familyName" list="familyOptions" required>
             <datalist id="familyOptions">
               {% for family in families %}
@@ -52,41 +52,45 @@
               {% endfor %}
             </datalist>
           </label>
-          <label>
+          <label id="brandField" data-field="brand">
             Brand
             <input name="brand" id="brandInput">
           </label>
-          <label>
-            Sticker name
-            <input name="item_display_name" id="itemNameInput" required>
+          <label id="itemNameField" data-field="item_display_name">
+            Sticker Name
+            <input name="item_display_name" id="itemNameInput">
           </label>
-          <label>
+          <label id="barcodeField" data-field="barcode">
             Barcode
             <input name="barcode" id="barcodeInput" placeholder="Blank = auto">
           </label>
-          <label id="articleField">
-            <span id="articleLabel">Article no</span>
+          <label id="articleField" data-field="article_no">
+            <span id="articleLabel">Article No</span>
             <input name="article_no" id="articleInput">
           </label>
-          <label id="sizeField">
+          <label id="sizeField" data-field="size">
             <span id="sizeLabel">Size</span>
             <input name="size" id="sizeInput" list="sizeOptions">
             <datalist id="sizeOptions"></datalist>
           </label>
-          <label id="batchField">
+          <label id="batchField" data-field="batch_no">
             <span id="batchLabel">Batch no</span>
             <input name="batch_no" id="batchInput">
           </label>
-          <label>
+          <label id="expiryField" data-field="expiry">
+            Expiry
+            <input name="expiry" id="expiryInput" placeholder="MM/YYYY">
+          </label>
+          <label id="mrpField" data-field="mrp">
             MRP
             <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
           </label>
-          <label>
+          <label id="sellingField" data-field="selling_price">
             Selling price
             <input name="selling_price" id="sellingInput" type="number" min="0" step="0.01">
           </label>
-          <label>
-            Coded price
+          <label id="codedField" data-field="coded_price">
+            Code
             <input name="coded_price" id="codedInput" placeholder="Auto from selling">
           </label>
         </div>
@@ -126,19 +130,22 @@
           <span class="badge warn" id="templateBadge">Template</span>
         </div>
         <div class="sticker compact-sticker">
-          <div class="sticker-brand" id="previewBrand">Brand</div>
-          <div class="sticker-name" id="previewName">Sticker Name</div>
-          <div class="sticker-line">
+          <div class="sticker-brand" id="previewBrandBlock"><span id="previewBrand">Brand</span></div>
+          <div class="sticker-name" id="previewNameBlock"><span id="previewName">Sticker Name</span></div>
+          <div class="sticker-line" id="previewArticleSizeLine">
             <span id="previewArticle">Art: -</span>
             <span id="previewSize">Size: -</span>
           </div>
-          <div class="sticker-line">
+          <div class="sticker-line" id="previewBatchMrpLine">
             <span id="previewBatch">Batch: -</span>
+            <span id="previewExpiry">Exp: -</span>
             <span id="previewMrp">MRP: Rs. 0.00</span>
           </div>
           <div class="sticker-code" id="previewCode">Code: -</div>
-          <div class="barcode-bars"></div>
-          <div class="barcode-text" id="previewBarcode">auto</div>
+          <div id="previewBarcodeBlock">
+            <div class="barcode-bars"></div>
+            <div class="barcode-text" id="previewBarcode">auto</div>
+          </div>
         </div>
       </section>
 
@@ -205,6 +212,7 @@
       article: document.getElementById("articleInput"),
       size: document.getElementById("sizeInput"),
       batch: document.getElementById("batchInput"),
+      expiry: document.getElementById("expiryInput"),
       mrp: document.getElementById("mrpInput"),
       selling: document.getElementById("sellingInput"),
       coded: document.getElementById("codedInput"),
@@ -212,10 +220,47 @@
     };
 
     const categorySettings = {
-      clothes: { article: "Article no", size: "Size", batch: "", showSize: true, showBatch: false },
-      cosmetics: { article: "Shade / article", size: "", batch: "Batch no", showSize: false, showBatch: true },
-      gifts: { article: "Article / model", size: "", batch: "", showSize: false, showBatch: false },
-      toys: { article: "Article / model", size: "Size / age", batch: "", showSize: true, showBatch: false }
+      clothes: { article: "Article No", size: "Size", batch: "Batch No" },
+      cosmetics: { article: "Shade / Article", size: "Pack Size", batch: "Batch No" },
+      gifts: { article: "Article / Model", size: "Size", batch: "Batch No" },
+      toys: { article: "Article / Model", size: "Size / Age", batch: "Batch No" }
+    };
+
+    const dynamicFields = [
+      "brand",
+      "item_display_name",
+      "article_no",
+      "size",
+      "batch_no",
+      "expiry",
+      "mrp",
+      "selling_price",
+      "coded_price",
+      "barcode"
+    ];
+    const inputByField = {
+      brand: fields.brand,
+      item_display_name: fields.item,
+      article_no: fields.article,
+      size: fields.size,
+      batch_no: fields.batch,
+      expiry: fields.expiry,
+      mrp: fields.mrp,
+      selling_price: fields.selling,
+      coded_price: fields.coded,
+      barcode: fields.barcode
+    };
+    const containerByField = {
+      brand: byId("brandField"),
+      item_display_name: byId("itemNameField"),
+      article_no: byId("articleField"),
+      size: byId("sizeField"),
+      batch_no: byId("batchField"),
+      expiry: byId("expiryField"),
+      mrp: byId("mrpField"),
+      selling_price: byId("sellingField"),
+      coded_price: byId("codedField"),
+      barcode: byId("barcodeField")
     };
 
     function byId(id) {
@@ -234,6 +279,15 @@
 
     function visibleTemplateOptions() {
       return Array.from(templateSelect.options).filter(option => !option.hidden);
+    }
+
+    function selectedTemplate() {
+      return templatesData.find(item => String(item.id) === String(templateSelect.value));
+    }
+
+    function requiredFieldSet() {
+      const template = selectedTemplate();
+      return new Set(template ? template.required_fields || [] : []);
     }
 
     function applyCategory(preserveTemplateId) {
@@ -258,12 +312,10 @@
 
       const settings = categorySettings[category] || categorySettings.clothes;
       byId("articleLabel").textContent = settings.article;
-      byId("sizeLabel").textContent = settings.size || "Size";
-      byId("batchLabel").textContent = settings.batch || "Batch no";
-      byId("sizeField").hidden = !settings.showSize;
-      byId("batchField").hidden = !settings.showBatch;
+      byId("sizeLabel").textContent = settings.size;
+      byId("batchLabel").textContent = settings.batch;
       refreshSizeOptions(category);
-      updatePreview();
+      applyTemplateFields();
     }
 
     function refreshSizeOptions(category) {
@@ -281,6 +333,22 @@
       return template ? template.template_name : "Template";
     }
 
+    function applyTemplateFields() {
+      const required = requiredFieldSet();
+      dynamicFields.forEach(fieldName => {
+        const container = containerByField[fieldName];
+        const input = inputByField[fieldName];
+        const visible = required.has(fieldName);
+        container.hidden = !visible;
+        input.required = visible && !["barcode", "coded_price"].includes(fieldName);
+      });
+      updatePreview();
+    }
+
+    function showPreviewElement(id, visible) {
+      byId(id).hidden = !visible;
+    }
+
     function populateVariant(variant, duplicate) {
       if (!variant) return;
       existingVariantId.value = duplicate ? "" : variant.id;
@@ -293,6 +361,7 @@
       fields.article.value = variant.article_no || "";
       fields.size.value = variant.size || "";
       fields.batch.value = variant.batch_no || "";
+      fields.expiry.value = variant.expiry || "";
       fields.mrp.value = variant.mrp || "";
       fields.selling.value = variant.selling_price || "";
       fields.coded.value = variant.coded_price || "";
@@ -303,15 +372,29 @@
     }
 
     function updatePreview() {
+      const required = requiredFieldSet();
       byId("previewBrand").textContent = fields.brand.value || familyName.value || "Brand";
       byId("previewName").textContent = fields.item.value || "Sticker Name";
-      byId("previewArticle").textContent = "Art: " + (fields.article.value || "-");
+      byId("previewArticle").textContent = "Article: " + (fields.article.value || "-");
       byId("previewSize").textContent = "Size: " + (fields.size.value || "-");
       byId("previewBatch").textContent = "Batch: " + (fields.batch.value || "-");
+      byId("previewExpiry").textContent = "Exp: " + (fields.expiry.value || "-");
       byId("previewMrp").textContent = "MRP: Rs. " + money(fields.mrp.value);
       byId("previewCode").textContent = "Code: " + (fields.coded.value || "-");
       byId("previewBarcode").textContent = fields.barcode.value || "auto";
       templateBadge.textContent = templateName(templateSelect.value);
+
+      showPreviewElement("previewBrandBlock", required.has("brand"));
+      showPreviewElement("previewNameBlock", required.has("item_display_name"));
+      showPreviewElement("previewArticle", required.has("article_no"));
+      showPreviewElement("previewSize", required.has("size"));
+      showPreviewElement("previewBatch", required.has("batch_no"));
+      showPreviewElement("previewExpiry", required.has("expiry"));
+      showPreviewElement("previewMrp", required.has("mrp"));
+      showPreviewElement("previewCode", required.has("coded_price"));
+      showPreviewElement("previewBarcodeBlock", required.has("barcode"));
+      byId("previewArticleSizeLine").hidden = !required.has("article_no") && !required.has("size");
+      byId("previewBatchMrpLine").hidden = !required.has("batch_no") && !required.has("expiry") && !required.has("mrp");
     }
 
     variantSearch.addEventListener("change", () => {
@@ -331,7 +414,7 @@
       applyCategory();
     });
 
-    templateSelect.addEventListener("change", updatePreview);
+    templateSelect.addEventListener("change", applyTemplateFields);
 
     Object.values(fields).forEach(field => {
       field.addEventListener("input", updatePreview);
@@ -373,7 +456,7 @@
         if (option) {
           option.hidden = false;
           templateSelect.value = button.dataset.templateId;
-          updatePreview();
+          applyTemplateFields();
         }
       });
     });
@@ -381,4 +464,3 @@
     applyCategory();
   </script>
 {% endblock %}
-

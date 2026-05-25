@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import (
@@ -24,8 +24,10 @@ def ensure_directories() -> None:
 def init_db() -> None:
     ensure_directories()
     from app.models import TemplateMaster
+    from app.services.field_config import default_required_fields_csv
 
     Base.metadata.create_all(bind=engine)
+    _migrate_existing_sqlite()
     with SessionLocal() as db:
         existing = db.scalar(
             select(TemplateMaster).where(TemplateMaster.template_id == "DEFAULT")
@@ -42,11 +44,25 @@ def init_db() -> None:
                 category="General",
                 bartender_file_path=str(BARTENDER_TEMPLATES_DIR / "default.btw"),
                 printer_name="",
-                required_fields="brand,item_display_name,article_no,size,mrp,coded_price,barcode",
+                required_fields=default_required_fields_csv(),
                 active_status=True,
             )
         )
         db.commit()
+
+
+def _migrate_existing_sqlite() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    if "label_variants" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("label_variants")}
+    if "expiry" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE label_variants ADD COLUMN expiry VARCHAR(120)"))
 
 
 def get_db():
@@ -55,4 +71,3 @@ def get_db():
         yield db
     finally:
         db.close()
-

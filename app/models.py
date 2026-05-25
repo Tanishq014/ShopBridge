@@ -63,6 +63,7 @@ class LabelVariant(Base):
     color = Column(String(80), nullable=True)
     batch_no = Column(String(120), nullable=True)
     season = Column(String(120), nullable=True)
+    expiry = Column(String(120), nullable=True)
     mrp = Column(Numeric(10, 2), nullable=True)
     selling_price = Column(Numeric(10, 2), nullable=True)
     coded_price = Column(String(120), nullable=True)
@@ -92,4 +93,3 @@ class PrintJob(Base):
 
     variant = relationship("LabelVariant", back_populates="print_jobs")
     template = relationship("TemplateMaster", foreign_keys=[template_id])
-
