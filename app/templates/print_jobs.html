@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Print Jobs - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Print Jobs</h1>
+      <p>Create CSV files in the local print_jobs folder for BarTender automation.</p>
+    </div>
+  </section>
+
+  <form class="panel form-grid inline-form" method="post" action="/print-jobs">
+    <label>
+      Variant
+      <select name="variant_id" required>
+        {% for variant in variants %}
+          <option value="{{ variant.id }}">{{ variant.item_display_name }} - {{ variant.barcode }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Template
+      <select name="template_id">
+        <option value="">Use variant or family default</option>
+        {% for template in template_choices %}
+          <option value="{{ template.id }}">{{ template.template_name }} ({{ template.template_id }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Copies
+      <input name="copies" type="number" min="1" value="1">
+    </label>
+    <div class="form-actions">
+      <button class="button primary" type="submit" {% if not variants %}disabled{% endif %}>Create CSV Job</button>
+    </div>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Variant</th>
+          <th>Template</th>
+          <th>Copies</th>
+          <th>Status</th>
+          <th>CSV file</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td>#{{ job.id }}</td>
+            <td>{{ job.variant.item_display_name }}<br><span class="mono">{{ job.variant.barcode }}</span></td>
+            <td>{{ job.template.template_id }}</td>
+            <td>{{ job.copies }}</td>
+            <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
+            <td class="path-cell">{{ job.csv_file_path or job.error_message or "" }}</td>
+            <td class="row-actions">
+              {% if job.status == "pending" %}
+                <form method="post" action="/print-jobs/{{ job.id }}/mark-printed"><button class="button small" type="submit">Mark Printed</button></form>
+                <form method="post" action="/print-jobs/{{ job.id }}/cancel"><button class="button small" type="submit">Cancel</button></form>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="empty">No print jobs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+

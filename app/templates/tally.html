@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Tally ODBC - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Tally ODBC</h1>
+      <p>Read-only checks for Tally.ERP 9 stock item import. This app does not write to Tally.</p>
+    </div>
+  </section>
+
+  <section class="two-column">
+    <div class="panel">
+      <h2>Connection Test</h2>
+      <p class="muted-text">Default DSN: {{ default_dsn }}</p>
+      <form class="form-grid" method="post" action="/tally/test">
+        <label>
+          ODBC DSN
+          <input name="dsn" value="{{ default_dsn }}">
+        </label>
+        <button class="button primary" type="submit">Test DSN</button>
+      </form>
+
+      {% if result %}
+        <div class="{{ 'notice' if result.success else 'error' }}">{{ result.message }}</div>
+        {% if result.table_names %}
+          <h3>Tables</h3>
+          <div class="tag-list">
+            {% for table in result.table_names[:80] %}
+              <span>{{ table }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Available DSNs</h2>
+      {% if pyodbc_available %}
+        {% if dsns %}
+          <table>
+            <thead><tr><th>DSN</th><th>Driver</th></tr></thead>
+            <tbody>
+              {% for name, driver in dsns.items() %}
+                <tr><td>{{ name }}</td><td>{{ driver }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">No ODBC DSNs reported by pyodbc.</p>
+        {% endif %}
+      {% else %}
+        <p class="empty">pyodbc is not installed. Install requirements.txt to enable ODBC checks.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Import Stock Items as Families</h2>
+    <p class="muted-text">This only reads Tally stock item names and creates missing Product Families in ShopBridge.</p>
+    <form class="form-grid inline-form" method="post" action="/tally/import-stock-items">
+      <label>
+        ODBC DSN
+        <input name="dsn" value="{{ default_dsn }}">
+      </label>
+      <div class="form-actions">
+        <button class="button primary" type="submit">Import Names</button>
+      </div>
+    </form>
+    {% if import_result %}
+      <div class="notice">
+        Imported {{ import_result.imported }}, skipped {{ import_result.skipped }}, seen {{ import_result.total_seen }} using {{ import_result.source_query }}.
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}
+

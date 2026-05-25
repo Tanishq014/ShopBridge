@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Sticker Preview - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Sticker Preview</h1>
+      <p>Approximate HTML preview only. Final layout remains in BarTender.</p>
+    </div>
+    <a class="button" href="/variants/{{ variant.id }}/edit">Edit Variant</a>
+  </section>
+
+  <section class="preview-wrap">
+    <div class="sticker">
+      <div class="sticker-brand">{{ variant.brand or variant.family.family_name }}</div>
+      <div class="sticker-name">{{ variant.item_display_name }}</div>
+      <div class="sticker-line">
+        <span>Art: {{ variant.article_no or "-" }}</span>
+        <span>Size: {{ variant.size or "-" }}</span>
+      </div>
+      <div class="sticker-line">
+        <span>Color: {{ variant.color or "-" }}</span>
+        <span>MRP: Rs. {{ "%.2f"|format(variant.mrp or 0) }}</span>
+      </div>
+      <div class="sticker-code">Code: {{ variant.coded_price or "-" }}</div>
+      <div class="barcode-bars"></div>
+      <div class="barcode-text">{{ variant.barcode }}</div>
+    </div>
+  </section>
+{% endblock %}
+

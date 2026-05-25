@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Local Label Manager</h1>
+      <p>Manage product families, sticker variants, BarTender templates, and CSV print jobs.</p>
+    </div>
+  </section>
+
+  <section class="stat-grid">
+    <div class="stat">
+      <span>Families</span>
+      <strong>{{ stats.families }}</strong>
+    </div>
+    <div class="stat">
+      <span>Active variants</span>
+      <strong>{{ stats.active_variants }}</strong>
+    </div>
+    <div class="stat">
+      <span>Templates</span>
+      <strong>{{ stats.templates }}</strong>
+    </div>
+    <div class="stat">
+      <span>Pending jobs</span>
+      <strong>{{ stats.pending_jobs }}</strong>
+    </div>
+  </section>
+
+  <section class="action-row">
+    <a class="button primary" href="/variants/new">New Variant</a>
+    <a class="button" href="/print-jobs">Create Print Job</a>
+    <a class="button" href="/tally">Test Tally ODBC</a>
+  </section>
+{% endblock %}
+

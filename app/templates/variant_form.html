@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit Variant" if variant else "New Variant" }} - ShopBridge{% endblock %}
+{% block content %}
+  {% set editing = variant is not none %}
+  <section class="page-header">
+    <div>
+      <h1>{{ "Edit Variant" if editing else "New Variant" }}</h1>
+      <p>Leave barcode blank to generate the next internal barcode starting at 240000000001.</p>
+    </div>
+    {% if editing %}<a class="button" href="/variants/{{ variant.id }}/preview">Preview</a>{% endif %}
+  </section>
+
+  {% if not families %}
+    <div class="error">Create at least one active product family before adding variants.</div>
+  {% endif %}
+
+  <form class="panel wide-form" method="post" action="{{ '/variants/' ~ variant.id if editing else '/variants' }}">
+    <div class="form-grid three">
+      <label>
+        Barcode
+        <input name="barcode" value="{{ variant.barcode if editing else '' }}" placeholder="Auto-generate or scan company barcode">
+      </label>
+      <label>
+        Family
+        <select name="family_id" required>
+          {% for family in families %}
+            <option value="{{ family.id }}" {% if editing and variant.family_id == family.id %}selected{% endif %}>{{ family.family_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Template
+        <select name="template_id">
+          <option value="">Use family default</option>
+          {% for template in template_choices %}
+            <option value="{{ template.id }}" {% if editing and variant.template_id == template.id %}selected{% endif %}>{{ template.template_name }} ({{ template.template_id }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Brand
+        <input name="brand" value="{{ variant.brand if editing and variant.brand else '' }}">
+      </label>
+      <label>
+        Item display name
+        <input name="item_display_name" required value="{{ variant.item_display_name if editing else '' }}">
+      </label>
+      <label>
+        Article no
+        <input name="article_no" value="{{ variant.article_no if editing and variant.article_no else '' }}">
+      </label>
+      <label>
+        Size
+        <input name="size" value="{{ variant.size if editing and variant.size else '' }}">
+      </label>
+      <label>
+        Color
+        <input name="color" value="{{ variant.color if editing and variant.color else '' }}">
+      </label>
+      <label>
+        Batch no
+        <input name="batch_no" value="{{ variant.batch_no if editing and variant.batch_no else '' }}">
+      </label>
+      <label>
+        Season
+        <input name="season" value="{{ variant.season if editing and variant.season else '' }}">
+      </label>
+      <label>
+        MRP
+        <input name="mrp" type="number" step="0.01" value="{{ variant.mrp if editing and variant.mrp is not none else '' }}">
+      </label>
+      <label>
+        Selling price
+        <input name="selling_price" type="number" step="0.01" value="{{ variant.selling_price if editing and variant.selling_price is not none else '' }}">
+      </label>
+      <label>
+        Coded price
+        <input name="coded_price" value="{{ variant.coded_price if editing and variant.coded_price else '' }}" placeholder="Auto from selling price if blank">
+      </label>
+      <label>
+        Status
+        <select name="status">
+          {% for status in ["active", "inactive", "discontinued"] %}
+            <option value="{{ status }}" {% if editing and variant.status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit" {% if not families %}disabled{% endif %}>{{ "Save Variant" if editing else "Create Variant" }}</button>
+      <a class="button" href="/variants">Cancel</a>
+    </div>
+  </form>
+{% endblock %}
+

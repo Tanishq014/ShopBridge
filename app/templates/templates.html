@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Template Master - ShopBridge{% endblock %}
+{% block content %}
+  {% set editing = template is not none %}
+  <section class="page-header">
+    <div>
+      <h1>Template Master</h1>
+      <p>Map template ids to BarTender .btw files, printers, and expected fields.</p>
+    </div>
+  </section>
+
+  <section class="two-column">
+    <form class="panel form-grid" method="post" action="{{ '/templates/' ~ template.id if editing else '/templates' }}">
+      <h2>{{ "Edit Template" if editing else "Add Template" }}</h2>
+      <label>
+        Template id
+        <input name="template_id" required value="{{ template.template_id if editing else '' }}" placeholder="DEFAULT">
+      </label>
+      <label>
+        Template name
+        <input name="template_name" required value="{{ template.template_name if editing else '' }}">
+      </label>
+      <label>
+        Label size
+        <input name="label_size" value="{{ template.label_size if editing and template.label_size else '' }}" placeholder="50 x 25 mm">
+      </label>
+      <label>
+        Category
+        <input name="category" value="{{ template.category if editing and template.category else '' }}">
+      </label>
+      <label>
+        BarTender .btw path
+        <input name="bartender_file_path" required value="{{ template.bartender_file_path if editing else '' }}">
+      </label>
+      <label>
+        Printer name
+        <input name="printer_name" value="{{ template.printer_name if editing and template.printer_name else '' }}">
+      </label>
+      <label>
+        Required fields
+        <textarea name="required_fields" rows="4">{{ template.required_fields if editing and template.required_fields else '' }}</textarea>
+      </label>
+      <label class="checkline">
+        <input type="checkbox" name="has_logo" value="true" {% if editing and template.has_logo %}checked{% endif %}>
+        Has logo
+      </label>
+      <label class="checkline">
+        <input type="checkbox" name="active_status" value="true" {% if not editing or template.active_status %}checked{% endif %}>
+        Active
+      </label>
+      <div class="form-actions">
+        <button class="button primary" type="submit">{{ "Save Template" if editing else "Add Template" }}</button>
+        {% if editing %}<a class="button" href="/templates">Cancel</a>{% endif %}
+      </div>
+    </form>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Id</th>
+            <th>Name</th>
+            <th>Size</th>
+            <th>Printer</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in template_rows %}
+            <tr>
+              <td class="mono">{{ row.template_id }}</td>
+              <td>{{ row.template_name }}</td>
+              <td>{{ row.label_size or "" }}</td>
+              <td>{{ row.printer_name or "" }}</td>
+              <td><span class="badge {{ 'ok' if row.active_status else 'muted' }}">{{ "active" if row.active_status else "inactive" }}</span></td>
+              <td class="row-actions">
+                <a class="button small" href="/templates?edit_id={{ row.id }}">Edit</a>
+                {% if row.active_status %}
+                  <form method="post" action="/templates/{{ row.id }}/deactivate"><button class="button small" type="submit">Deactivate</button></form>
+                {% else %}
+                  <form method="post" action="/templates/{{ row.id }}/activate"><button class="button small" type="submit">Activate</button></form>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="empty">No templates yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+

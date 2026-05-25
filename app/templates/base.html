@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}ShopBridge{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">ShopBridge</a>
+      <nav class="nav">
+        <a href="/families">Families</a>
+        <a href="/variants">Variants</a>
+        <a href="/templates">Templates</a>
+        <a href="/print-jobs">Print Jobs</a>
+        <a href="/tally">Tally ODBC</a>
+      </nav>
+    </header>
+    <main class="page">
+      {% if message %}
+        <div class="notice">{{ message }}</div>
+      {% endif %}
+      {% if error %}
+        <div class="error">{{ error }}</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
+

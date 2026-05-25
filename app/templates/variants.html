@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Label Variants - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Label Variants</h1>
+      <p>Exact sticker identities with barcode, MRP, coded price, and template choice.</p>
+    </div>
+    <a class="button primary" href="/variants/new">New Variant</a>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Barcode</th>
+          <th>Family</th>
+          <th>Brand</th>
+          <th>Item</th>
+          <th>Article</th>
+          <th>Size</th>
+          <th>Color</th>
+          <th>MRP</th>
+          <th>Code</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for variant in variants %}
+          <tr>
+            <td class="mono">{{ variant.barcode }}</td>
+            <td>{{ variant.family.family_name }}</td>
+            <td>{{ variant.brand or "" }}</td>
+            <td>{{ variant.item_display_name }}</td>
+            <td>{{ variant.article_no or "" }}</td>
+            <td>{{ variant.size or "" }}</td>
+            <td>{{ variant.color or "" }}</td>
+            <td>{{ "%.2f"|format(variant.mrp or 0) }}</td>
+            <td>{{ variant.coded_price or "" }}</td>
+            <td><span class="badge {{ 'ok' if variant.status == 'active' else 'muted' }}">{{ variant.status }}</span></td>
+            <td class="row-actions">
+              <a class="button small" href="/variants/{{ variant.id }}/preview">Preview</a>
+              <a class="button small" href="/variants/{{ variant.id }}/edit">Edit</a>
+              {% if variant.status == "active" %}
+                <form method="post" action="/variants/{{ variant.id }}/deactivate"><button class="button small" type="submit">Deactivate</button></form>
+              {% else %}
+                <form method="post" action="/variants/{{ variant.id }}/activate"><button class="button small" type="submit">Activate</button></form>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="11" class="empty">No label variants yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+
