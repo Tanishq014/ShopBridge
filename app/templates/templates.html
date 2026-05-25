@@ -42,9 +42,10 @@
       </label>
       <div class="field-config">
         <div class="section-line">
-          <h3>Template Fields</h3>
-          <button class="button small" type="button" disabled>Extract fields from BarTender template - coming soon</button>
+          <h3>Field Mapper</h3>
+          <button class="button small" type="button" disabled>Extract from BarTender template - coming soon</button>
         </div>
+        <p class="muted-text">Selected fields are saved into TemplateMaster.required_fields and control the New Stock form.</p>
         <div class="field-checks">
           {% for field in supported_fields %}
             <label class="checkline">
@@ -80,6 +81,7 @@
             <th>Name</th>
             <th>Size</th>
             <th>Printer</th>
+            <th>Field Mapper</th>
             <th>Status</th>
             <th></th>
           </tr>
@@ -91,9 +93,18 @@
               <td>{{ row.template_name }}</td>
               <td>{{ row.label_size or "" }}</td>
               <td>{{ row.printer_name or "" }}</td>
+              <td>
+                <div class="field-badges">
+                  {% for field in row_field_maps[row.id] %}
+                    <span title="{{ field.name }}">{{ field.label }}</span>
+                  {% else %}
+                    <span>None</span>
+                  {% endfor %}
+                </div>
+              </td>
               <td><span class="badge {{ 'ok' if row.active_status else 'muted' }}">{{ "active" if row.active_status else "inactive" }}</span></td>
               <td class="row-actions">
-                <a class="button small" href="/templates?edit_id={{ row.id }}">Edit</a>
+                <a class="button small" href="/templates?edit_id={{ row.id }}">Edit Mapper</a>
                 {% if row.active_status %}
                   <form method="post" action="/templates/{{ row.id }}/deactivate"><button class="button small" type="submit">Deactivate</button></form>
                 {% else %}
@@ -102,7 +113,7 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="6" class="empty">No templates yet.</td></tr>
+            <tr><td colspan="7" class="empty">No templates yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

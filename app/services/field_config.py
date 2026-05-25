@@ -5,6 +5,7 @@ SUPPORTED_FIELDS = [
     {"name": "brand", "label": "Brand"},
     {"name": "item_display_name", "label": "Sticker Name"},
     {"name": "family_name", "label": "Billing Item"},
+    {"name": "barcode", "label": "Barcode"},
     {"name": "article_no", "label": "Article No"},
     {"name": "size", "label": "Size"},
     {"name": "batch_no", "label": "Batch No"},
@@ -12,7 +13,6 @@ SUPPORTED_FIELDS = [
     {"name": "mrp", "label": "MRP"},
     {"name": "selling_price", "label": "Selling Price"},
     {"name": "coded_price", "label": "Code"},
-    {"name": "barcode", "label": "Barcode"},
 ]
 
 SUPPORTED_FIELD_NAMES = [field["name"] for field in SUPPORTED_FIELDS]
@@ -51,4 +51,3 @@ def merge_required_fields(selected_fields: list[str] | None, raw_fields: str | N
 
 def default_required_fields_csv() -> str:
     return format_required_fields(DEFAULT_REQUIRED_FIELDS)
-

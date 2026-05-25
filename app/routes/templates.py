@@ -21,6 +21,7 @@ from app.services.field_config import (
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
 
 
 def _template_id_from_path(path: Path) -> str:
@@ -39,6 +40,13 @@ def _unique_template_id(db: Session, base_template_id: str) -> str:
 
 def _normalized_path(value: str) -> str:
     return str(Path(value)).lower()
+
+
+def _field_badges(required_fields: str | None) -> list[dict[str, str]]:
+    return [
+        {"name": field, "label": FIELD_LABELS.get(field, field)}
+        for field in parse_required_fields(required_fields)
+    ]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -63,6 +71,7 @@ def list_templates(
     advanced_fields = [
         field for field in selected_fields if field not in SUPPORTED_FIELD_NAMES
     ]
+    row_field_maps = {row.id: _field_badges(row.required_fields) for row in template_rows}
 
     return templates.TemplateResponse(
         request,
@@ -76,6 +85,7 @@ def list_templates(
             "supported_fields": SUPPORTED_FIELDS,
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
+            "row_field_maps": row_field_maps,
         },
     )
 
