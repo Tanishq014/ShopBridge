@@ -7,11 +7,15 @@
       <h1>Template Master</h1>
       <p>Map template ids to BarTender .btw files, printers, and expected fields.</p>
     </div>
+    <form method="post" action="/templates/import-folder">
+      <button class="button primary" type="submit">Scan BarTender Folder</button>
+    </form>
   </section>
 
   <section class="two-column">
     <form class="panel form-grid" method="post" action="{{ '/templates/' ~ template.id if editing else '/templates' }}">
       <h2>{{ "Edit Template" if editing else "Add Template" }}</h2>
+      <p class="muted-text">Scan folder: <span class="mono">{{ bartender_templates_dir }}</span></p>
       <label>
         Template id
         <input name="template_id" required value="{{ template.template_id if editing else '' }}" placeholder="DEFAULT">
@@ -91,4 +95,3 @@
     </div>
   </section>
 {% endblock %}
-
