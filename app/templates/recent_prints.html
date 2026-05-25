@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Recent Prints - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Recent Prints</h1>
+      <p>Latest print jobs and quick reprint actions.</p>
+    </div>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Item</th>
+          <th>Template</th>
+          <th>Copies</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td>#{{ job.id }}</td>
+            <td>{{ job.variant.item_display_name }}<br><span class="mono">{{ job.variant.barcode }}</span></td>
+            <td>{{ job.template.template_name }}</td>
+            <td>{{ job.copies }}</td>
+            <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
+            <td>{{ job.created_at.strftime("%d-%m-%Y %H:%M") }}</td>
+            <td>
+              <form method="post" action="/recent-prints/{{ job.id }}/reprint">
+                <button class="button small" type="submit">Reprint</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="empty">No print jobs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+

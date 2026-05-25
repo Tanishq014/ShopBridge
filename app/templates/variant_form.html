@@ -30,10 +30,9 @@
       </label>
       <label>
         Template
-        <select name="template_id">
-          <option value="">Use family default</option>
+        <select name="template_id" required>
           {% for template in template_choices %}
-            <option value="{{ template.id }}" {% if editing and variant.template_id == template.id %}selected{% endif %}>{{ template.template_name }} ({{ template.template_id }})</option>
+            <option value="{{ template.id }}" {% if (editing and variant.template_id == template.id) or (not editing and loop.first) %}selected{% endif %}>{{ template.template_name }} ({{ template.template_id }})</option>
           {% endfor %}
         </select>
       </label>
@@ -54,16 +53,8 @@
         <input name="size" value="{{ variant.size if editing and variant.size else '' }}">
       </label>
       <label>
-        Color
-        <input name="color" value="{{ variant.color if editing and variant.color else '' }}">
-      </label>
-      <label>
         Batch no
         <input name="batch_no" value="{{ variant.batch_no if editing and variant.batch_no else '' }}">
-      </label>
-      <label>
-        Season
-        <input name="season" value="{{ variant.season if editing and variant.season else '' }}">
       </label>
       <label>
         MRP
@@ -92,4 +83,3 @@
     </div>
   </form>
 {% endblock %}
-

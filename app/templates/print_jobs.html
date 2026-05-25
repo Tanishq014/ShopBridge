@@ -20,7 +20,7 @@
     <label>
       Template
       <select name="template_id">
-        <option value="">Use variant or family default</option>
+        <option value="">Use saved template</option>
         {% for template in template_choices %}
           <option value="{{ template.id }}">{{ template.template_name }} ({{ template.template_id }})</option>
         {% endfor %}
@@ -71,4 +71,3 @@
     </table>
   </div>
 {% endblock %}
-

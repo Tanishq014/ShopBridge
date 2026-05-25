@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}New Stock / Print Labels - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header compact-header">
+    <div>
+      <h1>New Stock / Print Labels</h1>
+      <p>Fast entry, preview, and BarTender CSV print job creation.</p>
+    </div>
+  </section>
+
+  <section class="workflow-grid">
+    <form class="panel workflow-form" method="post" action="/new-stock/print" id="stockForm">
+      <input type="hidden" name="workflow_mode" id="workflowMode" value="print">
+      <input type="hidden" name="existing_variant_id" id="existingVariantId" value="">
+      <input type="hidden" name="family_id" id="familyId" value="">
+
+      <div class="workflow-section">
+        <h2>Stock Entry</h2>
+        <div class="form-grid three">
+          <label>
+            Category
+            <select name="category" id="categorySelect" required>
+              {% for category in categories %}
+                <option value="{{ category.value }}">{{ category.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="span-two">
+            Search existing item
+            <input id="variantSearch" list="variantOptions" autocomplete="off" placeholder="Name, brand, article, size, barcode">
+            <datalist id="variantOptions">
+              {% for variant in variants_json %}
+                <option value="{{ variant.search }}"></option>
+              {% endfor %}
+            </datalist>
+          </label>
+        </div>
+      </div>
+
+      <div class="workflow-section">
+        <div class="section-line">
+          <h2>Item</h2>
+          <span class="mode-pill" id="modePill">New or selected item</span>
+        </div>
+        <div class="form-grid three">
+          <label>
+            Billing item
+            <input name="family_name" id="familyName" list="familyOptions" required>
+            <datalist id="familyOptions">
+              {% for family in families %}
+                <option value="{{ family.family_name }}"></option>
+              {% endfor %}
+            </datalist>
+          </label>
+          <label>
+            Brand
+            <input name="brand" id="brandInput">
+          </label>
+          <label>
+            Sticker name
+            <input name="item_display_name" id="itemNameInput" required>
+          </label>
+          <label>
+            Barcode
+            <input name="barcode" id="barcodeInput" placeholder="Blank = auto">
+          </label>
+          <label id="articleField">
+            <span id="articleLabel">Article no</span>
+            <input name="article_no" id="articleInput">
+          </label>
+          <label id="sizeField">
+            <span id="sizeLabel">Size</span>
+            <input name="size" id="sizeInput" list="sizeOptions">
+            <datalist id="sizeOptions"></datalist>
+          </label>
+          <label id="batchField">
+            <span id="batchLabel">Batch no</span>
+            <input name="batch_no" id="batchInput">
+          </label>
+          <label>
+            MRP
+            <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
+          </label>
+          <label>
+            Selling price
+            <input name="selling_price" id="sellingInput" type="number" min="0" step="0.01">
+          </label>
+          <label>
+            Coded price
+            <input name="coded_price" id="codedInput" placeholder="Auto from selling">
+          </label>
+        </div>
+      </div>
+
+      <div class="workflow-section">
+        <h2>Label</h2>
+        <div class="form-grid three">
+          <label class="span-two">
+            Template
+            <select name="template_id" id="templateSelect" required>
+              {% for template in template_rows %}
+                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}">
+                  {{ template.template_name }} ({{ template.template_id }})
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            Qty labels
+            <input name="copies" id="copiesInput" type="number" min="1" value="1" required>
+          </label>
+        </div>
+
+        <div class="quick-row">
+          <button class="button" type="button" id="duplicateButton">Duplicate Previous</button>
+          <button class="button" type="submit" id="quickReprintButton">Quick Reprint</button>
+          <button class="button primary print-button" type="submit" id="printButton">Print Labels</button>
+        </div>
+      </div>
+    </form>
+
+    <aside class="workflow-side">
+      <section class="panel preview-panel">
+        <div class="section-line">
+          <h2>Sticker Preview</h2>
+          <span class="badge warn" id="templateBadge">Template</span>
+        </div>
+        <div class="sticker compact-sticker">
+          <div class="sticker-brand" id="previewBrand">Brand</div>
+          <div class="sticker-name" id="previewName">Sticker Name</div>
+          <div class="sticker-line">
+            <span id="previewArticle">Art: -</span>
+            <span id="previewSize">Size: -</span>
+          </div>
+          <div class="sticker-line">
+            <span id="previewBatch">Batch: -</span>
+            <span id="previewMrp">MRP: Rs. 0.00</span>
+          </div>
+          <div class="sticker-code" id="previewCode">Code: -</div>
+          <div class="barcode-bars"></div>
+          <div class="barcode-text" id="previewBarcode">auto</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-line">
+          <h2>Recent Items</h2>
+        </div>
+        <div class="recent-list">
+          {% for item in recent_items %}
+            <div class="recent-row">
+              <button class="plain-item load-variant" type="button" data-variant-id="{{ item.id }}">
+                <strong>{{ item.item_display_name }}</strong>
+                <span>{{ item.brand or item.family.family_name }}{% if item.article_no %} / {{ item.article_no }}{% endif %}{% if item.size %} / {{ item.size }}{% endif %}</span>
+              </button>
+              <form method="post" action="/new-stock/quick-reprint">
+                <input type="hidden" name="variant_id" value="{{ item.id }}">
+                <input type="hidden" name="template_id" value="{{ item.template_id or item.family.default_template_id or '' }}">
+                <input type="hidden" name="copies" value="1">
+                <button class="button small" type="submit">Reprint</button>
+              </form>
+            </div>
+          {% else %}
+            <p class="empty">No recent items yet.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Recent Templates</h2>
+        <div class="tag-list template-tags">
+          {% for template in recent_templates %}
+            <button class="tag-button" type="button" data-template-id="{{ template.id }}">{{ template.template_name }}</button>
+          {% else %}
+            <span>No templates yet</span>
+          {% endfor %}
+        </div>
+      </section>
+    </aside>
+  </section>
+
+  <script>
+    const variants = {{ variants_json|tojson }};
+    const templatesData = {{ templates_json|tojson }};
+    const sizeValues = {{ size_values_json|tojson }};
+    const categories = {{ categories|tojson }};
+
+    const form = document.getElementById("stockForm");
+    const workflowMode = document.getElementById("workflowMode");
+    const modePill = document.getElementById("modePill");
+    const existingVariantId = document.getElementById("existingVariantId");
+    const familyId = document.getElementById("familyId");
+    const familyName = document.getElementById("familyName");
+    const categorySelect = document.getElementById("categorySelect");
+    const variantSearch = document.getElementById("variantSearch");
+    const templateSelect = document.getElementById("templateSelect");
+    const templateBadge = document.getElementById("templateBadge");
+    const duplicateButton = document.getElementById("duplicateButton");
+    const quickReprintButton = document.getElementById("quickReprintButton");
+
+    const fields = {
+      barcode: document.getElementById("barcodeInput"),
+      brand: document.getElementById("brandInput"),
+      item: document.getElementById("itemNameInput"),
+      article: document.getElementById("articleInput"),
+      size: document.getElementById("sizeInput"),
+      batch: document.getElementById("batchInput"),
+      mrp: document.getElementById("mrpInput"),
+      selling: document.getElementById("sellingInput"),
+      coded: document.getElementById("codedInput"),
+      copies: document.getElementById("copiesInput")
+    };
+
+    const categorySettings = {
+      clothes: { article: "Article no", size: "Size", batch: "", showSize: true, showBatch: false },
+      cosmetics: { article: "Shade / article", size: "", batch: "Batch no", showSize: false, showBatch: true },
+      gifts: { article: "Article / model", size: "", batch: "", showSize: false, showBatch: false },
+      toys: { article: "Article / model", size: "Size / age", batch: "", showSize: true, showBatch: false }
+    };
+
+    function byId(id) {
+      return document.getElementById(id);
+    }
+
+    function money(value) {
+      const number = Number(value || 0);
+      return number.toFixed(2);
+    }
+
+    function setMode(mode, label) {
+      workflowMode.value = mode;
+      modePill.textContent = label;
+    }
+
+    function visibleTemplateOptions() {
+      return Array.from(templateSelect.options).filter(option => !option.hidden);
+    }
+
+    function applyCategory(preserveTemplateId) {
+      const category = categorySelect.value;
+      const knownCategories = categories.map(item => item.value);
+      Array.from(templateSelect.options).forEach(option => {
+        const optionCategory = (option.dataset.category || "").toLowerCase();
+        const shouldFilter = optionCategory && knownCategories.includes(optionCategory);
+        option.hidden = shouldFilter && optionCategory !== category;
+      });
+
+      const current = preserveTemplateId || templateSelect.value;
+      const currentOption = Array.from(templateSelect.options).find(option => option.value === String(current));
+      if (currentOption && !currentOption.hidden) {
+        templateSelect.value = String(current);
+      } else {
+        const firstVisible = visibleTemplateOptions()[0];
+        if (firstVisible) {
+          templateSelect.value = firstVisible.value;
+        }
+      }
+
+      const settings = categorySettings[category] || categorySettings.clothes;
+      byId("articleLabel").textContent = settings.article;
+      byId("sizeLabel").textContent = settings.size || "Size";
+      byId("batchLabel").textContent = settings.batch || "Batch no";
+      byId("sizeField").hidden = !settings.showSize;
+      byId("batchField").hidden = !settings.showBatch;
+      refreshSizeOptions(category);
+      updatePreview();
+    }
+
+    function refreshSizeOptions(category) {
+      const datalist = byId("sizeOptions");
+      datalist.innerHTML = "";
+      (sizeValues[category] || []).forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        datalist.appendChild(option);
+      });
+    }
+
+    function templateName(id) {
+      const template = templatesData.find(item => String(item.id) === String(id));
+      return template ? template.template_name : "Template";
+    }
+
+    function populateVariant(variant, duplicate) {
+      if (!variant) return;
+      existingVariantId.value = duplicate ? "" : variant.id;
+      familyId.value = variant.family_id || "";
+      familyName.value = variant.family_name || "";
+      categorySelect.value = variant.category || categorySelect.value;
+      fields.barcode.value = duplicate ? "" : variant.barcode;
+      fields.brand.value = variant.brand || "";
+      fields.item.value = variant.item_display_name || "";
+      fields.article.value = variant.article_no || "";
+      fields.size.value = variant.size || "";
+      fields.batch.value = variant.batch_no || "";
+      fields.mrp.value = variant.mrp || "";
+      fields.selling.value = variant.selling_price || "";
+      fields.coded.value = variant.coded_price || "";
+      variantSearch.value = variant.search || "";
+      applyCategory(variant.template_id || "");
+      setMode(duplicate ? "duplicate" : "print", duplicate ? "Duplicating previous item" : "Updating selected item");
+      updatePreview();
+    }
+
+    function updatePreview() {
+      byId("previewBrand").textContent = fields.brand.value || familyName.value || "Brand";
+      byId("previewName").textContent = fields.item.value || "Sticker Name";
+      byId("previewArticle").textContent = "Art: " + (fields.article.value || "-");
+      byId("previewSize").textContent = "Size: " + (fields.size.value || "-");
+      byId("previewBatch").textContent = "Batch: " + (fields.batch.value || "-");
+      byId("previewMrp").textContent = "MRP: Rs. " + money(fields.mrp.value);
+      byId("previewCode").textContent = "Code: " + (fields.coded.value || "-");
+      byId("previewBarcode").textContent = fields.barcode.value || "auto";
+      templateBadge.textContent = templateName(templateSelect.value);
+    }
+
+    variantSearch.addEventListener("change", () => {
+      const variant = variants.find(item => item.search === variantSearch.value);
+      if (variant) {
+        populateVariant(variant, false);
+      }
+    });
+
+    familyName.addEventListener("change", () => {
+      if (!familyName.value.trim()) {
+        familyId.value = "";
+      }
+    });
+
+    categorySelect.addEventListener("change", () => {
+      applyCategory();
+    });
+
+    templateSelect.addEventListener("change", updatePreview);
+
+    Object.values(fields).forEach(field => {
+      field.addEventListener("input", updatePreview);
+      field.addEventListener("change", updatePreview);
+    });
+
+    duplicateButton.addEventListener("click", () => {
+      const variant = variants.find(item => String(item.id) === String(existingVariantId.value));
+      if (variant) {
+        populateVariant(variant, true);
+      } else {
+        setMode("duplicate", "New item from current values");
+        existingVariantId.value = "";
+        fields.barcode.value = "";
+        updatePreview();
+      }
+    });
+
+    quickReprintButton.addEventListener("click", () => {
+      setMode("quick_reprint", "Quick reprint selected item");
+    });
+
+    document.getElementById("printButton").addEventListener("click", () => {
+      if (workflowMode.value === "quick_reprint") {
+        setMode("print", existingVariantId.value ? "Updating selected item" : "New or selected item");
+      }
+    });
+
+    document.querySelectorAll(".load-variant").forEach(button => {
+      button.addEventListener("click", () => {
+        const variant = variants.find(item => String(item.id) === String(button.dataset.variantId));
+        populateVariant(variant, false);
+      });
+    });
+
+    document.querySelectorAll(".tag-button").forEach(button => {
+      button.addEventListener("click", () => {
+        const option = Array.from(templateSelect.options).find(item => item.value === button.dataset.templateId);
+        if (option) {
+          option.hidden = false;
+          templateSelect.value = button.dataset.templateId;
+          updatePreview();
+        }
+      });
+    });
+
+    applyCategory();
+  </script>
+{% endblock %}
+

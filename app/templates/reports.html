@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Reports - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Reports</h1>
+      <p>Local ShopBridge counts.</p>
+    </div>
+  </section>
+
+  <section class="stat-grid">
+    <div class="stat">
+      <span>Families</span>
+      <strong>{{ stats.families }}</strong>
+    </div>
+    <div class="stat">
+      <span>Active variants</span>
+      <strong>{{ stats.active_variants }}</strong>
+    </div>
+    <div class="stat">
+      <span>Templates</span>
+      <strong>{{ stats.templates }}</strong>
+    </div>
+    <div class="stat">
+      <span>Print jobs</span>
+      <strong>{{ stats.print_jobs }}</strong>
+    </div>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Families</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for category, count in category_rows %}
+          <tr>
+            <td>{{ category or "Uncategorised" }}</td>
+            <td>{{ count }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="2" class="empty">No stock data yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+

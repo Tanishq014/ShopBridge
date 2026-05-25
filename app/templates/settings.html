@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Settings - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Settings</h1>
+      <p>Admin and setup pages.</p>
+    </div>
+  </section>
+
+  <section class="settings-grid">
+    <a class="settings-link" href="/templates">
+      <strong>Template Master</strong>
+      <span>Scan BarTender files, set printers, edit required fields.</span>
+    </a>
+    <a class="settings-link" href="/families">
+      <strong>Product Families</strong>
+      <span>Admin view for billing item groups and Tally stock names.</span>
+    </a>
+    <a class="settings-link" href="/variants">
+      <strong>Label Variants</strong>
+      <span>Admin view for sticker identities and barcode records.</span>
+    </a>
+    <a class="settings-link" href="/print-jobs">
+      <strong>Print Jobs Admin</strong>
+      <span>CSV job records, status changes, and diagnostics.</span>
+    </a>
+  </section>
+{% endblock %}
+
