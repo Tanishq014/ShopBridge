@@ -6,7 +6,7 @@ SUPPORTED_FIELDS = [
     {"name": "item_display_name", "label": "Sticker Name"},
     {"name": "family_name", "label": "Billing Item"},
     {"name": "barcode", "label": "Barcode"},
-    {"name": "article_no", "label": "Article No"},
+    {"name": "article", "label": "Article No"},
     {"name": "size", "label": "Size"},
     {"name": "batch_no", "label": "Batch No"},
     {"name": "expiry", "label": "Expiry"},
@@ -17,11 +17,11 @@ SUPPORTED_FIELDS = [
 
 SUPPORTED_FIELD_NAMES = [field["name"] for field in SUPPORTED_FIELDS]
 FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
-FIELD_LABELS["article"] = "Article No"
+FIELD_LABELS["article_no"] = "Article No"
 DEFAULT_REQUIRED_FIELDS = [
     "brand",
     "item_display_name",
-    "article_no",
+    "article",
     "size",
     "mrp",
     "coded_price",
