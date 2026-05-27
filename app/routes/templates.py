@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,10 +11,12 @@ from sqlalchemy.orm import Session
 from app.config import BARTENDER_TEMPLATES_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import TemplateMaster
+from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substrings
 from app.services.field_config import (
     SUPPORTED_FIELD_NAMES,
     SUPPORTED_FIELDS,
     default_required_fields_csv,
+    format_required_fields,
     merge_required_fields,
     parse_required_fields,
 )
@@ -55,6 +58,8 @@ def list_templates(
     edit_id: int | None = None,
     imported: int | None = None,
     skipped: int | None = None,
+    extracted: str | None = None,
+    extract_error: str | None = None,
     db: Session = Depends(get_db),
 ):
     template_rows = db.execute(
@@ -64,6 +69,8 @@ def list_templates(
     message = None
     if imported is not None and skipped is not None:
         message = f"Imported {imported} template file(s), skipped {skipped} existing file(s)."
+    if extracted:
+        message = f"Extracted fields: {extracted}"
 
     selected_fields = parse_required_fields(
         template.required_fields if template else default_required_fields_csv()
@@ -82,6 +89,7 @@ def list_templates(
             "template": template,
             "bartender_templates_dir": BARTENDER_TEMPLATES_DIR,
             "message": message,
+            "error": extract_error,
             "supported_fields": SUPPORTED_FIELDS,
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
@@ -159,6 +167,33 @@ def import_bartender_templates(db: Session = Depends(get_db)):
     db.commit()
     return RedirectResponse(
         f"/templates?imported={imported}&skipped={skipped}",
+        status_code=303,
+    )
+
+
+@router.post("/{template_pk}/extract-fields")
+def extract_template_fields(template_pk: int, db: Session = Depends(get_db)):
+    template = db.get(TemplateMaster, template_pk)
+    if not template:
+        return RedirectResponse(
+            f"/templates?{urlencode({'extract_error': 'Template was not found.'})}",
+            status_code=303,
+        )
+
+    try:
+        fields = extract_named_substrings(template.bartender_file_path)
+    except BarTenderActiveXError as exc:
+        return RedirectResponse(
+            f"/templates?{urlencode({'edit_id': template.id, 'extract_error': str(exc)})}",
+            status_code=303,
+        )
+
+    template.required_fields = format_required_fields(fields)
+    db.add(template)
+    db.commit()
+    extracted = ", ".join(fields)
+    return RedirectResponse(
+        f"/templates?{urlencode({'edit_id': template.id, 'extracted': extracted})}",
         status_code=303,
     )
 
