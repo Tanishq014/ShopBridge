@@ -24,7 +24,7 @@
             Category
             <select name="category" id="categorySelect" required>
               {% for category in categories %}
-                <option value="{{ category.value }}">{{ category.label }}</option>
+                <option value="{{ category.value }}" {% if selected_category == category.value %}selected{% endif %}>{{ category.label }}</option>
               {% endfor %}
             </select>
           </label>
@@ -106,7 +106,7 @@
             Template
             <select name="template_id" id="templateSelect" required>
               {% for template in template_rows %}
-                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}">
+                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" {% if selected_template_id == template.id %}selected{% endif %}>
                   {{ template.template_name }} ({{ template.template_id }})
                 </option>
               {% else %}
@@ -121,11 +121,16 @@
         </div>
 
         <div class="quick-row">
+          <button class="button" type="submit" form="extractTemplateForm" id="extractTemplateFieldsButton" hidden>Extract fields from this template</button>
           <button class="button" type="button" id="duplicateButton">Duplicate Previous</button>
           <button class="button" type="submit" id="quickReprintButton">Quick Reprint</button>
           <button class="button primary print-button" type="submit" id="printButton" {% if not template_rows %}disabled{% endif %}>Print Labels</button>
         </div>
       </div>
+    </form>
+    <form id="extractTemplateForm" method="post" action="/new-stock/extract-fields" hidden>
+      <input type="hidden" name="template_id" id="extractTemplateId" value="">
+      <input type="hidden" name="category" id="extractCategory" value="{{ selected_category }}">
     </form>
 
     <aside class="workflow-side">
@@ -209,6 +214,9 @@
     const templateBadge = document.getElementById("templateBadge");
     const duplicateButton = document.getElementById("duplicateButton");
     const quickReprintButton = document.getElementById("quickReprintButton");
+    const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
+    const extractTemplateId = document.getElementById("extractTemplateId");
+    const extractCategory = document.getElementById("extractCategory");
 
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -295,6 +303,10 @@
       return new Set(template ? template.required_fields || [] : []);
     }
 
+    function requiresArticle(required) {
+      return required.has("article") || required.has("article_no");
+    }
+
     function applyCategory(preserveTemplateId) {
       const category = categorySelect.value;
       const knownCategories = categories.map(item => item.value);
@@ -343,10 +355,13 @@
       dynamicFields.forEach(fieldName => {
         const container = containerByField[fieldName];
         const input = inputByField[fieldName];
-        const visible = required.has(fieldName);
+        const visible = fieldName === "article_no" ? requiresArticle(required) : required.has(fieldName);
         container.hidden = !visible;
         input.required = visible && !["barcode", "coded_price"].includes(fieldName);
       });
+      extractTemplateFieldsButton.hidden = required.size !== 0 || !templateSelect.value;
+      extractTemplateId.value = templateSelect.value;
+      extractCategory.value = categorySelect.value;
       updatePreview();
     }
 
@@ -391,14 +406,14 @@
 
       showPreviewElement("previewBrandBlock", required.has("brand"));
       showPreviewElement("previewNameBlock", required.has("item_display_name"));
-      showPreviewElement("previewArticle", required.has("article_no"));
+      showPreviewElement("previewArticle", requiresArticle(required));
       showPreviewElement("previewSize", required.has("size"));
       showPreviewElement("previewBatch", required.has("batch_no"));
       showPreviewElement("previewExpiry", required.has("expiry"));
       showPreviewElement("previewMrp", required.has("mrp"));
       showPreviewElement("previewCode", required.has("coded_price"));
       showPreviewElement("previewBarcodeBlock", required.has("barcode"));
-      byId("previewArticleSizeLine").hidden = !required.has("article_no") && !required.has("size");
+      byId("previewArticleSizeLine").hidden = !requiresArticle(required) && !required.has("size");
       byId("previewBatchMrpLine").hidden = !required.has("batch_no") && !required.has("expiry") && !required.has("mrp");
     }
 

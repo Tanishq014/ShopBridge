@@ -65,29 +65,27 @@
           Has logo
         </label>
       </details>
-      <div class="field-config">
-        <div class="section-line">
-          <h3>Field Mapper</h3>
-          {% if editing %}
-            <button class="button small" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/extract-fields">Extract from BarTender template</button>
-          {% else %}
-            <button class="button small" type="button" disabled>Extract from BarTender template</button>
-          {% endif %}
+      {% if editing %}
+        <button class="button" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/extract-fields" name="return_to" value="edit">Extract from BarTender template</button>
+      {% endif %}
+      <details class="advanced-box">
+        <summary>Advanced manual override</summary>
+        <div class="field-config">
+          <p class="muted-text">Use this only if ActiveX extraction is unavailable or the `.btw` file has not been named correctly.</p>
+          <div class="field-checks">
+            {% for field in supported_fields %}
+              <label class="checkline">
+                <input type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
+                {{ field.label }}
+              </label>
+            {% endfor %}
+          </div>
+          <label>
+            Raw template field names
+            <textarea name="raw_required_fields" rows="3" placeholder="article,mrp,item_display_name,barcode">{{ advanced_required_fields }}</textarea>
+          </label>
         </div>
-        <p class="muted-text">These fields come from the named data sources inside the `.btw` file. They control which inputs appear on New Stock.</p>
-        <div class="field-checks">
-          {% for field in supported_fields %}
-            <label class="checkline">
-              <input type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
-              {{ field.label }}
-            </label>
-          {% endfor %}
-        </div>
-        <label>
-          Advanced raw fields
-          <textarea name="raw_required_fields" rows="3" placeholder="extra_field_one,extra_field_two">{{ advanced_required_fields }}</textarea>
-        </label>
-      </div>
+      </details>
       <label class="checkline">
         <input type="checkbox" name="active_status" value="true" {% if not editing or template.active_status %}checked{% endif %}>
         Active
@@ -132,6 +130,7 @@
               </td>
               <td><span class="badge {{ 'ok' if row.active_status else 'muted' }}">{{ "active" if row.active_status else "inactive" }}</span></td>
               <td class="row-actions">
+                <form method="post" action="/templates/{{ row.id }}/extract-fields"><button class="button small primary" type="submit">Extract Fields</button></form>
                 <a class="button small" href="/templates?edit_id={{ row.id }}">Edit</a>
                 {% if row.active_status %}
                   <form method="post" action="/templates/{{ row.id }}/deactivate"><button class="button small" type="submit">Deactivate</button></form>

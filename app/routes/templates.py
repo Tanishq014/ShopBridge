@@ -13,6 +13,7 @@ from app.services.bartender_activex_service import BarTenderActiveXError, extrac
 from app.services.field_config import (
     SUPPORTED_FIELD_NAMES,
     SUPPORTED_FIELDS,
+    field_label,
     format_required_fields,
     merge_required_fields,
     parse_required_fields,
@@ -26,7 +27,6 @@ from app.services.template_folder_service import (
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
 CATEGORY_CHOICES = [
     {"value": "", "label": "All categories"},
     {"value": "clothes", "label": "Clothes"},
@@ -38,7 +38,7 @@ CATEGORY_CHOICES = [
 
 def _field_badges(required_fields: str | None) -> list[dict[str, str]]:
     return [
-        {"name": field, "label": FIELD_LABELS.get(field, field)}
+        {"name": field, "label": field_label(field)}
         for field in parse_required_fields(required_fields)
     ]
 
@@ -149,7 +149,11 @@ def import_bartender_templates(db: Session = Depends(get_db)):
 
 
 @router.post("/{template_pk}/extract-fields")
-def extract_template_fields(template_pk: int, db: Session = Depends(get_db)):
+def extract_template_fields(
+    template_pk: int,
+    return_to: str = Form("templates"),
+    db: Session = Depends(get_db),
+):
     template = db.get(TemplateMaster, template_pk)
     if not template:
         return RedirectResponse(
@@ -160,8 +164,11 @@ def extract_template_fields(template_pk: int, db: Session = Depends(get_db)):
     try:
         fields = extract_named_substrings(template.bartender_file_path)
     except BarTenderActiveXError as exc:
+        query = {"extract_error": str(exc)}
+        if return_to == "edit":
+            query["edit_id"] = str(template.id)
         return RedirectResponse(
-            f"/templates?{urlencode({'edit_id': template.id, 'extract_error': str(exc)})}",
+            f"/templates?{urlencode(query)}",
             status_code=303,
         )
 
@@ -169,8 +176,11 @@ def extract_template_fields(template_pk: int, db: Session = Depends(get_db)):
     db.add(template)
     db.commit()
     extracted = ", ".join(fields)
+    query = {"extracted": extracted}
+    if return_to == "edit":
+        query["edit_id"] = str(template.id)
     return RedirectResponse(
-        f"/templates?{urlencode({'edit_id': template.id, 'extracted': extracted})}",
+        f"/templates?{urlencode(query)}",
         status_code=303,
     )
 

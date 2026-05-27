@@ -1,30 +1,38 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import Any
+
+
+logger = logging.getLogger(__name__)
 
 
 class BarTenderActiveXError(RuntimeError):
     """Raised when BarTender ActiveX field extraction cannot complete."""
 
 
-def _parse_named_substrings(raw_value: Any, item_separator: str = ",", value_separator: str = ":") -> list[str]:
+def _parse_named_substrings(
+    raw_value: Any,
+    name_value_separator: str = ",",
+    record_separator: str = ":",
+) -> list[str]:
     if raw_value is None:
         return []
 
     if isinstance(raw_value, (list, tuple)):
-        parts = [str(item) for item in raw_value]
+        records = [str(item) for item in raw_value]
     else:
-        parts = str(raw_value).split(item_separator)
+        records = str(raw_value).split(record_separator)
 
     fields: list[str] = []
     seen: set[str] = set()
-    for part in parts:
-        text = part.strip()
-        if not text:
+    for record in records:
+        text = record.strip()
+        if not text or name_value_separator not in text:
             continue
-        field_name = text.split(value_separator, 1)[0].strip()
+        field_name = text.split(name_value_separator, 1)[0].strip()
         if field_name and field_name not in seen:
             fields.append(field_name)
             seen.add(field_name)
@@ -118,7 +126,9 @@ def extract_named_substrings(template_path: str) -> list[str]:
                 "Could not read named data sources from this BarTender template."
             ) from exc
 
+        logger.info("BarTender NamedSubStrings.GetAll raw output: %s", raw_fields)
         fields = _parse_named_substrings(raw_fields)
+        logger.info("BarTender parsed named data source fields: %s", fields)
         if not fields:
             raise BarTenderActiveXError("No named data sources found in this BarTender template.")
         return fields

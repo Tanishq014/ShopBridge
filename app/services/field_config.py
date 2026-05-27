@@ -16,6 +16,8 @@ SUPPORTED_FIELDS = [
 ]
 
 SUPPORTED_FIELD_NAMES = [field["name"] for field in SUPPORTED_FIELDS]
+FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
+FIELD_LABELS["article"] = "Article No"
 DEFAULT_REQUIRED_FIELDS = [
     "brand",
     "item_display_name",
@@ -51,3 +53,7 @@ def merge_required_fields(selected_fields: list[str] | None, raw_fields: str | N
 
 def default_required_fields_csv() -> str:
     return format_required_fields(DEFAULT_REQUIRED_FIELDS)
+
+
+def field_label(field_name: str) -> str:
+    return FIELD_LABELS.get(field_name, field_name)

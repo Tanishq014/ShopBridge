@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,8 +13,9 @@ from app.config import TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
 from app.services.barcode_service import assign_barcode
+from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substrings
 from app.services.bartender_service import create_csv_print_job
-from app.services.field_config import SUPPORTED_FIELDS, parse_required_fields
+from app.services.field_config import SUPPORTED_FIELDS, field_label, format_required_fields, parse_required_fields
 from app.services.price_code_service import generate_coded_price
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 
@@ -27,7 +29,6 @@ CATEGORY_CHOICES = [
     {"value": "gifts", "label": "Gifts"},
     {"value": "toys", "label": "Toys"},
 ]
-FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
 
 
 def _decimal_or_none(value: str | None) -> Decimal | None:
@@ -228,6 +229,8 @@ def _workflow_context(
     db: Session,
     message: str | None = None,
     error: str | None = None,
+    selected_template_id: int | None = None,
+    selected_category: str = "clothes",
 ) -> dict[str, object]:
     scan_bartender_template_folder(db)
     families = _active_families(db)
@@ -256,6 +259,8 @@ def _workflow_context(
         "recent_templates": recent_template_rows,
         "recent_jobs": recent_jobs,
         "size_values_json": _size_values(variants),
+        "selected_template_id": selected_template_id,
+        "selected_category": selected_category,
         "template_warning": (
             None
             if template_rows
@@ -268,13 +273,57 @@ def _workflow_context(
 def new_stock(
     request: Request,
     printed: int | None = None,
+    template_id: int | None = None,
+    category: str = "clothes",
+    extracted: str | None = None,
+    extract_error: str | None = None,
     db: Session = Depends(get_db),
 ):
     message = f"Print job #{printed} created." if printed else None
+    if extracted:
+        message = f"Extracted fields: {extracted}"
     return templates.TemplateResponse(
         request,
         "workflow.html",
-        _workflow_context(request, db, message=message),
+        _workflow_context(
+            request,
+            db,
+            message=message,
+            error=extract_error,
+            selected_template_id=template_id,
+            selected_category=category,
+        ),
+    )
+
+
+@router.post("/new-stock/extract-fields")
+def extract_workflow_template_fields(
+    template_id: int = Form(...),
+    category: str = Form("clothes"),
+    db: Session = Depends(get_db),
+):
+    template = db.get(TemplateMaster, template_id)
+    if not template:
+        return RedirectResponse(
+            f"/new-stock?{urlencode({'category': category, 'extract_error': 'Template was not found.'})}",
+            status_code=303,
+        )
+
+    try:
+        fields = extract_named_substrings(template.bartender_file_path)
+    except BarTenderActiveXError as exc:
+        return RedirectResponse(
+            f"/new-stock?{urlencode({'template_id': template.id, 'category': category, 'extract_error': str(exc)})}",
+            status_code=303,
+        )
+
+    template.required_fields = format_required_fields(fields)
+    db.add(template)
+    db.commit()
+    extracted = ", ".join(fields)
+    return RedirectResponse(
+        f"/new-stock?{urlencode({'template_id': template.id, 'category': category, 'extracted': extracted})}",
+        status_code=303,
     )
 
 
@@ -324,11 +373,16 @@ def print_new_stock(
     required_fields = parse_required_fields(template.required_fields)
     required_field_set = set(required_fields)
 
+    def field_is_required(field_name: str) -> bool:
+        if field_name == "article_no":
+            return "article_no" in required_field_set or "article" in required_field_set
+        return field_name in required_field_set
+
     def value_or_preserved(field_name: str, raw_value: str, attr_name: str | None = None) -> str:
         clean_value = (raw_value or "").strip()
         if clean_value:
             return clean_value
-        if source_variant and field_name not in required_field_set:
+        if source_variant and not field_is_required(field_name):
             stored_value = getattr(source_variant, attr_name or field_name, None)
             return "" if stored_value is None else str(stored_value)
         return ""
@@ -360,6 +414,7 @@ def print_new_stock(
         "brand": brand_value,
         "item_display_name": item_name_value,
         "family_name": final_family_name,
+        "article": article_value,
         "article_no": article_value,
         "size": size_value,
         "batch_no": batch_value,
@@ -369,7 +424,7 @@ def print_new_stock(
         "coded_price": coded,
     }
     missing_fields = [
-        FIELD_LABELS.get(field_name, field_name)
+        field_label(field_name)
         for field_name in required_fields
         if field_name != "barcode" and not str(field_values.get(field_name, "")).strip()
     ]

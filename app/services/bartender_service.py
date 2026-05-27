@@ -66,6 +66,7 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
         "barcode": variant.barcode,
         "brand": variant.brand or "",
         "item_display_name": variant.item_display_name,
+        "article": variant.article_no or "",
         "article_no": variant.article_no or "",
         "size": variant.size or "",
         "color": variant.color or "",
