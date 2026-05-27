@@ -4,8 +4,9 @@
   <section class="page-header">
     <div>
       <h1>Reports</h1>
-      <p>Local ShopBridge counts.</p>
+      <p>Local counts from ShopBridge. Tally is still read-only.</p>
     </div>
+    <a class="button" href="/new-stock">New Stock</a>
   </section>
 
   <section class="stat-grid">
@@ -42,10 +43,20 @@
             <td>{{ count }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="2" class="empty">No stock data yet.</td></tr>
+          <tr>
+            <td colspan="2" class="empty">
+              <div class="empty-state">
+                <strong>No stock data yet.</strong>
+                <span>Import Tally stock names or create labels from New Stock.</span>
+                <div class="form-actions">
+                  <a class="button" href="/tally">Tally Tools</a>
+                  <a class="button primary" href="/new-stock">New Stock</a>
+                </div>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 {% endblock %}
-

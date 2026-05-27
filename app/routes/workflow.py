@@ -362,6 +362,20 @@ def print_new_stock(
             _workflow_context(request, db, error="Select an active template."),
             status_code=400,
         )
+    if not template_path_exists(template):
+        return templates.TemplateResponse(
+            request,
+            "workflow.html",
+            _workflow_context(request, db, error="Selected template file is missing on this PC. Fix it in Settings -> Templates."),
+            status_code=400,
+        )
+    if not parse_required_fields(template.required_fields):
+        return templates.TemplateResponse(
+            request,
+            "workflow.html",
+            _workflow_context(request, db, error="Extract fields for the selected template before printing."),
+            status_code=400,
+        )
 
     source_variant = db.get(LabelVariant, _int_or_none(existing_variant_id)) if existing_variant_id else None
     if workflow_mode == "quick_reprint":
@@ -519,6 +533,8 @@ def quick_reprint(
     template = db.get(TemplateMaster, selected_template_id) if selected_template_id else None
     if not template or not template.active_status:
         return RedirectResponse("/new-stock", status_code=303)
+    if not template_path_exists(template) or not parse_required_fields(template.required_fields):
+        return RedirectResponse("/new-stock", status_code=303)
 
     job = _create_print_job(db, variant, template, copies)
     return RedirectResponse(f"/new-stock?printed={job.id}", status_code=303)
@@ -576,11 +592,36 @@ def reports(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/settings", response_class=HTMLResponse)
-def settings(request: Request):
+def settings(request: Request, db: Session = Depends(get_db)):
+    scan_bartender_template_folder(db)
+    template_rows = db.execute(select(TemplateMaster).order_by(TemplateMaster.template_name)).scalars().all()
+    active_templates = [template for template in template_rows if template.active_status]
+    ready_templates = [
+        template
+        for template in active_templates
+        if template_path_exists(template) and parse_required_fields(template.required_fields)
+    ]
+    missing_templates = [template for template in active_templates if not template_path_exists(template)]
+    unmapped_templates = [
+        template
+        for template in active_templates
+        if template_path_exists(template) and not parse_required_fields(template.required_fields)
+    ]
+    stats = {
+        "templates_total": len(template_rows),
+        "templates_ready": len(ready_templates),
+        "templates_missing": len(missing_templates),
+        "templates_unmapped": len(unmapped_templates),
+        "families": db.scalar(select(func.count(ProductFamily.id))) or 0,
+        "variants": db.scalar(select(func.count(LabelVariant.id)).where(LabelVariant.status == "active")) or 0,
+        "print_jobs": db.scalar(select(func.count(PrintJob.id))) or 0,
+    }
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "request": request,
+            "stats": stats,
+            "ready_to_label": bool(ready_templates),
         },
     )

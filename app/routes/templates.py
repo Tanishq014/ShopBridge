@@ -43,6 +43,18 @@ def _field_badges(required_fields: str | None) -> list[dict[str, str]]:
     ]
 
 
+def _template_status(template: TemplateMaster) -> dict[str, str]:
+    has_file = template_path_exists(template)
+    has_fields = bool(parse_required_fields(template.required_fields))
+    if not template.active_status:
+        return {"kind": "muted", "label": "inactive", "detail": "Not shown for new labels."}
+    if not has_file:
+        return {"kind": "warn", "label": "missing file", "detail": "Fix the .btw path on this PC."}
+    if not has_fields:
+        return {"kind": "warn", "label": "needs fields", "detail": "Extract fields before using it."}
+    return {"kind": "ok", "label": "ready", "detail": "Usable in New Stock."}
+
+
 @router.get("/", response_class=HTMLResponse)
 def list_templates(
     request: Request,
@@ -71,6 +83,7 @@ def list_templates(
         field for field in selected_fields if field not in SUPPORTED_FIELD_NAMES
     ]
     row_field_maps = {row.id: _field_badges(row.required_fields) for row in template_rows}
+    row_status = {row.id: _template_status(row) for row in template_rows}
     folder_options = folder_template_options()
     selected_template_path = template.bartender_file_path if template else ""
     selected_path_in_folder = any(
@@ -95,7 +108,11 @@ def list_templates(
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
             "row_field_maps": row_field_maps,
+            "row_status": row_status,
             "template_path_exists": template_path_exists,
+            "ready_count": sum(1 for row in template_rows if _template_status(row)["label"] == "ready"),
+            "missing_count": sum(1 for row in template_rows if _template_status(row)["label"] == "missing file"),
+            "unmapped_count": sum(1 for row in template_rows if _template_status(row)["label"] == "needs fields"),
         },
     )
 

@@ -10,6 +10,8 @@ from app.config import TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, TemplateMaster
 from app.services.bartender_service import create_csv_print_job
+from app.services.field_config import parse_required_fields
+from app.services.template_folder_service import template_path_exists
 
 
 router = APIRouter(prefix="/print-jobs", tags=["print-jobs"])
@@ -80,6 +82,10 @@ def create_print_job(
     template = db.get(TemplateMaster, selected_template_id)
     if not template or not template.active_status:
         return _render(request, db, error="Selected template is not active.")
+    if not template_path_exists(template):
+        return _render(request, db, error="Selected template file is missing on this PC.")
+    if not parse_required_fields(template.required_fields):
+        return _render(request, db, error="Extract fields for the selected template before creating a CSV job.")
 
     job = PrintJob(
         variant_id=variant.id,

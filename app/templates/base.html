@@ -10,11 +10,12 @@
     <header class="topbar">
       <a class="brand" href="/new-stock">ShopBridge</a>
       <nav class="nav">
-        <a href="/new-stock">New Stock / Print Labels</a>
-        <a href="/recent-prints">Recent Prints</a>
-        <a href="/reports">Reports</a>
-        <a href="/settings">Settings</a>
-        <a href="/tally">Tally Tools</a>
+        {% set path = request.url.path %}
+        <a class="{{ 'active' if path.startswith('/new-stock') else '' }}" href="/new-stock">New Stock / Print Labels</a>
+        <a class="{{ 'active' if path.startswith('/recent-prints') else '' }}" href="/recent-prints">Recent Prints</a>
+        <a class="{{ 'active' if path.startswith('/reports') else '' }}" href="/reports">Reports</a>
+        <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/templates') or path.startswith('/families') or path.startswith('/variants') or path.startswith('/print-jobs') else '' }}" href="/settings">Settings</a>
+        <a class="{{ 'active' if path.startswith('/tally') else '' }}" href="/tally">Tally Tools</a>
       </nav>
     </header>
     <main class="page">

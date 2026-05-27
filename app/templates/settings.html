@@ -4,27 +4,71 @@
   <section class="page-header">
     <div>
       <h1>Settings</h1>
-      <p>Admin and setup pages.</p>
+      <p>Setup status, BarTender templates, and admin tools.</p>
+    </div>
+  </section>
+
+  <section class="setup-hero {{ 'ready' if ready_to_label else 'needs-work' }}">
+    <div>
+      <span class="setup-kicker">{{ "Ready" if ready_to_label else "Setup needed" }}</span>
+      <h2>{{ "New Stock is ready to use." if ready_to_label else "Finish template setup before printing labels." }}</h2>
+      <p>{{ "At least one active template has a valid .btw file and extracted fields." if ready_to_label else "ShopBridge needs one active BarTender template with a valid file path and extracted fields." }}</p>
+    </div>
+    <div class="form-actions">
+      <a class="button primary" href="/new-stock">Open New Stock</a>
+      <a class="button" href="/templates">Templates</a>
+    </div>
+  </section>
+
+  <section class="status-strip">
+    <div class="status-tile ok">
+      <span>Ready templates</span>
+      <strong>{{ stats.templates_ready }}</strong>
+    </div>
+    <div class="status-tile warn">
+      <span>Need fields</span>
+      <strong>{{ stats.templates_unmapped }}</strong>
+    </div>
+    <div class="status-tile warn">
+      <span>Missing file</span>
+      <strong>{{ stats.templates_missing }}</strong>
+    </div>
+    <div class="status-tile">
+      <span>Active items</span>
+      <strong>{{ stats.variants }}</strong>
     </div>
   </section>
 
   <section class="settings-grid">
     <a class="settings-link" href="/templates">
-      <strong>Template Master</strong>
-      <span>Scan BarTender files, set printers, edit required fields.</span>
+      <strong>BarTender Templates</strong>
+      <span>Scan `.btw` files, extract fields, and fix missing paths.</span>
     </a>
-    <a class="settings-link" href="/families">
-      <strong>Product Families</strong>
-      <span>Admin view for billing item groups and Tally stock names.</span>
-    </a>
-    <a class="settings-link" href="/variants">
-      <strong>Label Variants</strong>
-      <span>Admin view for sticker identities and barcode records.</span>
-    </a>
-    <a class="settings-link" href="/print-jobs">
-      <strong>Print Jobs Admin</strong>
-      <span>CSV job records, status changes, and diagnostics.</span>
+    <a class="settings-link" href="/tally">
+      <strong>Tally Tools</strong>
+      <span>Read-only ODBC checks and local family import.</span>
     </a>
   </section>
-{% endblock %}
 
+  <details class="panel admin-tools">
+    <summary>Admin and debug pages</summary>
+    <div class="settings-grid admin-grid">
+      <a class="settings-link" href="/families">
+        <strong>Product Families</strong>
+        <span>Billing item groups and Tally stock names.</span>
+      </a>
+      <a class="settings-link" href="/variants">
+        <strong>Label Variants</strong>
+        <span>Sticker identities, barcode records, and saved prices.</span>
+      </a>
+      <a class="settings-link" href="/print-jobs">
+        <strong>Print Jobs Admin</strong>
+        <span>CSV job records, status changes, and diagnostics.</span>
+      </a>
+      <a class="settings-link" href="/reports">
+        <strong>Reports</strong>
+        <span>Local counts and category totals.</span>
+      </a>
+    </div>
+  </details>
+{% endblock %}

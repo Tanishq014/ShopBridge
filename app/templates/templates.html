@@ -12,113 +12,56 @@
     </form>
   </section>
 
-  <section class="two-column">
-    <form class="panel form-grid" method="post" action="{{ '/templates/' ~ template.id if editing else '/templates' }}">
-      <h2>{{ "Edit Template" if editing else "Add Template" }}</h2>
-      {% if not folder_template_options %}
-        <p class="error compact-message">No `.btw` files were found in the BarTender template folder.</p>
-      {% endif %}
-      <label>
-        Template id
-        <input name="template_id" required value="{{ template.template_id if editing else '' }}" placeholder="DEFAULT">
-      </label>
-      <label>
-        Template name
-        <input name="template_name" required value="{{ template.template_name if editing else '' }}">
-      </label>
-      <label>
-        Category
-        <select name="category">
-          {% for choice in category_choices %}
-            <option value="{{ choice.value }}" {% if editing and (template.category or '')|lower == choice.value %}selected{% endif %}>{{ choice.label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        BarTender file
-        <select name="bartender_file_path">
-          <option value="">Choose .btw file</option>
-          {% if editing and selected_template_path and not selected_path_in_folder %}
-            <option value="{{ selected_template_path }}" selected>{{ selected_template_path }} (outside folder)</option>
-          {% endif %}
-          {% for option in folder_template_options %}
-            <option value="{{ option.path }}" {% if editing and option.path == template.bartender_file_path %}selected{% endif %}>{{ option.display }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <details class="advanced-box">
-        <summary>Advanced template details</summary>
-        <label>
-          Label size note
-          <input name="label_size" value="{{ template.label_size if editing and template.label_size else '' }}" placeholder="Optional only; BarTender controls actual size">
-        </label>
-        <label>
-          Printer override
-          <input name="printer_name" value="{{ template.printer_name if editing and template.printer_name else '' }}" placeholder="Leave blank to use printer saved in .btw">
-        </label>
-        <label>
-          Manual .btw path outside folder
-          <input name="manual_bartender_file_path" value="">
-        </label>
-        <label class="checkline">
-          <input type="checkbox" name="has_logo" value="true" {% if editing and template.has_logo %}checked{% endif %}>
-          Has logo
-        </label>
-      </details>
-      {% if editing %}
-        <button class="button" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/extract-fields" name="return_to" value="edit">Extract from BarTender template</button>
-      {% endif %}
-      <details class="advanced-box">
-        <summary>Advanced manual override</summary>
-        <div class="field-config">
-          <p class="muted-text">Use this only if ActiveX extraction is unavailable or the `.btw` file has not been named correctly.</p>
-          <div class="field-checks">
-            {% for field in supported_fields %}
-              <label class="checkline">
-                <input type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
-                {{ field.label }}
-              </label>
-            {% endfor %}
-          </div>
-          <label>
-            Raw template field names
-            <textarea name="raw_required_fields" rows="3" placeholder="article,mrp,item_display_name,barcode">{{ advanced_required_fields }}</textarea>
-          </label>
-        </div>
-      </details>
-      <label class="checkline">
-        <input type="checkbox" name="active_status" value="true" {% if not editing or template.active_status %}checked{% endif %}>
-        Active
-      </label>
-      <div class="form-actions">
-        <button class="button primary" type="submit">{{ "Save Template" if editing else "Add Template" }}</button>
-        {% if editing %}<a class="button" href="/templates">Cancel</a>{% endif %}
-      </div>
-    </form>
+  <section class="status-strip">
+    <div class="status-tile ok">
+      <span>Ready</span>
+      <strong>{{ ready_count }}</strong>
+    </div>
+    <div class="status-tile warn">
+      <span>Need fields</span>
+      <strong>{{ unmapped_count }}</strong>
+    </div>
+    <div class="status-tile warn">
+      <span>Missing file</span>
+      <strong>{{ missing_count }}</strong>
+    </div>
+    <div class="status-tile">
+      <span>Folder files</span>
+      <strong>{{ folder_template_options|length }}</strong>
+    </div>
+  </section>
 
+  {% if not folder_template_options %}
+    <div class="error">No `.btw` files were found in the BarTender template folder.</div>
+  {% endif %}
+
+  <section class="stacked-layout">
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Id</th>
             <th>Name</th>
-            <th>File</th>
-            <th>Printer</th>
-            <th>Field Mapper</th>
             <th>Status</th>
+            <th>File</th>
+            <th>Fields</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for row in template_rows %}
             <tr>
-              <td class="mono">{{ row.template_id }}</td>
-              <td>{{ row.template_name }}</td>
               <td>
-                <span class="badge {{ 'ok' if template_path_exists(row) else 'warn' }}">{{ "file found" if template_path_exists(row) else "missing file" }}</span>
-                <div class="path-cell">{{ row.bartender_file_path }}</div>
+                <strong>{{ row.template_name }}</strong>
+                <div class="muted-text">{{ row.template_id }}{% if row.category %} / {{ row.category }}{% else %} / all categories{% endif %}</div>
               </td>
-              <td>{{ row.printer_name or "saved in .btw" }}</td>
+              <td>
+                <span class="badge {{ row_status[row.id].kind }}">{{ row_status[row.id].label }}</span>
+                <div class="muted-text">{{ row_status[row.id].detail }}</div>
+              </td>
+              <td>
+                <div class="path-cell">{{ row.bartender_file_path }}</div>
+                <div class="muted-text">{{ row.printer_name or "printer saved in .btw" }}</div>
+              </td>
               <td>
                 <div class="field-badges">
                   {% for field in row_field_maps[row.id] %}
@@ -128,9 +71,10 @@
                   {% endfor %}
                 </div>
               </td>
-              <td><span class="badge {{ 'ok' if row.active_status else 'muted' }}">{{ "active" if row.active_status else "inactive" }}</span></td>
               <td class="row-actions">
-                <form method="post" action="/templates/{{ row.id }}/extract-fields"><button class="button small primary" type="submit">Extract Fields</button></form>
+                {% if template_path_exists(row) %}
+                  <form method="post" action="/templates/{{ row.id }}/extract-fields"><button class="button small primary" type="submit">Extract Fields</button></form>
+                {% endif %}
                 <a class="button small" href="/templates?edit_id={{ row.id }}">Edit</a>
                 {% if row.active_status %}
                   <form method="post" action="/templates/{{ row.id }}/deactivate"><button class="button small" type="submit">Deactivate</button></form>
@@ -140,10 +84,91 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="7" class="empty">No templates yet.</td></tr>
+            <tr><td colspan="5" class="empty">No templates yet. Put `.btw` files in the BarTender template folder and click Rescan Folder.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+
+    <details class="panel setup-panel" {% if editing or not template_rows %}open{% endif %}>
+      <summary>{{ "Edit Template" if editing else "Add Template Manually" }}</summary>
+      <form class="form-grid setup-form" method="post" action="{{ '/templates/' ~ template.id if editing else '/templates' }}">
+        <div class="form-grid three">
+          <label>
+            Template id
+            <input name="template_id" required value="{{ template.template_id if editing else '' }}" placeholder="PURSE_SMALL">
+          </label>
+          <label>
+            Template name
+            <input name="template_name" required value="{{ template.template_name if editing else '' }}" placeholder="Purse small label">
+          </label>
+          <label>
+            Category
+            <select name="category">
+              {% for choice in category_choices %}
+                <option value="{{ choice.value }}" {% if editing and (template.category or '')|lower == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <label>
+          BarTender file
+          <select name="bartender_file_path">
+            <option value="">Choose .btw file</option>
+            {% if editing and selected_template_path and not selected_path_in_folder %}
+              <option value="{{ selected_template_path }}" selected>{{ selected_template_path }} (outside folder)</option>
+            {% endif %}
+            {% for option in folder_template_options %}
+              <option value="{{ option.path }}" {% if editing and option.path == template.bartender_file_path %}selected{% endif %}>{{ option.display }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if editing %}
+          <button class="button" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/extract-fields" name="return_to" value="edit">Extract fields from selected file</button>
+        {% endif %}
+        <details class="advanced-box">
+          <summary>Advanced details and manual fields</summary>
+          <label>
+            Label size note
+            <input name="label_size" value="{{ template.label_size if editing and template.label_size else '' }}" placeholder="Optional only; BarTender controls actual size">
+          </label>
+          <label>
+            Printer override
+            <input name="printer_name" value="{{ template.printer_name if editing and template.printer_name else '' }}" placeholder="Leave blank to use printer saved in .btw">
+          </label>
+          <label>
+            Manual .btw path outside folder
+            <input name="manual_bartender_file_path" value="">
+          </label>
+          <label class="checkline">
+            <input type="checkbox" name="has_logo" value="true" {% if editing and template.has_logo %}checked{% endif %}>
+            Has logo
+          </label>
+          <div class="field-config">
+            <p class="muted-text">Use manual fields only if ActiveX extraction is unavailable.</p>
+            <div class="field-checks">
+              {% for field in supported_fields %}
+                <label class="checkline">
+                  <input type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
+                  {{ field.label }}
+                </label>
+              {% endfor %}
+            </div>
+            <label>
+              Raw template field names
+              <textarea name="raw_required_fields" rows="3" placeholder="article,mrp,item_display_name,barcode">{{ advanced_required_fields }}</textarea>
+            </label>
+          </div>
+        </details>
+        <label class="checkline">
+          <input type="checkbox" name="active_status" value="true" {% if not editing or template.active_status %}checked{% endif %}>
+          Active
+        </label>
+        <div class="form-actions">
+          <button class="button primary" type="submit">{{ "Save Template" if editing else "Add Template" }}</button>
+          {% if editing %}<a class="button" href="/templates">Cancel</a>{% endif %}
+        </div>
+      </form>
+    </details>
   </section>
 {% endblock %}

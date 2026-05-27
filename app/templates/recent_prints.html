@@ -37,10 +37,17 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="empty">No print jobs yet.</td></tr>
+          <tr>
+            <td colspan="7" class="empty">
+              <div class="empty-state">
+                <strong>No print jobs yet.</strong>
+                <span>Create a label from New Stock and it will appear here for quick reprint.</span>
+                <a class="button primary" href="/new-stock">New Stock / Print Labels</a>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 {% endblock %}
-
