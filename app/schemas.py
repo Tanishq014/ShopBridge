@@ -13,6 +13,7 @@ class TemplateMasterBase(BaseModel):
     bartender_file_path: str
     printer_name: Optional[str] = None
     required_fields: Optional[str] = None
+    default_field_values: Optional[str] = None
     active_status: bool = True
 
 

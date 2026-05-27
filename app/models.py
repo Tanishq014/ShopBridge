@@ -27,6 +27,7 @@ class TemplateMaster(Base):
     bartender_file_path = Column(String(500), nullable=False)
     printer_name = Column(String(200), nullable=True)
     required_fields = Column(Text, nullable=True)
+    default_field_values = Column(Text, nullable=True)
     active_status = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

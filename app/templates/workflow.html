@@ -72,6 +72,10 @@
           <h2>Item</h2>
           <span class="mode-pill" id="modePill">New or selected item</span>
         </div>
+        <div class="template-default-panel" id="templateDefaultsPanel" hidden>
+          <strong>Default text from template</strong>
+          <div class="template-default-grid" id="templateDefaultsGrid"></div>
+        </div>
         <div class="form-grid three">
           <label class="span-two">
             Search existing item
@@ -238,6 +242,8 @@
     const missingTemplateState = document.getElementById("missingTemplateState");
     const unmappedTemplateState = document.getElementById("unmappedTemplateState");
     const printButton = document.getElementById("printButton");
+    const templateDefaultsPanel = document.getElementById("templateDefaultsPanel");
+    const templateDefaultsGrid = document.getElementById("templateDefaultsGrid");
 
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -283,6 +289,20 @@
       selling_price: fields.selling,
       coded_price: fields.coded,
       barcode: fields.barcode
+    };
+    const fieldLabels = {
+      brand: "Brand",
+      item_display_name: "Sticker Name",
+      family_name: "Billing Item",
+      barcode: "Barcode",
+      article: "Article No",
+      article_no: "Article No",
+      size: "Size",
+      batch_no: "Batch No",
+      expiry: "Expiry",
+      mrp: "MRP",
+      selling_price: "Selling Price",
+      coded_price: "Code"
     };
     const containerByField = {
       brand: byId("brandField"),
@@ -340,6 +360,18 @@
     function requiredFieldSet() {
       const template = selectedTemplate();
       return new Set(template ? template.required_fields || [] : []);
+    }
+
+    function templateDefaultValue(template, fieldName) {
+      const defaults = template && template.field_defaults ? template.field_defaults : {};
+      const aliases = fieldName === "article_no" ? ["article_no", "article"] : [fieldName];
+      for (const alias of aliases) {
+        const value = defaults[alias];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value);
+        }
+      }
+      return "";
     }
 
     function requiresArticle(required) {
@@ -413,7 +445,49 @@
       extractTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
       extractTemplateId.value = templateSelect.value;
       extractCategory.value = categorySelect.value;
+      applyTemplateDefaults(readyForEntry);
+      renderTemplateDefaults(readyForEntry);
       updatePreview();
+    }
+
+    function applyTemplateDefaults(readyForEntry) {
+      if (!readyForEntry) {
+        return;
+      }
+      const template = selectedTemplate();
+      const familyDefault = templateDefaultValue(template, "family_name");
+      if (familyDefault && !familyName.value.trim()) {
+        familyName.value = familyDefault;
+      }
+      dynamicFields.forEach(fieldName => {
+        const input = inputByField[fieldName];
+        const container = containerByField[fieldName];
+        const defaultValue = templateDefaultValue(template, fieldName);
+        if (!container.hidden && defaultValue && !String(input.value).trim()) {
+          input.value = defaultValue;
+        }
+      });
+    }
+
+    function renderTemplateDefaults(readyForEntry) {
+      const template = selectedTemplate();
+      const defaults = template && template.field_defaults ? template.field_defaults : {};
+      const entries = Object.entries(defaults)
+        .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
+        .slice(0, 12);
+      templateDefaultsGrid.innerHTML = "";
+      templateDefaultsPanel.hidden = !readyForEntry || entries.length === 0;
+      entries.forEach(([fieldName, value]) => {
+        const item = document.createElement("div");
+        item.className = "template-default-item";
+        const label = document.createElement("span");
+        label.textContent = fieldLabels[fieldName] || fieldName;
+        const text = document.createElement("strong");
+        text.textContent = value;
+        item.appendChild(label);
+        item.appendChild(text);
+        templateDefaultsGrid.appendChild(item);
+      });
     }
 
     function showPreviewElement(id, visible) {
@@ -581,6 +655,11 @@
     Object.values(fields).forEach(field => {
       field.addEventListener("input", updatePreview);
       field.addEventListener("change", updatePreview);
+    });
+
+    [variantSearch, familyName, ...Object.values(inputByField)].forEach(field => {
+      field.addEventListener("focus", () => field.select());
+      field.addEventListener("mouseup", event => event.preventDefault());
     });
 
     duplicateButton.addEventListener("click", () => {

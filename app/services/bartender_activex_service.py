@@ -18,25 +18,38 @@ def _parse_named_substrings(
     name_value_separator: str = ",",
     record_separator: str = ":",
 ) -> list[str]:
+    return list(
+        _parse_named_substring_values(
+            raw_value,
+            name_value_separator=name_value_separator,
+            record_separator=record_separator,
+        )
+    )
+
+
+def _parse_named_substring_values(
+    raw_value: Any,
+    name_value_separator: str = ",",
+    record_separator: str = ":",
+) -> dict[str, str]:
     if raw_value is None:
-        return []
+        return {}
 
     if isinstance(raw_value, (list, tuple)):
         records = [str(item) for item in raw_value]
     else:
         records = str(raw_value).split(record_separator)
 
-    fields: list[str] = []
-    seen: set[str] = set()
+    values: dict[str, str] = {}
     for record in records:
         text = record.strip()
         if not text or name_value_separator not in text:
             continue
-        field_name = text.split(name_value_separator, 1)[0].strip()
-        if field_name and field_name not in seen:
-            fields.append(field_name)
-            seen.add(field_name)
-    return fields
+        field_name, field_value = text.split(name_value_separator, 1)
+        field_name = field_name.strip()
+        if field_name and field_name not in values:
+            values[field_name] = field_value.strip()
+    return values
 
 
 def _do_not_save_value(constants: Any) -> Any:
@@ -83,6 +96,10 @@ def _quit_without_saving(bt_app: Any, constants: Any) -> None:
 
 
 def extract_named_substrings(template_path: str) -> list[str]:
+    return list(extract_named_substring_values(template_path))
+
+
+def extract_named_substring_values(template_path: str) -> dict[str, str]:
     if os.name != "nt":
         raise BarTenderActiveXError("BarTender ActiveX extraction is only available on Windows.")
 
@@ -127,11 +144,13 @@ def extract_named_substrings(template_path: str) -> list[str]:
             ) from exc
 
         logger.info("BarTender NamedSubStrings.GetAll raw output: %s", raw_fields)
-        fields = _parse_named_substrings(raw_fields)
+        defaults = _parse_named_substring_values(raw_fields)
+        fields = list(defaults)
         logger.info("BarTender parsed named data source fields: %s", fields)
+        logger.info("BarTender parsed named data source defaults: %s", defaults)
         if not fields:
             raise BarTenderActiveXError("No named data sources found in this BarTender template.")
-        return fields
+        return defaults
     finally:
         _close_without_saving(bt_format, constants)
         _quit_without_saving(bt_app, constants)

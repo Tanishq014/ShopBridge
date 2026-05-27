@@ -13,9 +13,16 @@ from app.config import TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
 from app.services.barcode_service import assign_barcode
-from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substrings
+from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substring_values
 from app.services.bartender_service import create_csv_print_job
-from app.services.field_config import SUPPORTED_FIELDS, field_label, format_required_fields, parse_required_fields
+from app.services.field_config import (
+    SUPPORTED_FIELDS,
+    field_label,
+    format_field_defaults,
+    format_required_fields,
+    parse_field_defaults,
+    parse_required_fields,
+)
 from app.services.price_code_service import generate_coded_price
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 
@@ -123,6 +130,7 @@ def _template_payload(template: TemplateMaster) -> dict[str, object]:
         "category": (template.category or "").strip().lower(),
         "label_size": template.label_size or "",
         "required_fields": parse_required_fields(template.required_fields),
+        "field_defaults": parse_field_defaults(template.default_field_values),
         "path_exists": template_path_exists(template),
         "recent": False,
     }
@@ -315,14 +323,16 @@ def extract_workflow_template_fields(
         )
 
     try:
-        fields = extract_named_substrings(template.bartender_file_path)
+        field_defaults = extract_named_substring_values(template.bartender_file_path)
     except BarTenderActiveXError as exc:
         return RedirectResponse(
             f"/new-stock?{urlencode({'template_id': template.id, 'category': category, 'extract_error': str(exc)})}",
             status_code=303,
         )
 
+    fields = list(field_defaults)
     template.required_fields = format_required_fields(fields)
+    template.default_field_values = format_field_defaults(field_defaults)
     db.add(template)
     db.commit()
     extracted = ", ".join(fields)
@@ -387,7 +397,10 @@ def print_new_stock(
                 status_code=400,
             )
         job = _create_print_job(db, source_variant, template, copies)
-        return RedirectResponse(f"/new-stock?printed={job.id}", status_code=303)
+        return RedirectResponse(
+            f"/new-stock?{urlencode({'printed': job.id, 'template_id': template.id, 'category': category})}",
+            status_code=303,
+        )
 
     required_fields = parse_required_fields(template.required_fields)
     required_field_set = set(required_fields)
@@ -515,7 +528,10 @@ def print_new_stock(
             status_code=500,
         )
 
-    return RedirectResponse(f"/new-stock?printed={job.id}", status_code=303)
+    return RedirectResponse(
+        f"/new-stock?{urlencode({'printed': job.id, 'template_id': template.id, 'category': category})}",
+        status_code=303,
+    )
 
 
 @router.post("/new-stock/quick-reprint")

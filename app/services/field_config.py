@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+
 
 SUPPORTED_FIELDS = [
     {"name": "brand", "label": "Brand"},
@@ -57,3 +60,36 @@ def default_required_fields_csv() -> str:
 
 def field_label(field_name: str) -> str:
     return FIELD_LABELS.get(field_name, field_name)
+
+
+def parse_field_defaults(value: str | None) -> dict[str, str]:
+    if not value:
+        return {}
+    try:
+        raw_defaults = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw_defaults, dict):
+        return {}
+
+    defaults: dict[str, str] = {}
+    for field_name, field_value in raw_defaults.items():
+        clean_name = str(field_name).strip()
+        if not clean_name or field_value is None:
+            continue
+        defaults[clean_name] = str(field_value).strip()
+    return defaults
+
+
+def format_field_defaults(values: Mapping[str, object] | None) -> str:
+    clean_values: dict[str, str] = {}
+    for field_name, field_value in (values or {}).items():
+        clean_name = str(field_name).strip()
+        if not clean_name or field_value is None:
+            continue
+        clean_value = str(field_value).strip()
+        if clean_value:
+            clean_values[clean_name] = clean_value
+    if not clean_values:
+        return ""
+    return json.dumps(clean_values, ensure_ascii=True, sort_keys=True)

@@ -9,13 +9,15 @@ from sqlalchemy.orm import Session
 from app.config import BARTENDER_TEMPLATES_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import TemplateMaster
-from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substrings
+from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substring_values
 from app.services.field_config import (
     SUPPORTED_FIELD_NAMES,
     SUPPORTED_FIELDS,
     field_label,
+    format_field_defaults,
     format_required_fields,
     merge_required_fields,
+    parse_field_defaults,
     parse_required_fields,
 )
 from app.services.template_folder_service import (
@@ -41,6 +43,49 @@ def _field_badges(required_fields: str | None) -> list[dict[str, str]]:
         {"name": field, "label": field_label(field)}
         for field in parse_required_fields(required_fields)
     ]
+
+
+def _field_default_badges(default_field_values: str | None) -> list[dict[str, str]]:
+    return [
+        {"name": field, "label": field_label(field), "value": value}
+        for field, value in parse_field_defaults(default_field_values).items()
+        if value
+    ]
+
+
+def _submitted_field_defaults(
+    *,
+    default_brand: str = "",
+    default_item_display_name: str = "",
+    default_family_name: str = "",
+    default_barcode: str = "",
+    default_article: str = "",
+    default_size: str = "",
+    default_batch_no: str = "",
+    default_expiry: str = "",
+    default_mrp: str = "",
+    default_selling_price: str = "",
+    default_coded_price: str = "",
+    existing_defaults: str | None = None,
+) -> str:
+    values = {
+        "brand": default_brand,
+        "item_display_name": default_item_display_name,
+        "family_name": default_family_name,
+        "barcode": default_barcode,
+        "article": default_article,
+        "size": default_size,
+        "batch_no": default_batch_no,
+        "expiry": default_expiry,
+        "mrp": default_mrp,
+        "selling_price": default_selling_price,
+        "coded_price": default_coded_price,
+    }
+    defaults = {field: value.strip() for field, value in values.items() if value.strip()}
+    for field, value in parse_field_defaults(existing_defaults).items():
+        if field not in SUPPORTED_FIELD_NAMES and value:
+            defaults[field] = value
+    return format_field_defaults(defaults)
 
 
 def _template_status(template: TemplateMaster) -> dict[str, str]:
@@ -83,6 +128,7 @@ def list_templates(
         field for field in selected_fields if field not in SUPPORTED_FIELD_NAMES
     ]
     row_field_maps = {row.id: _field_badges(row.required_fields) for row in template_rows}
+    row_default_maps = {row.id: _field_default_badges(row.default_field_values) for row in template_rows}
     row_status = {row.id: _template_status(row) for row in template_rows}
     folder_options = folder_template_options()
     selected_template_path = template.bartender_file_path if template else ""
@@ -107,7 +153,9 @@ def list_templates(
             "supported_fields": SUPPORTED_FIELDS,
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
+            "selected_default_values": parse_field_defaults(template.default_field_values if template else ""),
             "row_field_maps": row_field_maps,
+            "row_default_maps": row_default_maps,
             "row_status": row_status,
             "template_path_exists": template_path_exists,
             "ready_count": sum(1 for row in template_rows if _template_status(row)["label"] == "ready"),
@@ -129,6 +177,17 @@ def create_template(
     printer_name: str = Form(""),
     required_field_names: list[str] = Form(default=[]),
     raw_required_fields: str = Form(""),
+    default_brand: str = Form(""),
+    default_item_display_name: str = Form(""),
+    default_family_name: str = Form(""),
+    default_barcode: str = Form(""),
+    default_article: str = Form(""),
+    default_size: str = Form(""),
+    default_batch_no: str = Form(""),
+    default_expiry: str = Form(""),
+    default_mrp: str = Form(""),
+    default_selling_price: str = Form(""),
+    default_coded_price: str = Form(""),
     active_status: bool = Form(False),
     db: Session = Depends(get_db),
 ):
@@ -149,6 +208,20 @@ def create_template(
         bartender_file_path=final_bartender_file_path,
         printer_name=printer_name.strip() or None,
         required_fields=required_fields.strip() or None,
+        default_field_values=_submitted_field_defaults(
+            default_brand=default_brand,
+            default_item_display_name=default_item_display_name,
+            default_family_name=default_family_name,
+            default_barcode=default_barcode,
+            default_article=default_article,
+            default_size=default_size,
+            default_batch_no=default_batch_no,
+            default_expiry=default_expiry,
+            default_mrp=default_mrp,
+            default_selling_price=default_selling_price,
+            default_coded_price=default_coded_price,
+        )
+        or None,
         active_status=active_status,
     )
     db.add(template)
@@ -179,7 +252,7 @@ def extract_template_fields(
         )
 
     try:
-        fields = extract_named_substrings(template.bartender_file_path)
+        field_defaults = extract_named_substring_values(template.bartender_file_path)
     except BarTenderActiveXError as exc:
         query = {"extract_error": str(exc)}
         if return_to == "edit":
@@ -189,7 +262,9 @@ def extract_template_fields(
             status_code=303,
         )
 
+    fields = list(field_defaults)
     template.required_fields = format_required_fields(fields)
+    template.default_field_values = format_field_defaults(field_defaults) or None
     db.add(template)
     db.commit()
     extracted = ", ".join(fields)
@@ -215,6 +290,17 @@ def update_template(
     printer_name: str = Form(""),
     required_field_names: list[str] = Form(default=[]),
     raw_required_fields: str = Form(""),
+    default_brand: str = Form(""),
+    default_item_display_name: str = Form(""),
+    default_family_name: str = Form(""),
+    default_barcode: str = Form(""),
+    default_article: str = Form(""),
+    default_size: str = Form(""),
+    default_batch_no: str = Form(""),
+    default_expiry: str = Form(""),
+    default_mrp: str = Form(""),
+    default_selling_price: str = Form(""),
+    default_coded_price: str = Form(""),
     active_status: bool = Form(False),
     db: Session = Depends(get_db),
 ):
@@ -237,6 +323,20 @@ def update_template(
     template.bartender_file_path = final_bartender_file_path
     template.printer_name = printer_name.strip() or None
     template.required_fields = merge_required_fields(required_field_names, raw_required_fields) or None
+    template.default_field_values = _submitted_field_defaults(
+        default_brand=default_brand,
+        default_item_display_name=default_item_display_name,
+        default_family_name=default_family_name,
+        default_barcode=default_barcode,
+        default_article=default_article,
+        default_size=default_size,
+        default_batch_no=default_batch_no,
+        default_expiry=default_expiry,
+        default_mrp=default_mrp,
+        default_selling_price=default_selling_price,
+        default_coded_price=default_coded_price,
+        existing_defaults=template.default_field_values,
+    ) or None
     template.active_status = active_status
     db.add(template)
     db.commit()

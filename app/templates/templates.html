@@ -44,6 +44,7 @@
             <th>Status</th>
             <th>File</th>
             <th>Fields</th>
+            <th>Default text</th>
             <th></th>
           </tr>
         </thead>
@@ -71,6 +72,15 @@
                   {% endfor %}
                 </div>
               </td>
+              <td>
+                <div class="field-defaults">
+                  {% for field in row_default_maps[row.id] %}
+                    <span title="{{ field.name }}"><strong>{{ field.label }}</strong>{{ field.value }}</span>
+                  {% else %}
+                    <span class="muted-default">None</span>
+                  {% endfor %}
+                </div>
+              </td>
               <td class="row-actions">
                 {% if template_path_exists(row) %}
                   <form method="post" action="/templates/{{ row.id }}/extract-fields"><button class="button small primary" type="submit">Extract Fields</button></form>
@@ -84,7 +94,7 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="5" class="empty">No templates yet. Put `.btw` files in the BarTender template folder and click Rescan Folder.</td></tr>
+            <tr><td colspan="6" class="empty">No templates yet. Put `.btw` files in the BarTender template folder and click Rescan Folder.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -159,6 +169,19 @@
               <textarea name="raw_required_fields" rows="3" placeholder="article,mrp,item_display_name,barcode">{{ advanced_required_fields }}</textarea>
             </label>
           </div>
+          <div class="field-config">
+            <h3>Template default text</h3>
+            <p class="muted-text">These values prefill New Stock for this template. Click a filled box once to replace it.</p>
+            <div class="field-default-inputs">
+              {% for field in supported_fields %}
+                <label>
+                  {{ field.label }}
+                  {% set default_value = selected_default_values.get(field.name, selected_default_values.get('article_no', '') if field.name == 'article' else '') %}
+                  <input class="select-on-focus" name="default_{{ field.name }}" value="{{ default_value }}">
+                </label>
+              {% endfor %}
+            </div>
+          </div>
         </details>
         <label class="checkline">
           <input type="checkbox" name="active_status" value="true" {% if not editing or template.active_status %}checked{% endif %}>
@@ -171,4 +194,10 @@
       </form>
     </details>
   </section>
+  <script>
+    document.querySelectorAll(".select-on-focus").forEach(input => {
+      input.addEventListener("focus", () => input.select());
+      input.addEventListener("mouseup", event => event.preventDefault());
+    });
+  </script>
 {% endblock %}

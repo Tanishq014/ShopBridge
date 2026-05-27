@@ -56,13 +56,19 @@ def _migrate_existing_sqlite() -> None:
         return
 
     inspector = inspect(engine)
-    if "label_variants" not in inspector.get_table_names():
-        return
+    table_names = set(inspector.get_table_names())
 
-    columns = {column["name"] for column in inspector.get_columns("label_variants")}
-    if "expiry" not in columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE label_variants ADD COLUMN expiry VARCHAR(120)"))
+    if "label_variants" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("label_variants")}
+        if "expiry" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE label_variants ADD COLUMN expiry VARCHAR(120)"))
+
+    if "template_masters" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("template_masters")}
+        if "default_field_values" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE template_masters ADD COLUMN default_field_values TEXT"))
 
 
 def get_db():
