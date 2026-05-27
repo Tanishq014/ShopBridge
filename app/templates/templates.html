@@ -159,7 +159,7 @@
             <div class="field-checks">
               {% for field in supported_fields %}
                 <label class="checkline">
-                  <input type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
+                  <input class="required-field-checkbox" type="checkbox" name="required_field_names" value="{{ field.name }}" {% if field.name in selected_required_fields %}checked{% endif %}>
                   {{ field.label }}
                 </label>
               {% endfor %}
@@ -174,10 +174,11 @@
             <p class="muted-text">These values prefill New Stock for this template. Click a filled box once to replace it.</p>
             <div class="field-default-inputs">
               {% for field in supported_fields %}
-                <label>
+                {% set default_field_active = field.name in selected_required_fields or (field.name == 'article' and 'article_no' in selected_required_fields) %}
+                <label class="default-field-row" data-default-field="{{ field.name }}" {% if not default_field_active %}hidden{% endif %}>
                   {{ field.label }}
                   {% set default_value = selected_default_values.get(field.name, selected_default_values.get('article_no', '') if field.name == 'article' else '') %}
-                  <input class="select-on-focus" name="default_{{ field.name }}" value="{{ default_value }}">
+                  <input class="select-on-focus" name="default_{{ field.name }}" value="{{ default_value }}" {% if not default_field_active %}disabled{% endif %}>
                 </label>
               {% endfor %}
             </div>
@@ -195,9 +196,33 @@
     </details>
   </section>
   <script>
+    const requiredFieldCheckboxes = Array.from(document.querySelectorAll(".required-field-checkbox"));
+    const defaultFieldRows = Array.from(document.querySelectorAll(".default-field-row"));
+
+    function refreshDefaultFieldRows() {
+      const selectedFields = new Set(
+        requiredFieldCheckboxes
+          .filter(input => input.checked)
+          .map(input => input.value)
+      );
+      defaultFieldRows.forEach(row => {
+        const fieldName = row.dataset.defaultField;
+        const visible = selectedFields.has(fieldName) || (fieldName === "article" && selectedFields.has("article_no"));
+        row.hidden = !visible;
+        const input = row.querySelector("input");
+        if (input) {
+          input.disabled = !visible;
+        }
+      });
+    }
+
     document.querySelectorAll(".select-on-focus").forEach(input => {
       input.addEventListener("focus", () => input.select());
       input.addEventListener("mouseup", event => event.preventDefault());
     });
+    requiredFieldCheckboxes.forEach(input => {
+      input.addEventListener("change", refreshDefaultFieldRows);
+    });
+    refreshDefaultFieldRows();
   </script>
 {% endblock %}

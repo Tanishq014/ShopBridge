@@ -786,8 +786,7 @@ tbody tr:last-child td {
   min-width: 260px;
 }
 
-.field-defaults span,
-.template-default-item {
+.field-defaults span {
   background: #f8fafc;
   border: 1px solid #e1e7f0;
   border-radius: 6px;
@@ -799,8 +798,7 @@ tbody tr:last-child td {
   padding: 5px 7px;
 }
 
-.field-defaults strong,
-.template-default-item span {
+.field-defaults strong {
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
@@ -811,32 +809,10 @@ tbody tr:last-child td {
   display: inline-block;
 }
 
-.field-default-inputs,
-.template-default-grid {
+.field-default-inputs {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.template-default-panel {
-  background: #f8fafc;
-  border: 1px solid #e1e7f0;
-  border-radius: 8px;
-  display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
-  padding: 12px;
-}
-
-.template-default-panel > strong {
-  font-size: 13px;
-}
-
-.template-default-item strong {
-  color: var(--text);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-  text-transform: none;
 }
 
 .stacked-layout {
@@ -944,7 +920,6 @@ tbody tr:last-child td {
   .settings-grid,
   .field-checks,
   .field-default-inputs,
-  .template-default-grid,
   .field-defaults {
     grid-template-columns: 1fr;
   }

@@ -45,16 +45,23 @@ def _field_badges(required_fields: str | None) -> list[dict[str, str]]:
     ]
 
 
-def _field_default_badges(default_field_values: str | None) -> list[dict[str, str]]:
+def _row_field_default_badges(template: TemplateMaster) -> list[dict[str, str]]:
+    active_fields = set(parse_required_fields(template.required_fields))
+    if "article" in active_fields:
+        active_fields.add("article_no")
+    if "article_no" in active_fields:
+        active_fields.add("article")
+    defaults = parse_field_defaults(template.default_field_values)
     return [
         {"name": field, "label": field_label(field), "value": value}
-        for field, value in parse_field_defaults(default_field_values).items()
-        if value
+        for field, value in defaults.items()
+        if value and (field in active_fields or (field == "article_no" and "article" in active_fields))
     ]
 
 
 def _submitted_field_defaults(
     *,
+    active_fields: list[str] | None,
     default_brand: str = "",
     default_item_display_name: str = "",
     default_family_name: str = "",
@@ -68,6 +75,11 @@ def _submitted_field_defaults(
     default_coded_price: str = "",
     existing_defaults: str | None = None,
 ) -> str:
+    active_field_set = set(active_fields or [])
+    if "article" in active_field_set:
+        active_field_set.add("article_no")
+    if "article_no" in active_field_set:
+        active_field_set.add("article")
     values = {
         "brand": default_brand,
         "item_display_name": default_item_display_name,
@@ -81,9 +93,13 @@ def _submitted_field_defaults(
         "selling_price": default_selling_price,
         "coded_price": default_coded_price,
     }
-    defaults = {field: value.strip() for field, value in values.items() if value.strip()}
+    defaults = {
+        field: value.strip()
+        for field, value in values.items()
+        if value.strip() and field in active_field_set
+    }
     for field, value in parse_field_defaults(existing_defaults).items():
-        if field not in SUPPORTED_FIELD_NAMES and value:
+        if field not in SUPPORTED_FIELD_NAMES and field in active_field_set and value:
             defaults[field] = value
     return format_field_defaults(defaults)
 
@@ -128,7 +144,7 @@ def list_templates(
         field for field in selected_fields if field not in SUPPORTED_FIELD_NAMES
     ]
     row_field_maps = {row.id: _field_badges(row.required_fields) for row in template_rows}
-    row_default_maps = {row.id: _field_default_badges(row.default_field_values) for row in template_rows}
+    row_default_maps = {row.id: _row_field_default_badges(row) for row in template_rows}
     row_status = {row.id: _template_status(row) for row in template_rows}
     folder_options = folder_template_options()
     selected_template_path = template.bartender_file_path if template else ""
@@ -199,6 +215,7 @@ def create_template(
         )
 
     required_fields = merge_required_fields(required_field_names, raw_required_fields)
+    required_field_list = parse_required_fields(required_fields)
     template = TemplateMaster(
         template_id=template_id.strip(),
         template_name=template_name.strip(),
@@ -209,6 +226,7 @@ def create_template(
         printer_name=printer_name.strip() or None,
         required_fields=required_fields.strip() or None,
         default_field_values=_submitted_field_defaults(
+            active_fields=required_field_list,
             default_brand=default_brand,
             default_item_display_name=default_item_display_name,
             default_family_name=default_family_name,
@@ -322,8 +340,11 @@ def update_template(
     template.category = category.strip() or None
     template.bartender_file_path = final_bartender_file_path
     template.printer_name = printer_name.strip() or None
-    template.required_fields = merge_required_fields(required_field_names, raw_required_fields) or None
+    required_fields = merge_required_fields(required_field_names, raw_required_fields)
+    required_field_list = parse_required_fields(required_fields)
+    template.required_fields = required_fields or None
     template.default_field_values = _submitted_field_defaults(
+        active_fields=required_field_list,
         default_brand=default_brand,
         default_item_display_name=default_item_display_name,
         default_family_name=default_family_name,
