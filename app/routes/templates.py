@@ -1,5 +1,3 @@
-import re
-from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -15,34 +13,27 @@ from app.services.bartender_activex_service import BarTenderActiveXError, extrac
 from app.services.field_config import (
     SUPPORTED_FIELD_NAMES,
     SUPPORTED_FIELDS,
-    default_required_fields_csv,
     format_required_fields,
     merge_required_fields,
     parse_required_fields,
+)
+from app.services.template_folder_service import (
+    folder_template_options,
+    scan_bartender_template_folder,
+    template_path_exists,
 )
 
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 FIELD_LABELS = {field["name"]: field["label"] for field in SUPPORTED_FIELDS}
-
-
-def _template_id_from_path(path: Path) -> str:
-    template_id = re.sub(r"[^A-Za-z0-9]+", "_", path.stem).strip("_").upper()
-    return template_id or "TEMPLATE"
-
-
-def _unique_template_id(db: Session, base_template_id: str) -> str:
-    template_id = base_template_id
-    counter = 2
-    while db.scalar(select(TemplateMaster).where(TemplateMaster.template_id == template_id)):
-        template_id = f"{base_template_id}_{counter}"
-        counter += 1
-    return template_id
-
-
-def _normalized_path(value: str) -> str:
-    return str(Path(value)).lower()
+CATEGORY_CHOICES = [
+    {"value": "", "label": "All categories"},
+    {"value": "clothes", "label": "Clothes"},
+    {"value": "cosmetics", "label": "Cosmetics"},
+    {"value": "gifts", "label": "Gifts"},
+    {"value": "toys", "label": "Toys"},
+]
 
 
 def _field_badges(required_fields: str | None) -> list[dict[str, str]]:
@@ -62,6 +53,7 @@ def list_templates(
     extract_error: str | None = None,
     db: Session = Depends(get_db),
 ):
+    scan_result = scan_bartender_template_folder(db)
     template_rows = db.execute(
         select(TemplateMaster).order_by(TemplateMaster.active_status.desc(), TemplateMaster.template_name)
     ).scalars().all()
@@ -69,16 +61,21 @@ def list_templates(
     message = None
     if imported is not None and skipped is not None:
         message = f"Imported {imported} template file(s), skipped {skipped} existing file(s)."
+    elif scan_result.imported:
+        message = f"Found and imported {scan_result.imported} BarTender template file(s)."
     if extracted:
         message = f"Extracted fields: {extracted}"
 
-    selected_fields = parse_required_fields(
-        template.required_fields if template else default_required_fields_csv()
-    )
+    selected_fields = parse_required_fields(template.required_fields if template else "")
     advanced_fields = [
         field for field in selected_fields if field not in SUPPORTED_FIELD_NAMES
     ]
     row_field_maps = {row.id: _field_badges(row.required_fields) for row in template_rows}
+    folder_options = folder_template_options()
+    selected_template_path = template.bartender_file_path if template else ""
+    selected_path_in_folder = any(
+        option["path"] == selected_template_path for option in folder_options
+    )
 
     return templates.TemplateResponse(
         request,
@@ -88,12 +85,17 @@ def list_templates(
             "template_rows": template_rows,
             "template": template,
             "bartender_templates_dir": BARTENDER_TEMPLATES_DIR,
+            "folder_template_options": folder_options,
+            "selected_template_path": selected_template_path,
+            "selected_path_in_folder": selected_path_in_folder,
+            "category_choices": CATEGORY_CHOICES,
             "message": message,
             "error": extract_error,
             "supported_fields": SUPPORTED_FIELDS,
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
             "row_field_maps": row_field_maps,
+            "template_path_exists": template_path_exists,
         },
     )
 
@@ -105,13 +107,21 @@ def create_template(
     label_size: str = Form(""),
     has_logo: bool = Form(False),
     category: str = Form(""),
-    bartender_file_path: str = Form(...),
+    bartender_file_path: str = Form(""),
+    manual_bartender_file_path: str = Form(""),
     printer_name: str = Form(""),
     required_field_names: list[str] = Form(default=[]),
     raw_required_fields: str = Form(""),
     active_status: bool = Form(False),
     db: Session = Depends(get_db),
 ):
+    final_bartender_file_path = manual_bartender_file_path.strip() or bartender_file_path.strip()
+    if not final_bartender_file_path:
+        return RedirectResponse(
+            f"/templates?{urlencode({'extract_error': 'Choose a BarTender .btw file from the folder, or enter an advanced path.'})}",
+            status_code=303,
+        )
+
     required_fields = merge_required_fields(required_field_names, raw_required_fields)
     template = TemplateMaster(
         template_id=template_id.strip(),
@@ -119,7 +129,7 @@ def create_template(
         label_size=label_size.strip() or None,
         has_logo=has_logo,
         category=category.strip() or None,
-        bartender_file_path=bartender_file_path.strip(),
+        bartender_file_path=final_bartender_file_path,
         printer_name=printer_name.strip() or None,
         required_fields=required_fields.strip() or None,
         active_status=active_status,
@@ -131,42 +141,9 @@ def create_template(
 
 @router.post("/import-folder")
 def import_bartender_templates(db: Session = Depends(get_db)):
-    BARTENDER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-    template_files = sorted(BARTENDER_TEMPLATES_DIR.rglob("*.btw"))
-    existing_paths = {
-        _normalized_path(path)
-        for path in db.execute(select(TemplateMaster.bartender_file_path)).scalars().all()
-        if path
-    }
-    imported = 0
-    skipped = 0
-
-    for path in template_files:
-        full_path = str(path.resolve())
-        if _normalized_path(full_path) in existing_paths:
-            skipped += 1
-            continue
-
-        template_id = _unique_template_id(db, _template_id_from_path(path))
-        db.add(
-            TemplateMaster(
-                template_id=template_id,
-                template_name=path.stem.replace("_", " ").replace("-", " ").title(),
-                label_size="",
-                has_logo=False,
-                category="Imported",
-                bartender_file_path=full_path,
-                printer_name="",
-                required_fields=default_required_fields_csv(),
-                active_status=True,
-            )
-        )
-        existing_paths.add(_normalized_path(full_path))
-        imported += 1
-
-    db.commit()
+    scan_result = scan_bartender_template_folder(db)
     return RedirectResponse(
-        f"/templates?imported={imported}&skipped={skipped}",
+        f"/templates?imported={scan_result.imported}&skipped={scan_result.skipped}",
         status_code=303,
     )
 
@@ -206,7 +183,8 @@ def update_template(
     label_size: str = Form(""),
     has_logo: bool = Form(False),
     category: str = Form(""),
-    bartender_file_path: str = Form(...),
+    bartender_file_path: str = Form(""),
+    manual_bartender_file_path: str = Form(""),
     printer_name: str = Form(""),
     required_field_names: list[str] = Form(default=[]),
     raw_required_fields: str = Form(""),
@@ -217,12 +195,19 @@ def update_template(
     if not template:
         return RedirectResponse("/templates", status_code=303)
 
+    final_bartender_file_path = manual_bartender_file_path.strip() or bartender_file_path.strip()
+    if not final_bartender_file_path:
+        return RedirectResponse(
+            f"/templates?{urlencode({'edit_id': template.id, 'extract_error': 'Choose a BarTender .btw file from the folder, or enter an advanced path.'})}",
+            status_code=303,
+        )
+
     template.template_id = template_id.strip()
     template.template_name = template_name.strip()
     template.label_size = label_size.strip() or None
     template.has_logo = has_logo
     template.category = category.strip() or None
-    template.bartender_file_path = bartender_file_path.strip()
+    template.bartender_file_path = final_bartender_file_path
     template.printer_name = printer_name.strip() or None
     template.required_fields = merge_required_fields(required_field_names, raw_required_fields) or None
     template.active_status = active_status

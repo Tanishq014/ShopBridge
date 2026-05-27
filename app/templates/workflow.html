@@ -7,6 +7,9 @@
       <p>Fast entry, preview, and BarTender CSV print job creation.</p>
     </div>
   </section>
+  {% if template_warning %}
+    <div class="error">{{ template_warning }}</div>
+  {% endif %}
 
   <section class="workflow-grid">
     <form class="panel workflow-form" method="post" action="/new-stock/print" id="stockForm">
@@ -106,6 +109,8 @@
                 <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}">
                   {{ template.template_name }} ({{ template.template_id }})
                 </option>
+              {% else %}
+                <option value="">No template found</option>
               {% endfor %}
             </select>
           </label>
@@ -118,7 +123,7 @@
         <div class="quick-row">
           <button class="button" type="button" id="duplicateButton">Duplicate Previous</button>
           <button class="button" type="submit" id="quickReprintButton">Quick Reprint</button>
-          <button class="button primary print-button" type="submit" id="printButton">Print Labels</button>
+          <button class="button primary print-button" type="submit" id="printButton" {% if not template_rows %}disabled{% endif %}>Print Labels</button>
         </div>
       </div>
     </form>
@@ -382,7 +387,7 @@
       byId("previewMrp").textContent = "MRP: Rs. " + money(fields.mrp.value);
       byId("previewCode").textContent = "Code: " + (fields.coded.value || "-");
       byId("previewBarcode").textContent = fields.barcode.value || "auto";
-      templateBadge.textContent = templateName(templateSelect.value);
+      templateBadge.textContent = required.size === 0 ? "Fields not mapped" : templateName(templateSelect.value);
 
       showPreviewElement("previewBrandBlock", required.has("brand"));
       showPreviewElement("previewNameBlock", required.has("item_display_name"));

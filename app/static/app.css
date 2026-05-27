@@ -344,6 +344,11 @@ tbody tr:last-child td {
   color: var(--danger);
 }
 
+.compact-message {
+  margin-bottom: 0;
+  padding: 10px 12px;
+}
+
 .empty {
   color: var(--muted);
   padding: 16px;
@@ -574,6 +579,22 @@ tbody tr:last-child td {
 
 .field-config h3 {
   margin: 0;
+}
+
+.advanced-box {
+  border: 1px solid #e1e6ee;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.advanced-box summary {
+  color: #344054;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.advanced-box label {
+  margin-top: 12px;
 }
 
 .field-checks {

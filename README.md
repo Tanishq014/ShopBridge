@@ -56,6 +56,14 @@ Change `PRICE_CODE_DIGITS` there if the shop wants a different private code.
 
 BarTender remains responsible for actual label design and printing.
 
+Put `.btw` files here:
+
+```text
+bartender_templates\
+```
+
+ShopBridge scans that folder on startup and when opening Settings or New Stock. Imported templates start with no required fields until you click `Extract from BarTender template` or manually tick fields in Settings. Label size, margins, logo position, barcode position, and saved printer setup stay inside the `.btw` file.
+
 This MVP creates CSV files in:
 
 ```text
@@ -101,4 +109,3 @@ $env:SHOPBRIDGE_TALLY_DSN="YourDsnName"
 - No Tally XML import.
 - No hard delete routes. Records are deactivated or marked inactive/cancelled.
 - BarTender printing is staged through CSV files first.
-

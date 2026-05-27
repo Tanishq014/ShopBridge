@@ -15,6 +15,7 @@ from app.services.barcode_service import assign_barcode
 from app.services.bartender_service import create_csv_print_job
 from app.services.field_config import SUPPORTED_FIELDS, parse_required_fields
 from app.services.price_code_service import generate_coded_price
+from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 
 
 router = APIRouter(tags=["workflow"])
@@ -51,11 +52,12 @@ def _money(value: Decimal | None) -> str:
 
 
 def _active_templates(db: Session) -> list[TemplateMaster]:
-    return db.execute(
+    rows = db.execute(
         select(TemplateMaster)
         .where(TemplateMaster.active_status == True)  # noqa: E712
         .order_by(TemplateMaster.category, TemplateMaster.template_name)
     ).scalars().all()
+    return [template for template in rows if template_path_exists(template)]
 
 
 def _active_families(db: Session) -> list[ProductFamily]:
@@ -227,6 +229,7 @@ def _workflow_context(
     message: str | None = None,
     error: str | None = None,
 ) -> dict[str, object]:
+    scan_bartender_template_folder(db)
     families = _active_families(db)
     template_rows = _active_templates(db)
     variants = _recent_variants(db)
@@ -253,6 +256,11 @@ def _workflow_context(
         "recent_templates": recent_template_rows,
         "recent_jobs": recent_jobs,
         "size_values_json": _size_values(variants),
+        "template_warning": (
+            None
+            if template_rows
+            else "No usable BarTender .btw template was found. Put .btw files in bartender_templates or fix the template path in Settings."
+        ),
     }
 
 

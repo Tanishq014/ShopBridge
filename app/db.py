@@ -24,7 +24,7 @@ def ensure_directories() -> None:
 def init_db() -> None:
     ensure_directories()
     from app.models import TemplateMaster
-    from app.services.field_config import default_required_fields_csv
+    from app.services.template_folder_service import scan_bartender_template_folder
 
     Base.metadata.create_all(bind=engine)
     _migrate_existing_sqlite()
@@ -32,23 +32,23 @@ def init_db() -> None:
         existing = db.scalar(
             select(TemplateMaster).where(TemplateMaster.template_id == "DEFAULT")
         )
-        if existing:
-            return
-
-        db.add(
-            TemplateMaster(
-                template_id="DEFAULT",
-                template_name="Default Sticker",
-                label_size="50 x 25 mm",
-                has_logo=False,
-                category="General",
-                bartender_file_path=str(BARTENDER_TEMPLATES_DIR / "default.btw"),
-                printer_name="",
-                required_fields=default_required_fields_csv(),
-                active_status=True,
+        if not existing:
+            db.add(
+                TemplateMaster(
+                    template_id="DEFAULT",
+                    template_name="Default Sticker",
+                    label_size=None,
+                    has_logo=False,
+                    category=None,
+                    bartender_file_path=str(BARTENDER_TEMPLATES_DIR / "default.btw"),
+                    printer_name=None,
+                    required_fields=None,
+                    active_status=False,
+                )
             )
-        )
-        db.commit()
+            db.commit()
+
+        scan_bartender_template_folder(db)
 
 
 def _migrate_existing_sqlite() -> None:
