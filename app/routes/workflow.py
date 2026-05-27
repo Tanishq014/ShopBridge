@@ -53,12 +53,11 @@ def _money(value: Decimal | None) -> str:
 
 
 def _active_templates(db: Session) -> list[TemplateMaster]:
-    rows = db.execute(
+    return db.execute(
         select(TemplateMaster)
         .where(TemplateMaster.active_status == True)  # noqa: E712
         .order_by(TemplateMaster.category, TemplateMaster.template_name)
     ).scalars().all()
-    return [template for template in rows if template_path_exists(template)]
 
 
 def _active_families(db: Session) -> list[ProductFamily]:
@@ -124,6 +123,7 @@ def _template_payload(template: TemplateMaster) -> dict[str, object]:
         "category": (template.category or "").strip().lower(),
         "label_size": template.label_size or "",
         "required_fields": parse_required_fields(template.required_fields),
+        "path_exists": template_path_exists(template),
         "recent": False,
     }
 
@@ -261,10 +261,15 @@ def _workflow_context(
         "size_values_json": _size_values(variants),
         "selected_template_id": selected_template_id,
         "selected_category": selected_category,
+        "template_path_exists": template_path_exists,
         "template_warning": (
-            None
-            if template_rows
-            else "No usable BarTender .btw template was found. Put .btw files in bartender_templates or fix the template path in Settings."
+            "No active template was found. Add one in Settings -> Templates."
+            if not template_rows
+            else (
+                None
+                if any(template_path_exists(template) for template in template_rows)
+                else "Templates exist, but their .btw file paths are missing on this PC. Fix the path in Settings before extracting fields or printing."
+            )
         ),
     }
 

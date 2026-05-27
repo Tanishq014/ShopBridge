@@ -30,12 +30,11 @@
           </label>
           <label class="span-two">
             Search existing item
-            <input id="variantSearch" list="variantOptions" autocomplete="off" placeholder="Name, brand, article, size, barcode">
-            <datalist id="variantOptions">
-              {% for variant in variants_json %}
-                <option value="{{ variant.search }}"></option>
-              {% endfor %}
-            </datalist>
+            <div class="combo" id="variantCombo">
+              <input id="variantSearch" autocomplete="off" placeholder="Select existing item or type to find" role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
+              <button class="combo-toggle" type="button" id="variantSearchToggle">Show</button>
+              <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
+            </div>
           </label>
         </div>
       </div>
@@ -106,8 +105,8 @@
             Template
             <select name="template_id" id="templateSelect" required>
               {% for template in template_rows %}
-                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" {% if selected_template_id == template.id %}selected{% endif %}>
-                  {{ template.template_name }} ({{ template.template_id }})
+                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" {% if selected_template_id == template.id %}selected{% endif %}>
+                  {{ template.template_name }} ({{ template.template_id }}){% if not template_path_exists(template) %} - missing .btw{% endif %}
                 </option>
               {% else %}
                 <option value="">No template found</option>
@@ -210,6 +209,9 @@
     const familyName = document.getElementById("familyName");
     const categorySelect = document.getElementById("categorySelect");
     const variantSearch = document.getElementById("variantSearch");
+    const variantSearchToggle = document.getElementById("variantSearchToggle");
+    const variantSearchMenu = document.getElementById("variantSearchMenu");
+    const variantCombo = document.getElementById("variantCombo");
     const templateSelect = document.getElementById("templateSelect");
     const templateBadge = document.getElementById("templateBadge");
     const duplicateButton = document.getElementById("duplicateButton");
@@ -298,6 +300,19 @@
       return templatesData.find(item => String(item.id) === String(templateSelect.value));
     }
 
+    function templateAppliesToCategory(optionCategory, selectedCategory) {
+      const category = (optionCategory || "").toLowerCase();
+      const universal = ["", "all", "all categories", "general", "imported"];
+      if (universal.includes(category)) {
+        return true;
+      }
+      const knownCategories = categories.map(item => item.value);
+      if (!knownCategories.includes(category)) {
+        return true;
+      }
+      return category === selectedCategory;
+    }
+
     function requiredFieldSet() {
       const template = selectedTemplate();
       return new Set(template ? template.required_fields || [] : []);
@@ -309,11 +324,9 @@
 
     function applyCategory(preserveTemplateId) {
       const category = categorySelect.value;
-      const knownCategories = categories.map(item => item.value);
       Array.from(templateSelect.options).forEach(option => {
         const optionCategory = (option.dataset.category || "").toLowerCase();
-        const shouldFilter = optionCategory && knownCategories.includes(optionCategory);
-        option.hidden = shouldFilter && optionCategory !== category;
+        option.hidden = !templateAppliesToCategory(optionCategory, category);
       });
 
       const current = preserveTemplateId || templateSelect.value;
@@ -369,6 +382,67 @@
       byId(id).hidden = !visible;
     }
 
+    function variantLabel(variant) {
+      return [variant.item_display_name, variant.brand, variant.article_no, variant.size, variant.barcode]
+        .filter(Boolean)
+        .join(" | ");
+    }
+
+    function filteredVariants() {
+      const query = variantSearch.value.trim().toLowerCase();
+      const rows = query
+        ? variants.filter(item => variantLabel(item).toLowerCase().includes(query))
+        : variants;
+      return rows.slice(0, 30);
+    }
+
+    function renderVariantMenu() {
+      const rows = filteredVariants();
+      variantSearchMenu.innerHTML = "";
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "combo-empty";
+        empty.textContent = variants.length ? "No matching items" : "No existing items yet";
+        variantSearchMenu.appendChild(empty);
+        return;
+      }
+
+      rows.forEach(variant => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "combo-option";
+        button.setAttribute("role", "option");
+        button.dataset.variantId = variant.id;
+
+        const title = document.createElement("strong");
+        title.textContent = variant.item_display_name || variant.family_name || "Unnamed item";
+        const meta = document.createElement("span");
+        meta.textContent = [variant.brand || variant.family_name, variant.article_no, variant.size, variant.barcode]
+          .filter(Boolean)
+          .join(" / ");
+
+        button.appendChild(title);
+        button.appendChild(meta);
+        button.addEventListener("mousedown", event => {
+          event.preventDefault();
+          populateVariant(variant, false);
+          closeVariantMenu();
+        });
+        variantSearchMenu.appendChild(button);
+      });
+    }
+
+    function openVariantMenu() {
+      renderVariantMenu();
+      variantCombo.classList.add("open");
+      variantSearch.setAttribute("aria-expanded", "true");
+    }
+
+    function closeVariantMenu() {
+      variantCombo.classList.remove("open");
+      variantSearch.setAttribute("aria-expanded", "false");
+    }
+
     function populateVariant(variant, duplicate) {
       if (!variant) return;
       existingVariantId.value = duplicate ? "" : variant.id;
@@ -417,10 +491,31 @@
       byId("previewBatchMrpLine").hidden = !required.has("batch_no") && !required.has("expiry") && !required.has("mrp");
     }
 
+    variantSearch.addEventListener("focus", openVariantMenu);
+    variantSearch.addEventListener("input", openVariantMenu);
     variantSearch.addEventListener("change", () => {
-      const variant = variants.find(item => item.search === variantSearch.value);
+      const value = variantSearch.value.trim().toLowerCase();
+      const variant = variants.find(item => variantLabel(item).toLowerCase() === value);
       if (variant) {
         populateVariant(variant, false);
+      }
+    });
+    variantSearch.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        closeVariantMenu();
+      }
+    });
+    variantSearchToggle.addEventListener("click", () => {
+      if (variantCombo.classList.contains("open")) {
+        closeVariantMenu();
+      } else {
+        variantSearch.focus();
+        openVariantMenu();
+      }
+    });
+    document.addEventListener("mousedown", event => {
+      if (!variantCombo.contains(event.target)) {
+        closeVariantMenu();
       }
     });
 
