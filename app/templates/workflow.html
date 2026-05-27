@@ -17,8 +17,11 @@
       <input type="hidden" name="existing_variant_id" id="existingVariantId" value="">
       <input type="hidden" name="family_id" id="familyId" value="">
 
-      <div class="workflow-section">
-        <h2>Stock Entry</h2>
+      <div class="workflow-section setup-section">
+        <div class="section-line">
+          <h2>Label Setup</h2>
+          <span class="mode-pill" id="setupPill">Choose template first</span>
+        </div>
         <div class="form-grid three">
           <label>
             Category
@@ -29,6 +32,48 @@
             </select>
           </label>
           <label class="span-two">
+            Template
+            <select name="template_id" id="templateSelect" required>
+              <option value="">Select template</option>
+              {% for template in template_rows %}
+                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" {% if selected_template_id == template.id %}selected{% endif %}>
+                  {{ template.template_name }} ({{ template.template_id }}){% if not template_path_exists(template) %} - missing .btw{% endif %}
+                </option>
+              {% else %}
+                <option value="">No template found</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            Qty labels
+            <input name="copies" id="copiesInput" type="number" min="1" value="1" required>
+          </label>
+        </div>
+      </div>
+
+      <div class="workflow-state" id="selectTemplateState">
+        <strong>Select a template to start.</strong>
+        <span>ShopBridge will load only the fields required by that BarTender template.</span>
+      </div>
+
+      <div class="workflow-state warn-state" id="missingTemplateState" hidden>
+        <strong>This template file is missing on this PC.</strong>
+        <span>Fix the .btw path in Settings before extracting fields or printing.</span>
+      </div>
+
+      <div class="workflow-state warn-state" id="unmappedTemplateState" hidden>
+        <strong>Fields have not been extracted for this template.</strong>
+        <span>Extract fields once, then the correct item fields will appear here.</span>
+        <button class="button" type="submit" form="extractTemplateForm" id="extractTemplateFieldsButton">Extract fields from this template</button>
+      </div>
+
+      <div class="workflow-section" id="itemSection" hidden>
+        <div class="section-line">
+          <h2>Item</h2>
+          <span class="mode-pill" id="modePill">New or selected item</span>
+        </div>
+        <div class="form-grid three">
+          <label class="span-two">
             Search existing item
             <div class="combo" id="variantCombo">
               <input id="variantSearch" autocomplete="off" placeholder="Select existing item or type to find" role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
@@ -36,18 +81,9 @@
               <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
             </div>
           </label>
-        </div>
-      </div>
-
-      <div class="workflow-section">
-        <div class="section-line">
-          <h2>Item</h2>
-          <span class="mode-pill" id="modePill">New or selected item</span>
-        </div>
-        <div class="form-grid three">
           <label>
             Billing Item
-            <input name="family_name" id="familyName" list="familyOptions" required>
+            <input name="family_name" id="familyName" list="familyOptions">
             <datalist id="familyOptions">
               {% for family in families %}
                 <option value="{{ family.family_name }}"></option>
@@ -96,34 +132,11 @@
             <input name="coded_price" id="codedInput" placeholder="Auto from selling">
           </label>
         </div>
-      </div>
-
-      <div class="workflow-section">
-        <h2>Label</h2>
-        <div class="form-grid three">
-          <label class="span-two">
-            Template
-            <select name="template_id" id="templateSelect" required>
-              {% for template in template_rows %}
-                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" {% if selected_template_id == template.id %}selected{% endif %}>
-                  {{ template.template_name }} ({{ template.template_id }}){% if not template_path_exists(template) %} - missing .btw{% endif %}
-                </option>
-              {% else %}
-                <option value="">No template found</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>
-            Qty labels
-            <input name="copies" id="copiesInput" type="number" min="1" value="1" required>
-          </label>
-        </div>
 
         <div class="quick-row">
-          <button class="button" type="submit" form="extractTemplateForm" id="extractTemplateFieldsButton" hidden>Extract fields from this template</button>
           <button class="button" type="button" id="duplicateButton">Duplicate Previous</button>
           <button class="button" type="submit" id="quickReprintButton">Quick Reprint</button>
-          <button class="button primary print-button" type="submit" id="printButton" {% if not template_rows %}disabled{% endif %}>Print Labels</button>
+          <button class="button primary print-button" type="submit" id="printButton" disabled>Print Labels</button>
         </div>
       </div>
     </form>
@@ -204,6 +217,7 @@
     const form = document.getElementById("stockForm");
     const workflowMode = document.getElementById("workflowMode");
     const modePill = document.getElementById("modePill");
+    const setupPill = document.getElementById("setupPill");
     const existingVariantId = document.getElementById("existingVariantId");
     const familyId = document.getElementById("familyId");
     const familyName = document.getElementById("familyName");
@@ -219,6 +233,11 @@
     const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
     const extractTemplateId = document.getElementById("extractTemplateId");
     const extractCategory = document.getElementById("extractCategory");
+    const itemSection = document.getElementById("itemSection");
+    const selectTemplateState = document.getElementById("selectTemplateState");
+    const missingTemplateState = document.getElementById("missingTemplateState");
+    const unmappedTemplateState = document.getElementById("unmappedTemplateState");
+    const printButton = document.getElementById("printButton");
 
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -300,6 +319,11 @@
       return templatesData.find(item => String(item.id) === String(templateSelect.value));
     }
 
+    function selectedTemplatePathExists() {
+      const template = selectedTemplate();
+      return template ? Boolean(template.path_exists) : false;
+    }
+
     function templateAppliesToCategory(optionCategory, selectedCategory) {
       const category = (optionCategory || "").toLowerCase();
       const universal = ["", "all", "all categories", "general", "imported"];
@@ -364,15 +388,29 @@
     }
 
     function applyTemplateFields() {
+      const template = selectedTemplate();
       const required = requiredFieldSet();
+      const hasTemplate = Boolean(templateSelect.value && template);
+      const pathReady = selectedTemplatePathExists();
+      const mapped = required.size > 0;
+      const readyForEntry = hasTemplate && pathReady && mapped;
+
+      selectTemplateState.hidden = hasTemplate;
+      missingTemplateState.hidden = !hasTemplate || pathReady;
+      unmappedTemplateState.hidden = !hasTemplate || !pathReady || mapped;
+      itemSection.hidden = !readyForEntry;
+      familyName.required = readyForEntry;
+      printButton.disabled = !readyForEntry;
+      setupPill.textContent = readyForEntry ? "Ready for item entry" : hasTemplate ? "Template setup needed" : "Choose template first";
+
       dynamicFields.forEach(fieldName => {
         const container = containerByField[fieldName];
         const input = inputByField[fieldName];
-        const visible = fieldName === "article_no" ? requiresArticle(required) : required.has(fieldName);
+        const visible = readyForEntry && (fieldName === "article_no" ? requiresArticle(required) : required.has(fieldName));
         container.hidden = !visible;
         input.required = visible && !["barcode", "coded_price"].includes(fieldName);
       });
-      extractTemplateFieldsButton.hidden = required.size !== 0 || !templateSelect.value;
+      extractTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
       extractTemplateId.value = templateSelect.value;
       extractCategory.value = categorySelect.value;
       updatePreview();
@@ -467,6 +505,8 @@
 
     function updatePreview() {
       const required = requiredFieldSet();
+      const hasTemplate = Boolean(templateSelect.value && selectedTemplate());
+      const pathReady = selectedTemplatePathExists();
       byId("previewBrand").textContent = fields.brand.value || familyName.value || "Brand";
       byId("previewName").textContent = fields.item.value || "Sticker Name";
       byId("previewArticle").textContent = "Article: " + (fields.article.value || "-");
@@ -476,19 +516,26 @@
       byId("previewMrp").textContent = "MRP: Rs. " + money(fields.mrp.value);
       byId("previewCode").textContent = "Code: " + (fields.coded.value || "-");
       byId("previewBarcode").textContent = fields.barcode.value || "auto";
-      templateBadge.textContent = required.size === 0 ? "Fields not mapped" : templateName(templateSelect.value);
+      templateBadge.textContent = !hasTemplate
+        ? "Select template"
+        : !pathReady
+          ? "Missing .btw"
+          : required.size === 0
+            ? "Fields not mapped"
+            : templateName(templateSelect.value);
 
-      showPreviewElement("previewBrandBlock", required.has("brand"));
-      showPreviewElement("previewNameBlock", required.has("item_display_name"));
-      showPreviewElement("previewArticle", requiresArticle(required));
-      showPreviewElement("previewSize", required.has("size"));
-      showPreviewElement("previewBatch", required.has("batch_no"));
-      showPreviewElement("previewExpiry", required.has("expiry"));
-      showPreviewElement("previewMrp", required.has("mrp"));
-      showPreviewElement("previewCode", required.has("coded_price"));
-      showPreviewElement("previewBarcodeBlock", required.has("barcode"));
-      byId("previewArticleSizeLine").hidden = !requiresArticle(required) && !required.has("size");
-      byId("previewBatchMrpLine").hidden = !required.has("batch_no") && !required.has("expiry") && !required.has("mrp");
+      const showMappedPreview = hasTemplate && pathReady && required.size > 0;
+      showPreviewElement("previewBrandBlock", showMappedPreview && required.has("brand"));
+      showPreviewElement("previewNameBlock", showMappedPreview && required.has("item_display_name"));
+      showPreviewElement("previewArticle", showMappedPreview && requiresArticle(required));
+      showPreviewElement("previewSize", showMappedPreview && required.has("size"));
+      showPreviewElement("previewBatch", showMappedPreview && required.has("batch_no"));
+      showPreviewElement("previewExpiry", showMappedPreview && required.has("expiry"));
+      showPreviewElement("previewMrp", showMappedPreview && required.has("mrp"));
+      showPreviewElement("previewCode", showMappedPreview && required.has("coded_price"));
+      showPreviewElement("previewBarcodeBlock", showMappedPreview && required.has("barcode"));
+      byId("previewArticleSizeLine").hidden = !showMappedPreview || (!requiresArticle(required) && !required.has("size"));
+      byId("previewBatchMrpLine").hidden = !showMappedPreview || (!required.has("batch_no") && !required.has("expiry") && !required.has("mrp"));
     }
 
     variantSearch.addEventListener("focus", openVariantMenu);
@@ -552,7 +599,7 @@
       setMode("quick_reprint", "Quick reprint selected item");
     });
 
-    document.getElementById("printButton").addEventListener("click", () => {
+    printButton.addEventListener("click", () => {
       if (workflowMode.value === "quick_reprint") {
         setMode("print", existingVariantId.value ? "Updating selected item" : "New or selected item");
       }

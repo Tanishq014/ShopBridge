@@ -465,6 +465,38 @@ tbody tr:last-child td {
   padding-bottom: 0;
 }
 
+.setup-section {
+  background: #f8fafc;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.workflow-state {
+  background: #f8fafc;
+  border: 1px dashed #b8c4d4;
+  border-radius: 8px;
+  color: #475467;
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+}
+
+.workflow-state strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.workflow-state .button {
+  justify-self: start;
+  margin-top: 8px;
+}
+
+.warn-state {
+  background: #fff8e8;
+  border-color: #f0c36a;
+}
+
 .section-line {
   align-items: center;
   display: flex;
