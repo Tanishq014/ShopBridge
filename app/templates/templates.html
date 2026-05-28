@@ -227,7 +227,6 @@
 
     document.querySelectorAll(".select-on-focus").forEach(input => {
       input.addEventListener("focus", () => input.select());
-      input.addEventListener("mouseup", event => event.preventDefault());
     });
     requiredFieldCheckboxes.forEach(input => {
       input.addEventListener("change", refreshDefaultFieldRows);

@@ -16,6 +16,7 @@
       <input type="hidden" name="workflow_mode" id="workflowMode" value="print">
       <input type="hidden" name="existing_variant_id" id="existingVariantId" value="">
       <input type="hidden" name="family_id" id="familyId" value="">
+      <input type="hidden" name="copies" id="copiesInput" value="1">
 
       <div class="workflow-section setup-section">
         <div class="section-line">
@@ -839,7 +840,7 @@
             ? requiresArticle(required)
             : fieldName === "barcode"
               ? true
-            : fieldName === "selling_price"
+            : fieldName === "selling_price" || fieldName === "mrp"
               ? true
             : fieldName === "item_display_name" || fieldName === "design"
               ? requiresItemName(required)
@@ -1222,8 +1223,6 @@
 
     Array.from(new Set([variantSearch, familyName, ...Object.values(inputByField)])).forEach(field => {
       field.addEventListener("focus", () => field.select());
-      field.addEventListener("click", () => field.select());
-      field.addEventListener("mouseup", event => event.preventDefault());
       field.addEventListener("keydown", handleEntryArrowNavigation);
     });
 
@@ -1251,7 +1250,7 @@
       fields.barcode.value = "";
       manualBarcodeOverride.checked = false;
       setMode("new_barcode", "Creating new barcode for new price");
-      priceDecisionWarning.hidden = false;
+      priceDecisionWarning.hidden = true;
       requestGeneratedBarcode(true);
       updatePreview();
       saveWorkflowState();
