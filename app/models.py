@@ -69,6 +69,8 @@ class LabelVariant(Base):
     mrp = Column(Numeric(10, 2), nullable=True)
     selling_price = Column(Numeric(10, 2), nullable=True)
     coded_price = Column(String(120), nullable=True)
+    billing_price_missing = Column(Boolean, nullable=False, default=False)
+    extra_field_values = Column(Text, nullable=True)
     template_id = Column(Integer, ForeignKey("template_masters.id"), nullable=True)
     status = Column(String(40), nullable=False, default="active", index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

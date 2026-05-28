@@ -64,6 +64,12 @@ def _migrate_existing_sqlite() -> None:
         if "expiry" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE label_variants ADD COLUMN expiry VARCHAR(120)"))
+        if "billing_price_missing" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE label_variants ADD COLUMN billing_price_missing BOOLEAN NOT NULL DEFAULT 0"))
+        if "extra_field_values" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE label_variants ADD COLUMN extra_field_values TEXT"))
 
     if "template_masters" in table_names:
         columns = {column["name"] for column in inspector.get_columns("template_masters")}

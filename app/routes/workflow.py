@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -24,16 +25,23 @@ from app.services.field_config import (
     field_label,
     format_field_defaults,
     format_required_fields,
+    normalize_field_name,
     parse_field_defaults,
     parse_required_fields,
 )
-from app.services.price_code_service import generate_coded_price
+from app.services.price_code_service import (
+    PriceCodeCandidate,
+    extract_price_code_candidates,
+    generate_coded_price,
+)
 from app.services.settings_service import (
     get_barcode_settings,
     get_bartender_settings,
+    get_price_code_settings,
     get_pricing_settings,
     save_barcode_settings,
     save_bartender_settings,
+    save_price_code_settings,
     save_pricing_settings,
 )
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
@@ -74,6 +82,57 @@ def _money(value: Decimal | None) -> str:
     if value is None:
         return ""
     return f"{value:.2f}"
+
+
+def _parse_extra_field_values(value: str | None) -> dict[str, str]:
+    if not value:
+        return {}
+    try:
+        raw_values = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw_values, dict):
+        return {}
+
+    values: dict[str, str] = {}
+    for field_name, field_value in raw_values.items():
+        clean_name = normalize_field_name(str(field_name))
+        if not clean_name or field_value is None:
+            continue
+        values[clean_name] = str(field_value).strip()
+    return values
+
+
+def _format_extra_field_values(values: dict[str, str]) -> str | None:
+    clean_values = {
+        normalize_field_name(field_name): str(field_value).strip()
+        for field_name, field_value in values.items()
+        if normalize_field_name(field_name) and str(field_value).strip()
+    }
+    if not clean_values:
+        return None
+    return json.dumps(clean_values, ensure_ascii=True, sort_keys=True)
+
+
+def _candidate_payload(candidate: PriceCodeCandidate) -> dict[str, str]:
+    return {
+        "key": candidate.key,
+        "source_field": candidate.source_field,
+        "raw_value": candidate.raw_value,
+        "code": candidate.code,
+        "selling_price": candidate.selling_price_text,
+        "label": (
+            f"{field_label(candidate.source_field)}: {candidate.raw_value} "
+            f"-> {candidate.code} -> {candidate.selling_price_text}"
+        ),
+    }
+
+
+def _find_candidate_by_key(candidates: list[PriceCodeCandidate], key: str) -> PriceCodeCandidate | None:
+    for candidate in candidates:
+        if candidate.key == key:
+            return candidate
+    return None
 
 
 def _active_templates(db: Session) -> list[TemplateMaster]:
@@ -134,6 +193,8 @@ def _variant_payload(variant: LabelVariant) -> dict[str, object]:
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
+        "billing_price_missing": bool(variant.billing_price_missing),
+        "extra_field_values": _parse_extra_field_values(variant.extra_field_values),
         "template_id": _variant_template_id(variant) or "",
         "template_name": template.template_name if template else "",
     }
@@ -272,6 +333,7 @@ def _label_details_changed(
     size: str,
     batch_no: str,
     expiry: str,
+    extra_field_values: dict[str, str],
     mrp: Decimal | None,
     selling_price: Decimal | None,
     coded_price: str,
@@ -289,6 +351,11 @@ def _label_details_changed(
         or not _same_text(variant.size, size)
         or not _same_text(variant.batch_no, batch_no)
         or not _same_text(variant.expiry, expiry)
+        or _parse_extra_field_values(variant.extra_field_values) != {
+            field_name: field_value
+            for field_name, field_value in extra_field_values.items()
+            if str(field_value).strip()
+        }
         or _price_changed(
             variant,
             mrp=mrp,
@@ -311,6 +378,7 @@ def _find_exact_variant(
     size: str,
     batch_no: str,
     expiry: str,
+    extra_field_values: dict[str, str],
     mrp: Decimal | None,
     selling_price: Decimal | None,
     coded_price: str,
@@ -350,6 +418,14 @@ def _find_exact_variant(
         if "batch_no" in required and batch_no.strip() and not _same_text(candidate.batch_no, batch_no):
             continue
         if "expiry" in required and expiry.strip() and not _same_text(candidate.expiry, expiry):
+            continue
+        candidate_extras = _parse_extra_field_values(candidate.extra_field_values)
+        extra_mismatch = False
+        for field_name, field_value in extra_field_values.items():
+            if field_name in required and field_value.strip() and not _same_text(candidate_extras.get(field_name), field_value):
+                extra_mismatch = True
+                break
+        if extra_mismatch:
             continue
         return candidate
     return None
@@ -436,9 +512,11 @@ def _form_field_values(
     mrp: str,
     selling_price: str,
     coded_price: str,
+    extra_field_values: str = "",
 ) -> dict[str, str]:
     selling = _decimal_or_none(selling_price)
     mrp_value = _decimal_or_none(mrp)
+    extras = _parse_extra_field_values(extra_field_values)
     barcode_value = barcode.strip()
     required_fields = parse_required_fields(template.required_fields)
     if not barcode_value and "barcode" in required_fields:
@@ -450,7 +528,8 @@ def _form_field_values(
     article_value = article_no.strip()
     item_name_value = item_display_name.strip() or family_name.strip()
     final_family_name = family_name.strip() or item_name_value
-    coded = coded_price.strip() or generate_coded_price(selling) or ""
+    price_code_settings = get_price_code_settings()
+    coded = coded_price.strip() or generate_coded_price(selling, price_code_settings) or ""
     standard_values = {
         "barcode": barcode_value,
         "brand": brand.strip(),
@@ -466,6 +545,7 @@ def _form_field_values(
         "selling_price": _money(selling),
         "coded_price": coded,
     }
+    standard_values.update(extras)
     return {
         field_name: standard_values.get(field_name, "")
         for field_name in required_fields
@@ -497,6 +577,7 @@ def _workflow_context(
     for template in template_payloads:
         template["recent"] = template["id"] in recent_template_ids
 
+    price_code_settings = get_price_code_settings()
     return {
         "request": request,
         "message": message,
@@ -516,6 +597,13 @@ def _workflow_context(
         "initial_variant_id": initial_variant_id,
         "initial_duplicate": initial_duplicate,
         "pricing_settings": get_pricing_settings(),
+        "price_code_settings": price_code_settings,
+        "price_code_settings_json": {
+            "digit_to_code": price_code_settings.digit_to_code,
+            "code_to_digit": price_code_settings.code_to_digit,
+            "price_code_letters": price_code_settings.price_code_letters,
+            "allow_extraction": price_code_settings.allow_extraction,
+        },
         "template_path_exists": template_path_exists,
         "template_warning": (
             "No active template was found. Add one in Settings -> Templates."
@@ -639,6 +727,7 @@ def preview_template_image(
     mrp: str = Form(""),
     selling_price: str = Form(""),
     coded_price: str = Form(""),
+    extra_field_values: str = Form(""),
     db: Session = Depends(get_db),
 ):
     template = db.get(TemplateMaster, template_id)
@@ -663,6 +752,7 @@ def preview_template_image(
         mrp=mrp,
         selling_price=selling_price,
         coded_price=coded_price,
+        extra_field_values=extra_field_values,
     )
     try:
         path = export_print_preview_to_image(
@@ -709,6 +799,9 @@ def print_new_stock(
     mrp: str = Form(""),
     selling_price: str = Form(""),
     coded_price: str = Form(""),
+    extra_field_values: str = Form(""),
+    selected_price_code_key: str = Form(""),
+    print_without_billing_price: bool = Form(False),
     template_id: int = Form(...),
     copies: int = Form(1),
     manual_barcode_override: bool = Form(False),
@@ -790,7 +883,12 @@ def print_new_stock(
     expiry_value = value_or_preserved("expiry", expiry)
     mrp_value = _decimal_or_none(value_or_preserved("mrp", mrp))
     selling = _decimal_or_none(value_or_preserved("selling_price", selling_price))
-    coded = coded_price.strip() or generate_coded_price(selling) or value_or_preserved("coded_price", coded_price)
+    extra_values = _parse_extra_field_values(extra_field_values)
+    source_extra_values = _parse_extra_field_values(source_variant.extra_field_values if source_variant else None)
+    for field_name, field_value in source_extra_values.items():
+        if field_name not in extra_values and source_variant and not field_is_required(field_name):
+            extra_values[field_name] = field_value
+    coded = coded_price.strip() or value_or_preserved("coded_price", coded_price)
 
     field_values = {
         "brand": brand_value,
@@ -806,6 +904,52 @@ def print_new_stock(
         "selling_price": _money(selling),
         "coded_price": coded,
     }
+    field_values.update(extra_values)
+
+    price_code_settings = get_price_code_settings()
+    price_code_candidates, _priority_code_found = extract_price_code_candidates(
+        field_values,
+        required_fields,
+        price_code_settings,
+    )
+    selected_candidate = _find_candidate_by_key(price_code_candidates, selected_price_code_key.strip())
+    if selected_candidate:
+        selling = selected_candidate.selling_price
+        coded = selected_candidate.code
+    elif selling is None and price_code_candidates:
+        if len(price_code_candidates) == 1:
+            selected_candidate = price_code_candidates[0]
+            selling = selected_candidate.selling_price
+            coded = selected_candidate.code
+        elif not print_without_billing_price:
+            options = "; ".join(candidate["label"] for candidate in map(_candidate_payload, price_code_candidates))
+            return templates.TemplateResponse(
+                request,
+                "workflow.html",
+                _workflow_context(
+                    request,
+                    db,
+                    error="Multiple price codes found. Choose one or enter Selling Price manually. " + options,
+                ),
+                status_code=400,
+            )
+    elif selling is None and not print_without_billing_price:
+        return templates.TemplateResponse(
+            request,
+            "workflow.html",
+            _workflow_context(
+                request,
+                db,
+                error="Enter Selling Price, detect a valid price code, or choose Print without billing price in Advanced barcode.",
+            ),
+            status_code=400,
+        )
+
+    billing_price_missing = selling is None and print_without_billing_price
+    if selling is not None and not coded:
+        coded = generate_coded_price(selling, price_code_settings) or ""
+    field_values["selling_price"] = _money(selling)
+    field_values["coded_price"] = coded
     missing_fields = [
         field_label(field_name)
         for field_name in required_fields
@@ -836,6 +980,7 @@ def print_new_stock(
             size=size_value,
             batch_no=batch_value,
             expiry=expiry_value,
+            extra_field_values=extra_values,
             mrp=mrp_value,
             selling_price=selling,
             coded_price=coded,
@@ -860,6 +1005,7 @@ def print_new_stock(
         size=size_value,
         batch_no=batch_value,
         expiry=expiry_value,
+        extra_field_values=extra_values,
         mrp=mrp_value,
         selling_price=selling,
         coded_price=coded,
@@ -923,6 +1069,8 @@ def print_new_stock(
     variant.mrp = mrp_value
     variant.selling_price = selling
     variant.coded_price = coded or None
+    variant.billing_price_missing = billing_price_missing
+    variant.extra_field_values = _format_extra_field_values(extra_values)
     variant.template_id = template.id
     variant.status = "active"
     db.add(variant)
@@ -1094,6 +1242,7 @@ def settings(
             "bartender_settings": get_bartender_settings(),
             "barcode_settings": get_barcode_settings(),
             "pricing_settings": get_pricing_settings(),
+            "price_code_settings": get_price_code_settings(),
             "settings_saved": bool(settings_saved),
         },
     )
@@ -1107,6 +1256,17 @@ def update_bartender_settings(
     default_barcode_length: int = Form(6),
     barcode_allowed_chars: str = Form("23456789BFGJKLMNQRUVWXY"),
     mrp_rounding: int = Form(5),
+    allow_price_code_extraction: bool = Form(False),
+    digit_0_code: str = Form(""),
+    digit_1_code: str = Form(""),
+    digit_2_code: str = Form(""),
+    digit_3_code: str = Form(""),
+    digit_4_code: str = Form(""),
+    digit_5_code: str = Form(""),
+    digit_6_code: str = Form(""),
+    digit_7_code: str = Form(""),
+    digit_8_code: str = Form(""),
+    digit_9_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     save_bartender_settings(
@@ -1119,4 +1279,19 @@ def update_bartender_settings(
         allowed_chars=barcode_allowed_chars,
     )
     save_pricing_settings(mrp_rounding=mrp_rounding)
+    save_price_code_settings(
+        digit_to_code={
+            "0": digit_0_code,
+            "1": digit_1_code,
+            "2": digit_2_code,
+            "3": digit_3_code,
+            "4": digit_4_code,
+            "5": digit_5_code,
+            "6": digit_6_code,
+            "7": digit_7_code,
+            "8": digit_8_code,
+            "9": digit_9_code,
+        },
+        allow_extraction=allow_price_code_extraction,
+    )
     return RedirectResponse("/settings?settings_saved=1", status_code=303)

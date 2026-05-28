@@ -12,6 +12,8 @@ SUPPORTED_FIELDS = [
     {"name": "family_name", "label": "Billing Item"},
     {"name": "barcode", "label": "Barcode"},
     {"name": "article", "label": "Article No"},
+    {"name": "model_no", "label": "Model No"},
+    {"name": "item_code", "label": "Item Code"},
     {"name": "size", "label": "Size"},
     {"name": "batch_no", "label": "Batch No"},
     {"name": "expiry", "label": "Expiry"},
@@ -37,6 +39,8 @@ FIELD_ALIASES = {
     "designname": "design",
     "code": "coded_price",
     "codedprice": "coded_price",
+    "pricecode": "coded_price",
+    "printedcodetext": "coded_price",
     "design": "design",
     "itemname": "item_display_name",
     "itemdisplayname": "item_display_name",
@@ -44,6 +48,9 @@ FIELD_ALIASES = {
     "productname": "item_display_name",
     "stickername": "item_display_name",
     "sellingprice": "selling_price",
+    "model": "model_no",
+    "modelno": "model_no",
+    "itemcode": "item_code",
 }
 
 

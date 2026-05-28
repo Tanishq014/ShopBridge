@@ -20,6 +20,9 @@ VALID_BARCODE_MODES = {BARCODE_GENERATION_MODE}
 MRP_ROUNDING_KEY = "mrp_rounding"
 DEFAULT_MRP_ROUNDING = 5
 VALID_MRP_ROUNDING = {1, 5, 10, 9}
+PRICE_CODE_DIGIT_MAP_KEY = "price_code_digit_map"
+ALLOW_PRICE_CODE_EXTRACTION_KEY = "allow_price_code_extraction"
+EMPTY_PRICE_CODE_DIGIT_MAP = {str(digit): "" for digit in range(10)}
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,32 @@ class BarcodeSettings:
 @dataclass(frozen=True)
 class PricingSettings:
     mrp_rounding: int
+
+
+@dataclass(frozen=True)
+class PriceCodeSettings:
+    digit_to_code: dict[str, str]
+    allow_extraction: bool
+
+    @property
+    def code_to_digit(self) -> dict[str, str]:
+        reverse: dict[str, str] = {}
+        for digit, code in self.digit_to_code.items():
+            clean_code = str(code or "").strip().upper()
+            if clean_code:
+                reverse[clean_code] = digit
+        return reverse
+
+    @property
+    def price_code_letters(self) -> str:
+        letters: list[str] = []
+        seen: set[str] = set()
+        for code in self.digit_to_code.values():
+            for char in str(code or "").strip().upper():
+                if char and char not in seen:
+                    letters.append(char)
+                    seen.add(char)
+        return "".join(letters)
 
 
 def _default_mode() -> str:
@@ -107,6 +136,12 @@ def ensure_default_settings() -> None:
         changed = True
     if MRP_ROUNDING_KEY not in settings:
         settings[MRP_ROUNDING_KEY] = str(DEFAULT_MRP_ROUNDING)
+        changed = True
+    if PRICE_CODE_DIGIT_MAP_KEY not in settings:
+        settings[PRICE_CODE_DIGIT_MAP_KEY] = json.dumps(EMPTY_PRICE_CODE_DIGIT_MAP, ensure_ascii=True, sort_keys=True)
+        changed = True
+    if ALLOW_PRICE_CODE_EXTRACTION_KEY not in settings:
+        settings[ALLOW_PRICE_CODE_EXTRACTION_KEY] = "true"
         changed = True
     if changed:
         _write_settings(settings)
@@ -172,6 +207,30 @@ def _mrp_rounding(value: str | int | None) -> int:
     return rounding if rounding in VALID_MRP_ROUNDING else DEFAULT_MRP_ROUNDING
 
 
+def _price_code_digit_map(value: str | dict[str, str] | None) -> dict[str, str]:
+    if isinstance(value, dict):
+        raw_map = value
+    else:
+        try:
+            raw_map = json.loads(value or "{}")
+        except (TypeError, json.JSONDecodeError):
+            raw_map = {}
+    if not isinstance(raw_map, dict):
+        raw_map = {}
+
+    digit_map: dict[str, str] = {}
+    used_codes: set[str] = set()
+    for digit in range(10):
+        key = str(digit)
+        clean_code = str(raw_map.get(key, "") or "").strip().upper()
+        if clean_code and clean_code not in used_codes:
+            digit_map[key] = clean_code
+            used_codes.add(clean_code)
+        else:
+            digit_map[key] = ""
+    return digit_map
+
+
 def get_barcode_settings() -> BarcodeSettings:
     ensure_default_settings()
     settings = _read_settings()
@@ -189,6 +248,15 @@ def get_pricing_settings() -> PricingSettings:
     ensure_default_settings()
     settings = _read_settings()
     return PricingSettings(mrp_rounding=_mrp_rounding(settings.get(MRP_ROUNDING_KEY)))
+
+
+def get_price_code_settings() -> PriceCodeSettings:
+    ensure_default_settings()
+    settings = _read_settings()
+    return PriceCodeSettings(
+        digit_to_code=_price_code_digit_map(settings.get(PRICE_CODE_DIGIT_MAP_KEY)),
+        allow_extraction=_parse_bool(settings.get(ALLOW_PRICE_CODE_EXTRACTION_KEY), default=True),
+    )
 
 
 def save_barcode_settings(
@@ -214,3 +282,16 @@ def save_pricing_settings(*, mrp_rounding: int) -> PricingSettings:
     settings[MRP_ROUNDING_KEY] = str(_mrp_rounding(mrp_rounding))
     _write_settings(settings)
     return get_pricing_settings()
+
+
+def save_price_code_settings(
+    *,
+    digit_to_code: dict[str, str],
+    allow_extraction: bool,
+) -> PriceCodeSettings:
+    settings = _read_settings()
+    clean_map = _price_code_digit_map(digit_to_code)
+    settings[PRICE_CODE_DIGIT_MAP_KEY] = json.dumps(clean_map, ensure_ascii=True, sort_keys=True)
+    settings[ALLOW_PRICE_CODE_EXTRACTION_KEY] = _bool_text(allow_extraction)
+    _write_settings(settings)
+    return get_price_code_settings()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import subprocess
 from datetime import datetime
 from decimal import Decimal
@@ -35,6 +36,7 @@ CSV_FIELDS = [
     "mrp",
     "selling_price",
     "coded_price",
+    "billing_price_missing",
     "family_name",
     "tally_stock_item_name",
 ]
@@ -44,6 +46,18 @@ def _money(value: Decimal | None) -> str:
     if value is None:
         return ""
     return f"{value:.2f}"
+
+
+def _extra_field_values(value: str | None) -> dict[str, str]:
+    if not value:
+        return {}
+    try:
+        raw_values = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw_values, dict):
+        return {}
+    return {str(field_name): "" if field_value is None else str(field_value) for field_name, field_value in raw_values.items()}
 
 
 def create_csv_print_job(db: Session, job: PrintJob) -> Path:
@@ -79,9 +93,11 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
+        "billing_price_missing": "true" if variant.billing_price_missing else "false",
         "family_name": family.family_name,
         "tally_stock_item_name": family.tally_stock_item_name or "",
     }
+    row.update(_extra_field_values(variant.extra_field_values))
     fieldnames = list(CSV_FIELDS)
     for required_field in required_fields:
         if required_field not in fieldnames:
@@ -119,7 +135,9 @@ def _named_substring_values(job: PrintJob) -> dict[str, str]:
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
+        "billing_price_missing": "true" if variant.billing_price_missing else "false",
     }
+    field_values.update(_extra_field_values(variant.extra_field_values))
     return {
         field_name: field_values.get(field_name, "")
         for field_name in parse_required_fields(job.template.required_fields)

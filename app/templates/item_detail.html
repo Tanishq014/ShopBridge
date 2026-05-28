@@ -31,7 +31,11 @@
         <dt>Expiry</dt><dd>{{ variant.expiry or "" }}</dd>
         <dt>MRP</dt><dd>{{ "%.2f"|format(variant.mrp) if variant.mrp is not none else "" }}</dd>
         <dt>Selling Price</dt><dd>{{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}</dd>
+        <dt>Billing Price Missing</dt><dd>{{ "Yes" if variant.billing_price_missing else "No" }}</dd>
         <dt>Code</dt><dd>{{ variant.coded_price or "" }}</dd>
+        {% if variant.extra_field_values %}
+          <dt>Extra Fields</dt><dd class="mono">{{ variant.extra_field_values }}</dd>
+        {% endif %}
       </dl>
     </div>
 

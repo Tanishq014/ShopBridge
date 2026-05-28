@@ -54,6 +54,8 @@ class LabelVariantBase(BaseModel):
     mrp: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
     coded_price: Optional[str] = None
+    billing_price_missing: bool = False
+    extra_field_values: Optional[str] = None
     template_id: Optional[int] = None
     status: str = "active"
 

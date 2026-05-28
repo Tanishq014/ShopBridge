@@ -30,6 +30,12 @@
       <span class="badge {{ 'ok' if bartender_settings.mode == 'activex' else 'warn' }}">{{ bartender_settings.mode }}</span>
     </div>
     <form class="form-grid three" method="post" action="/settings/bartender">
+      {% if price_code_settings.allow_extraction %}
+        <input type="hidden" name="allow_price_code_extraction" value="true">
+      {% endif %}
+      {% for digit in range(10) %}
+        <input type="hidden" name="digit_{{ digit }}_code" value="{{ price_code_settings.digit_to_code.get(digit|string, '') }}">
+      {% endfor %}
       <label>
         Print mode
         <select name="mode">
@@ -66,6 +72,49 @@
       </label>
       <div class="form-actions">
         <button class="button primary" type="submit">Save Settings</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel setup-panel">
+    <div class="section-line">
+      <h2>Price Code Settings</h2>
+      <span class="badge {{ 'ok' if price_code_settings.allow_extraction else 'warn' }}">{{ 'enabled' if price_code_settings.allow_extraction else 'off' }}</span>
+    </div>
+    <form class="form-grid" method="post" action="/settings/bartender" id="priceCodeSettingsForm">
+      <input type="hidden" name="mode" value="{{ bartender_settings.mode }}">
+      {% if bartender_settings.show_bartender_window %}
+        <input type="hidden" name="show_bartender_window" value="true">
+      {% endif %}
+      <input type="hidden" name="barcode_generation_mode" value="{{ barcode_settings.generation_mode }}">
+      <input type="hidden" name="default_barcode_length" value="{{ barcode_settings.default_length }}">
+      <input type="hidden" name="barcode_allowed_chars" value="{{ barcode_settings.allowed_chars }}">
+      <input type="hidden" name="mrp_rounding" value="{{ pricing_settings.mrp_rounding }}">
+
+      <div class="digit-map-grid">
+        {% for digit in range(10) %}
+          <label>
+            Digit {{ digit }}
+            <input name="digit_{{ digit }}_code" value="{{ price_code_settings.digit_to_code.get(digit|string, '') }}" maxlength="12">
+          </label>
+        {% endfor %}
+      </div>
+      <label class="checkline">
+        <input type="checkbox" name="allow_price_code_extraction" value="true" {% if price_code_settings.allow_extraction %}checked{% endif %}>
+        Enable automatic price-code extraction
+      </label>
+      <div class="form-grid three">
+        <label class="span-two">
+          Test code extraction
+          <input id="priceCodeTestInput" placeholder="Example: XXDDD">
+        </label>
+        <div class="form-actions pricing-actions">
+          <button class="button" type="button" id="priceCodeTestButton">Test</button>
+        </div>
+      </div>
+      <div class="workflow-state compact-message" id="priceCodeTestOutput" hidden></div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">Save Price Code Settings</button>
       </div>
     </form>
   </section>
@@ -121,4 +170,69 @@
       </a>
     </div>
   </details>
+  <script>
+    const priceCodeForm = document.getElementById("priceCodeSettingsForm");
+    const priceCodeTestInput = document.getElementById("priceCodeTestInput");
+    const priceCodeTestButton = document.getElementById("priceCodeTestButton");
+    const priceCodeTestOutput = document.getElementById("priceCodeTestOutput");
+
+    function currentDigitMap() {
+      const map = {};
+      for (let digit = 0; digit <= 9; digit += 1) {
+        const input = priceCodeForm.querySelector(`[name="digit_${digit}_code"]`);
+        map[String(digit)] = (input ? input.value : "").trim().toUpperCase();
+      }
+      return map;
+    }
+
+    function decodePriceCodeGroup(group, digitMap) {
+      const reverse = {};
+      Object.entries(digitMap).forEach(([digit, code]) => {
+        if (code) reverse[code] = digit;
+      });
+      const tokens = Object.keys(reverse).sort((left, right) => right.length - left.length);
+      if (!tokens.length) return "";
+      const matches = [];
+      function walk(index, digits) {
+        if (matches.length > 1) return;
+        if (index === group.length) {
+          matches.push(digits.join(""));
+          return;
+        }
+        tokens.forEach(token => {
+          if (group.startsWith(token, index)) {
+            walk(index + token.length, [...digits, reverse[token]]);
+          }
+        });
+      }
+      walk(0, []);
+      return matches.length === 1 ? matches[0] : "";
+    }
+
+    function testPriceCode() {
+      const digitMap = currentDigitMap();
+      const letters = Array.from(new Set(Object.values(digitMap).join("").toUpperCase().split("").filter(Boolean))).join("");
+      const input = (priceCodeTestInput.value || "").toUpperCase();
+      if (!letters || !input) {
+        priceCodeTestOutput.textContent = "Enter the digit mapping and a test value first.";
+        priceCodeTestOutput.hidden = false;
+        return;
+      }
+      const pattern = new RegExp(`[${letters.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}]+`, "g");
+      const matches = [];
+      let match;
+      while ((match = pattern.exec(input)) !== null) {
+        const digits = decodePriceCodeGroup(match[0], digitMap);
+        if (digits) {
+          matches.push(`${match[0]} -> ${digits}`);
+        }
+      }
+      priceCodeTestOutput.textContent = matches.length ? matches.join("; ") : "No valid price code found.";
+      priceCodeTestOutput.hidden = false;
+    }
+
+    if (priceCodeTestButton) {
+      priceCodeTestButton.addEventListener("click", testPriceCode);
+    }
+  </script>
 {% endblock %}

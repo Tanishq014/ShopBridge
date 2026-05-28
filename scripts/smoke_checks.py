@@ -22,7 +22,9 @@ from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import LabelVariant, PrintJob, TemplateMaster  # noqa: E402
 from app.routes import workflow  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
+from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: E402
 from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
+from app.services.settings_service import save_price_code_settings  # noqa: E402
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -48,9 +50,21 @@ def fake_print_fail(db, job, *, mode, show_bartender_window=False):
     return job
 
 
+class DummyRequest:
+    class Url:
+        path = "/new-stock"
+
+    url = Url()
+
+    def url_for(self, name, **path_params):
+        if name == "static":
+            return "/static/app.css"
+        return "#"
+
+
 def print_item(db, template, **overrides):
     data = {
-        "request": None,
+        "request": DummyRequest(),
         "workflow_mode": "print",
         "existing_variant_id": "",
         "family_id": "",
@@ -66,6 +80,9 @@ def print_item(db, template, **overrides):
         "mrp": "100",
         "selling_price": "",
         "coded_price": "AA",
+        "extra_field_values": "",
+        "selected_price_code_key": "",
+        "print_without_billing_price": False,
         "template_id": template.id,
         "copies": 1,
         "db": db,
@@ -82,6 +99,21 @@ def main() -> None:
     init_db()
     workflow.template_path_exists = lambda template: True
     workflow.process_print_job = fake_print_success
+    save_price_code_settings(
+        digit_to_code={
+            "0": "Z",
+            "1": "A",
+            "2": "D",
+            "3": "C",
+            "4": "E",
+            "5": "F",
+            "6": "G",
+            "7": "J",
+            "8": "K",
+            "9": "L",
+        },
+        allow_extraction=True,
+    )
 
     db = SessionLocal()
     try:
@@ -106,6 +138,7 @@ def main() -> None:
         assert_true(set(first_barcode) <= set(DEFAULT_BARCODE_ALLOWED_CHARS), "generated barcode used disallowed characters")
         assert_true(not has_consecutive_numbers(first_barcode), "generated barcode has consecutive numbers")
         assert_true(db.query(PrintJob).filter_by(variant_id=first.id).count() == 1, "new item print job missing")
+        assert_true(str(first.selling_price) in {"11.00", "11"}, "code field did not set selling price")
 
         print_item(
             db,
@@ -134,6 +167,94 @@ def main() -> None:
         changed_detail_variant = [item for item in toy_car_variants if item.id != first.id][0]
         assert_true(changed_detail_variant.barcode != first_barcode, "changed existing item reused the old barcode")
 
+        print_item(
+            db,
+            template,
+            existing_variant_id=str(first.id),
+            item_display_name="Toy Car",
+            mrp="100",
+            coded_price="",
+            selling_price="222",
+            size="S",
+        )
+        selling_change_variants = db.query(LabelVariant).filter_by(item_display_name="Toy Car").all()
+        assert_true(len(selling_change_variants) == 3, "changed selling price did not create a new label record")
+
+        priority_template = TemplateMaster(
+            template_id="SMOKE_PRIORITY",
+            template_name="Smoke Priority",
+            category="toys",
+            bartender_file_path=str(TMP_DIR / "priority.btw"),
+            required_fields="item_display_name,coded_price,article,barcode",
+            barcode_sample_value="13HPX",
+            active_status=True,
+        )
+        fallback_template = TemplateMaster(
+            template_id="SMOKE_FALLBACK",
+            template_name="Smoke Fallback",
+            category="toys",
+            bartender_file_path=str(TMP_DIR / "fallback.btw"),
+            required_fields="item_display_name,article,batch_no,barcode",
+            barcode_sample_value="13HPX",
+            active_status=True,
+        )
+        db.add_all([priority_template, fallback_template])
+        db.commit()
+        db.refresh(priority_template)
+        db.refresh(fallback_template)
+
+        print_item(db, priority_template, item_display_name="Priority Code", coded_price="DDD", article_no="FFF", mrp="", size="")
+        priority_item = db.query(LabelVariant).filter_by(item_display_name="Priority Code").one()
+        assert_true(str(priority_item.selling_price) in {"222.00", "222"}, "code/coded_price field did not take priority")
+
+        print_item(db, priority_template, item_display_name="Fallback Article", coded_price="XX", article_no="DDD", mrp="", size="")
+        article_item = db.query(LabelVariant).filter_by(item_display_name="Fallback Article").one()
+        assert_true(str(article_item.selling_price) in {"222.00", "222"}, "article fallback did not decode when priority failed")
+
+        print_item(db, fallback_template, item_display_name="Fallback Batch", article_no="XX", batch_no="FFF", mrp="", size="")
+        batch_item = db.query(LabelVariant).filter_by(item_display_name="Fallback Batch").one()
+        assert_true(str(batch_item.selling_price) in {"555.00", "555"}, "batch fallback did not decode")
+
+        missing_price_response = print_item(
+            db,
+            fallback_template,
+            item_display_name="Missing Price",
+            article_no="XX",
+            batch_no="YY",
+            coded_price="",
+            mrp="",
+            size="",
+        )
+        assert_true(getattr(missing_price_response, "status_code", None) == 400, "missing code/selling price did not block print")
+
+        multiple_price_response = print_item(
+            db,
+            fallback_template,
+            item_display_name="Multiple Codes",
+            article_no="DDD",
+            batch_no="FFF",
+            coded_price="",
+            mrp="",
+            size="",
+        )
+        assert_true(getattr(multiple_price_response, "status_code", None) == 400, "multiple codes did not require choice")
+
+        print_item(
+            db,
+            fallback_template,
+            item_display_name="Manual Selling",
+            article_no="FFF",
+            batch_no="XX",
+            coded_price="",
+            selling_price="222",
+            mrp="",
+            size="",
+        )
+        manual_item = db.query(LabelVariant).filter_by(item_display_name="Manual Selling").one()
+        assert_true(manual_item.coded_price == "DDD", "manual selling price did not generate coded price")
+        billing_item = lookup_saved_price_by_barcode(db, manual_item.barcode)
+        assert_true(str(billing_item.selling_price) in {"222.00", "222"}, "billing lookup did not use saved selling price")
+
         try:
             assign_barcode(db, first_barcode)
             raise AssertionError("duplicate barcode was not blocked")
@@ -146,7 +267,7 @@ def main() -> None:
             template,
             item_display_name="Toy Truck",
             mrp="150",
-            coded_price="BB",
+            coded_price="DD",
             size="M",
         )
         failed_variant = db.query(LabelVariant).filter_by(item_display_name="Toy Truck").one()

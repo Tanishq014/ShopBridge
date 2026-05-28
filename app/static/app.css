@@ -216,6 +216,18 @@ h3 {
   align-self: end;
 }
 
+.digit-map-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(90px, 1fr));
+}
+
+.choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .span-two {
   grid-column: span 2;
 }
@@ -1025,6 +1037,7 @@ tbody tr:last-child td {
   .status-strip,
   .workflow-grid,
   .settings-grid,
+  .digit-map-grid,
   .field-checks,
   .field-default-inputs,
   .field-defaults {

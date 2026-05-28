@@ -38,7 +38,10 @@
             <td>{{ variant.size or "" }}</td>
             <td>{{ variant.color or "" }}</td>
             <td>{{ "%.2f"|format(variant.mrp or 0) }}</td>
-            <td>{{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}</td>
+            <td>
+              {{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}
+              {% if variant.billing_price_missing %}<span class="badge warn">missing</span>{% endif %}
+            </td>
             <td>{{ variant.coded_price or "" }}</td>
             <td><span class="badge {{ 'ok' if variant.status == 'active' else 'muted' }}">{{ variant.status }}</span></td>
             <td class="row-actions">
