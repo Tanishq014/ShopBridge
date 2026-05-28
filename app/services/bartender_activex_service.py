@@ -4,7 +4,13 @@ import os
 import logging
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+
+try:
+    import pythoncom  # type: ignore
+    from win32com.client import VARIANT  # type: ignore
+except ImportError:
+    pythoncom = None
+    VARIANT = None
 
 
 logger = logging.getLogger(__name__)
@@ -149,6 +155,21 @@ def _exception_detail(exc: Exception) -> str:
     return " | ".join(part for part in parts if part)
 
 
+def _ensure_preview_com_helpers() -> None:
+    if pythoncom is None or VARIANT is None:
+        raise BarTenderActiveXError(
+            "pywin32 preview support is not installed. Run: pip install -r requirements.txt"
+        )
+
+
+def _message_variant_detail(messages: Any) -> str:
+    try:
+        value = messages.value
+    except Exception:
+        value = None
+    return "" if value is None else str(value)
+
+
 def extract_named_substring_values(template_path: str) -> dict[str, str]:
     path = _validate_template_path(template_path)
     win32com_client = _win32com_client()
@@ -252,7 +273,7 @@ def export_print_preview_to_image(
     output_dir: str | Path,
     *,
     visible: bool = False,
-    image_type: str = "jpg",
+    image_type: str = "png",
     dpi: int = 200,
 ) -> Path:
     path = _validate_template_path(template_path)
@@ -263,8 +284,13 @@ def export_print_preview_to_image(
     constants = win32com_client.constants
     preview_dir = Path(output_dir)
     preview_dir.mkdir(parents=True, exist_ok=True)
-    token = f"preview_{uuid4().hex}"
-    file_template = f"{token}_%PageNumber%.{image_type}"
+    image_type = "png"
+    file_template = "preview_%PageNumber%.png"
+    for old_preview in preview_dir.glob("preview_*.png"):
+        try:
+            old_preview.unlink()
+        except OSError:
+            pass
 
     try:
         bt_app = _dispatch_bartender(win32com_client)
@@ -288,58 +314,40 @@ def export_print_preview_to_image(
                     f"Could not set BarTender field '{field_name}' for preview: {_exception_detail(exc)}"
                 ) from exc
 
-        colors = _constant(
-            constants,
-            ("btColors24Bit", "BtColors_btColors24Bit", "btColors24bit", "BtColors_btColors24bit"),
-            3,
-        )
-        save_option = _do_not_save_value(constants)
-        messages = None
-        try:
-            messages = win32com_client.Dispatch("BarTender.Messages")
-        except Exception:
-            messages = None
+        _ensure_preview_com_helpers()
+        msgs = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_DISPATCH, None)
 
         try:
-            bt_format.ExportPrintPreviewToImage(
+            result = bt_format.ExportPrintPreviewRangeToImage(
+                "1",
                 str(preview_dir),
                 file_template,
-                image_type,
-                colors,
+                "png",
+                4,
                 dpi,
                 16777215,
-                save_option,
+                1,
                 True,
-                False,
-                messages,
+                True,
+                msgs,
             )
-        except Exception as first_exc:
-            try:
-                bt_format.ExportPrintPreviewToImage(
-                    str(preview_dir),
-                    file_template,
-                    image_type,
-                    colors,
-                    dpi,
-                    16777215,
-                    save_option,
-                    True,
-                    False,
-                )
-            except Exception as second_exc:
-                raise BarTenderActiveXError(
-                    "BarTender could not export a preview image for this template. "
-                    f"First attempt: {_exception_detail(first_exc)}. "
-                    f"Second attempt: {_exception_detail(second_exc)}."
-                ) from second_exc or first_exc
+        except Exception as exc:
+            raise BarTenderActiveXError(
+                "BarTender could not export a preview image with ExportPrintPreviewRangeToImage. "
+                f"Error: {_exception_detail(exc)}. "
+                f"Result: not returned. "
+                f"Messages: {_message_variant_detail(msgs)}. "
+                f"Output dir: {preview_dir}."
+            ) from exc
 
-        files = sorted(preview_dir.glob(f"{token}_*.{image_type}"))
-        if not files:
-            direct_path = preview_dir / file_template.replace("%PageNumber%", "1")
-            if direct_path.exists():
-                files = [direct_path]
-        if not files:
-            raise BarTenderActiveXError("BarTender did not create a preview image.")
+        files = sorted(preview_dir.glob("preview_*.png"))
+        if result != 0 or not files:
+            raise BarTenderActiveXError(
+                "BarTender preview export did not complete. "
+                f"Result: {result}. "
+                f"Messages: {_message_variant_detail(msgs)}. "
+                f"Output dir: {preview_dir}."
+            )
         return files[0]
     finally:
         _close_without_saving(bt_format, constants)

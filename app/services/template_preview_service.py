@@ -11,13 +11,16 @@ TEMPLATE_PREVIEWS_DIR = PREVIEWS_DIR / "templates"
 
 
 def cached_template_preview_path(template: TemplateMaster) -> Path:
-    return TEMPLATE_PREVIEWS_DIR / f"template_{template.id}.jpg"
+    return TEMPLATE_PREVIEWS_DIR / f"template_{template.id}.png"
 
 
 def clear_cached_template_preview(template: TemplateMaster) -> None:
-    path = cached_template_preview_path(template)
-    if path.exists():
-        path.unlink()
+    for path in (
+        cached_template_preview_path(template),
+        TEMPLATE_PREVIEWS_DIR / f"template_{template.id}.jpg",
+    ):
+        if path.exists():
+            path.unlink()
 
 
 def cached_template_preview_url(template: TemplateMaster) -> str:

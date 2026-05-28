@@ -458,7 +458,7 @@ def cached_template_preview_image(template_id: int, db: Session = Depends(get_db
     path = cached_template_preview_path(template)
     if not path.is_file():
         return JSONResponse({"error": "Template preview has not been cached yet."}, status_code=404)
-    return FileResponse(path, media_type="image/jpeg", filename=path.name)
+    return FileResponse(path, media_type="image/png", filename=path.name)
 
 
 @router.post("/new-stock/preview-image")
@@ -509,7 +509,7 @@ def preview_template_image(
         )
     except BarTenderActiveXError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    return FileResponse(path, media_type="image/jpeg", filename=path.name)
+    return FileResponse(path, media_type="image/png", filename=path.name)
 
 
 @router.post("/new-stock/print", response_class=HTMLResponse)
