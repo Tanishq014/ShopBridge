@@ -55,6 +55,15 @@
         Allowed generated characters
         <input name="barcode_allowed_chars" value="{{ barcode_settings.allowed_chars }}">
       </label>
+      <label>
+        MRP rounding
+        <select name="mrp_rounding">
+          <option value="1" {% if pricing_settings.mrp_rounding == 1 %}selected{% endif %}>Upper nearest 1</option>
+          <option value="5" {% if pricing_settings.mrp_rounding == 5 %}selected{% endif %}>Upper nearest 5</option>
+          <option value="10" {% if pricing_settings.mrp_rounding == 10 %}selected{% endif %}>Upper nearest 10</option>
+          <option value="9" {% if pricing_settings.mrp_rounding == 9 %}selected{% endif %}>Upper price ending 9</option>
+        </select>
+      </label>
       <div class="form-actions">
         <button class="button primary" type="submit">Save Settings</button>
       </div>

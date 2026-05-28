@@ -207,6 +207,15 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.form-grid.pricing-grid {
+  align-items: end;
+  grid-template-columns: minmax(210px, 1.4fr) repeat(3, minmax(110px, 1fr)) auto;
+}
+
+.pricing-actions {
+  align-self: end;
+}
+
 .span-two {
   grid-column: span 2;
 }
@@ -1010,6 +1019,7 @@ tbody tr:last-child td {
 
   .two-column,
   .form-grid.three,
+  .form-grid.pricing-grid,
   .inline-form,
   .stat-grid,
   .status-strip,

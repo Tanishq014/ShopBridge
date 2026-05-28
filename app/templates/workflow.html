@@ -77,7 +77,7 @@
           <h2>Item</h2>
           <span class="mode-pill" id="modePill">New or selected item</span>
         </div>
-        <div class="form-grid three">
+        <div class="form-grid pricing-grid">
           <label>
             Billing Item <span class="field-hint-inline">(used later for billing/scanning)</span>
             <input name="family_name" id="familyName" list="familyOptions">
@@ -87,15 +87,23 @@
               {% endfor %}
             </datalist>
           </label>
-          <label id="mrpField" data-field="mrp">
-            MRP
-            <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
-          </label>
           <label id="sellingField" data-field="selling_price">
             Selling price
             <input name="selling_price" id="sellingInput" type="number" min="0" step="0.01">
           </label>
+          <label>
+            Margin %
+            <input name="margin_percent" id="marginInput" type="number" min="0" max="99.99" step="0.01">
+          </label>
+          <label id="mrpField" data-field="mrp">
+            MRP
+            <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
+          </label>
+          <div class="form-actions pricing-actions">
+            <button class="button" type="button" id="calculateMrpButton">Calculate MRP</button>
+          </div>
         </div>
+        <div class="workflow-state warn-state compact-message" id="pricingCalcMessage" hidden></div>
         <div class="form-grid three">
           <label id="brandField" data-field="brand">
             Brand
@@ -273,6 +281,7 @@
     const categories = {{ categories|tojson }};
     const initialVariantId = "{{ initial_variant_id or '' }}";
     const initialDuplicate = {{ 'true' if initial_duplicate else 'false' }};
+    const mrpRounding = Number({{ pricing_settings.mrp_rounding|tojson }});
 
     const form = document.getElementById("stockForm");
     const workflowMode = document.getElementById("workflowMode");
@@ -295,6 +304,8 @@
     const priceDecisionWarning = document.getElementById("priceDecisionWarning");
     const createNewPriceButton = document.getElementById("createNewPriceButton");
     const updateExistingPriceButton = document.getElementById("updateExistingPriceButton");
+    const calculateMrpButton = document.getElementById("calculateMrpButton");
+    const pricingCalcMessage = document.getElementById("pricingCalcMessage");
     const barcodeSummary = document.getElementById("barcodeSummary");
     const manualBarcodeOverride = document.getElementById("manualBarcodeOverride");
     const regenerateBarcodeButton = document.getElementById("regenerateBarcodeButton");
@@ -333,6 +344,7 @@
       expiry: document.getElementById("expiryInput"),
       mrp: document.getElementById("mrpInput"),
       selling: document.getElementById("sellingInput"),
+      margin: document.getElementById("marginInput"),
       coded: document.getElementById("codedInput"),
       copies: document.getElementById("copiesInput")
     };
@@ -404,6 +416,63 @@
       return Number.isFinite(number) ? number.toFixed(2) : clean;
     }
 
+    function upperRound(value, rounding) {
+      if (!Number.isFinite(value)) {
+        return value;
+      }
+      if (rounding === 9) {
+        const integerValue = Math.ceil(value);
+        const remainder = integerValue % 10;
+        return remainder <= 9 ? integerValue + ((9 - remainder) % 10) : integerValue;
+      }
+      const step = [1, 5, 10].includes(rounding) ? rounding : 5;
+      return Math.ceil(value / step) * step;
+    }
+
+    function showPricingMessage(message) {
+      pricingCalcMessage.textContent = message;
+      pricingCalcMessage.hidden = !message;
+    }
+
+    function calculateMrpFromMargin() {
+      const sellingRaw = String(fields.selling.value || "").trim();
+      const marginRaw = String(fields.margin.value || "").trim();
+      const sellingPrice = Number(sellingRaw);
+      const marginPercent = Number(marginRaw);
+      if (!sellingRaw || !Number.isFinite(sellingPrice) || sellingPrice <= 0) {
+        showPricingMessage("Enter Selling Price before calculating MRP.");
+        fields.selling.focus();
+        fields.selling.select();
+        return;
+      }
+      if (!marginRaw || !Number.isFinite(marginPercent)) {
+        showPricingMessage("Enter Margin % before calculating MRP.");
+        fields.margin.focus();
+        fields.margin.select();
+        return;
+      }
+      if (marginPercent < 0) {
+        showPricingMessage("Margin % cannot be negative.");
+        fields.margin.focus();
+        fields.margin.select();
+        return;
+      }
+      if (marginPercent >= 100) {
+        showPricingMessage("Margin % must be less than 100.");
+        fields.margin.focus();
+        fields.margin.select();
+        return;
+      }
+      const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
+      fields.mrp.value = upperRound(calculatedMrp, mrpRounding).toFixed(2);
+      showPricingMessage("");
+      clearActualPreview();
+      updatePreview();
+      saveWorkflowState();
+      fields.mrp.focus();
+      fields.mrp.select();
+    }
+
     function setMode(mode, label) {
       workflowMode.value = mode;
       modePill.textContent = label;
@@ -449,6 +518,7 @@
         fields.expiry,
         fields.mrp,
         fields.selling,
+        fields.margin,
         fields.coded,
         fields.copies
       ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
@@ -914,6 +984,7 @@
         expiry: fields.expiry.value,
         mrp: fields.mrp.value,
         selling_price: fields.selling.value,
+        margin_percent: fields.margin.value,
         coded_price: fields.coded.value,
         copies: fields.copies.value
       };
@@ -955,6 +1026,7 @@
       fields.expiry.value = saved.expiry || "";
       fields.mrp.value = saved.mrp || "";
       fields.selling.value = saved.selling_price || "";
+      fields.margin.value = saved.margin_percent || "";
       fields.coded.value = saved.coded_price || "";
       fields.copies.value = saved.copies || "1";
       return true;
@@ -1227,19 +1299,28 @@
     Object.values(fields).forEach(field => {
       field.addEventListener("input", () => {
         clearActualPreview();
+        showPricingMessage("");
         updatePreview();
         saveWorkflowState();
       });
       field.addEventListener("change", () => {
         clearActualPreview();
+        showPricingMessage("");
         updatePreview();
         saveWorkflowState();
       });
     });
 
     actualPreviewButton.addEventListener("click", generateActualPreview);
+    calculateMrpButton.addEventListener("click", calculateMrpFromMargin);
+    fields.margin.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        calculateMrpFromMargin();
+      }
+    });
 
-    Array.from(new Set([variantSearch, familyName, ...Object.values(inputByField)])).forEach(field => {
+    Array.from(new Set([variantSearch, familyName, fields.margin, ...Object.values(inputByField)])).forEach(field => {
       field.addEventListener("focus", () => field.select());
       field.addEventListener("click", () => field.select());
       field.addEventListener("keydown", handleEntryArrowNavigation);

@@ -31,8 +31,10 @@ from app.services.price_code_service import generate_coded_price
 from app.services.settings_service import (
     get_barcode_settings,
     get_bartender_settings,
+    get_pricing_settings,
     save_barcode_settings,
     save_bartender_settings,
+    save_pricing_settings,
 )
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 from app.services.template_preview_service import (
@@ -513,6 +515,7 @@ def _workflow_context(
         "selected_category": selected_category,
         "initial_variant_id": initial_variant_id,
         "initial_duplicate": initial_duplicate,
+        "pricing_settings": get_pricing_settings(),
         "template_path_exists": template_path_exists,
         "template_warning": (
             "No active template was found. Add one in Settings -> Templates."
@@ -1090,6 +1093,7 @@ def settings(
             "ready_to_label": bool(ready_templates),
             "bartender_settings": get_bartender_settings(),
             "barcode_settings": get_barcode_settings(),
+            "pricing_settings": get_pricing_settings(),
             "settings_saved": bool(settings_saved),
         },
     )
@@ -1102,6 +1106,7 @@ def update_bartender_settings(
     barcode_generation_mode: str = Form("template_length_safe_alphanumeric"),
     default_barcode_length: int = Form(6),
     barcode_allowed_chars: str = Form("23456789BFGJKLMNQRUVWXY"),
+    mrp_rounding: int = Form(5),
     db: Session = Depends(get_db),
 ):
     save_bartender_settings(
@@ -1113,4 +1118,5 @@ def update_bartender_settings(
         default_length=default_barcode_length,
         allowed_chars=barcode_allowed_chars,
     )
+    save_pricing_settings(mrp_rounding=mrp_rounding)
     return RedirectResponse("/settings?settings_saved=1", status_code=303)

@@ -17,6 +17,9 @@ BARCODE_ALLOWED_CHARS_KEY = "barcode_allowed_chars"
 BARCODE_GENERATION_MODE = "template_length_safe_alphanumeric"
 DEFAULT_BARCODE_ALLOWED_CHARS = "23456789BFGJKLMNQRUVWXY"
 VALID_BARCODE_MODES = {BARCODE_GENERATION_MODE}
+MRP_ROUNDING_KEY = "mrp_rounding"
+DEFAULT_MRP_ROUNDING = 5
+VALID_MRP_ROUNDING = {1, 5, 10, 9}
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,11 @@ class BarcodeSettings:
     @property
     def length(self) -> int:
         return self.default_length
+
+
+@dataclass(frozen=True)
+class PricingSettings:
+    mrp_rounding: int
 
 
 def _default_mode() -> str:
@@ -97,6 +105,9 @@ def ensure_default_settings() -> None:
     if BARCODE_ALLOWED_CHARS_KEY not in settings:
         settings[BARCODE_ALLOWED_CHARS_KEY] = DEFAULT_BARCODE_ALLOWED_CHARS
         changed = True
+    if MRP_ROUNDING_KEY not in settings:
+        settings[MRP_ROUNDING_KEY] = str(DEFAULT_MRP_ROUNDING)
+        changed = True
     if changed:
         _write_settings(settings)
 
@@ -153,6 +164,14 @@ def _barcode_allowed_chars(value: str | None) -> str:
     return "".join(allowed) or DEFAULT_BARCODE_ALLOWED_CHARS
 
 
+def _mrp_rounding(value: str | int | None) -> int:
+    try:
+        rounding = int(value or DEFAULT_MRP_ROUNDING)
+    except (TypeError, ValueError):
+        rounding = DEFAULT_MRP_ROUNDING
+    return rounding if rounding in VALID_MRP_ROUNDING else DEFAULT_MRP_ROUNDING
+
+
 def get_barcode_settings() -> BarcodeSettings:
     ensure_default_settings()
     settings = _read_settings()
@@ -164,6 +183,12 @@ def get_barcode_settings() -> BarcodeSettings:
         default_length=_barcode_length(settings.get(DEFAULT_BARCODE_LENGTH_KEY)),
         allowed_chars=_barcode_allowed_chars(settings.get(BARCODE_ALLOWED_CHARS_KEY)),
     )
+
+
+def get_pricing_settings() -> PricingSettings:
+    ensure_default_settings()
+    settings = _read_settings()
+    return PricingSettings(mrp_rounding=_mrp_rounding(settings.get(MRP_ROUNDING_KEY)))
 
 
 def save_barcode_settings(
@@ -182,3 +207,10 @@ def save_barcode_settings(
     settings[BARCODE_ALLOWED_CHARS_KEY] = _barcode_allowed_chars(allowed_chars)
     _write_settings(settings)
     return get_barcode_settings()
+
+
+def save_pricing_settings(*, mrp_rounding: int) -> PricingSettings:
+    settings = _read_settings()
+    settings[MRP_ROUNDING_KEY] = str(_mrp_rounding(mrp_rounding))
+    _write_settings(settings)
+    return get_pricing_settings()
