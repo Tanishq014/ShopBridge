@@ -8,6 +8,10 @@
     </div>
   </section>
 
+  {% if settings_saved %}
+    <div class="notice">BarTender print settings saved.</div>
+  {% endif %}
+
   <section class="setup-hero {{ 'ready' if ready_to_label else 'needs-work' }}">
     <div>
       <span class="setup-kicker">{{ "Ready" if ready_to_label else "Setup needed" }}</span>
@@ -18,6 +22,29 @@
       <a class="button primary" href="/new-stock">Open New Stock</a>
       <a class="button" href="/templates">Templates</a>
     </div>
+  </section>
+
+  <section class="panel setup-panel">
+    <div class="section-line">
+      <h2>BarTender Printing</h2>
+      <span class="badge {{ 'ok' if bartender_settings.mode == 'activex' else 'warn' }}">{{ bartender_settings.mode }}</span>
+    </div>
+    <form class="form-grid three" method="post" action="/settings/bartender">
+      <label>
+        Print mode
+        <select name="mode">
+          <option value="activex" {% if bartender_settings.mode == "activex" %}selected{% endif %}>ActiveX direct print</option>
+          <option value="csv" {% if bartender_settings.mode == "csv" %}selected{% endif %}>CSV fallback/debug</option>
+        </select>
+      </label>
+      <label class="checkline">
+        <input type="checkbox" name="show_bartender_window" value="true" {% if bartender_settings.show_bartender_window %}checked{% endif %}>
+        Show BarTender window while printing
+      </label>
+      <div class="form-actions">
+        <button class="button primary" type="submit">Save Print Settings</button>
+      </div>
+    </form>
   </section>
 
   <section class="status-strip">

@@ -30,3 +30,10 @@ BARTEND_EXE_PATH = os.getenv(
 )
 DEFAULT_TALLY_DSN = os.getenv("SHOPBRIDGE_TALLY_DSN", "TallyODBC64_9000")
 
+BARTENDER_MODE = os.getenv("SHOPBRIDGE_BARTENDER_MODE", "activex").strip().lower()
+SHOW_BARTENDER_WINDOW = os.getenv("SHOPBRIDGE_SHOW_BARTENDER_WINDOW", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}

@@ -64,7 +64,9 @@ bartender_templates\
 
 ShopBridge scans that folder on startup and when opening Settings or New Stock. Imported templates start with no required fields until you click `Extract from BarTender template` or manually tick fields in Settings. Label size, margins, logo position, barcode position, and saved printer setup stay inside the `.btw` file.
 
-This MVP creates CSV files in:
+Normal printing uses BarTender ActiveX direct print. ShopBridge opens the selected `.btw`, sets named data source values, sets copies, prints without showing the print dialog, then closes without saving the `.btw`.
+
+CSV mode remains available in Settings as a fallback/debug route. CSV fallback files are written in:
 
 ```text
 print_jobs\
@@ -72,15 +74,16 @@ print_jobs\
 
 Each CSV includes common fields such as barcode, brand, item name, article number, size, MRP, coded price, template path, printer name, and copies.
 
-The service also contains a future `run_bartend_exe()` function in:
+BarTender mode can also be set before startup with:
 
-```text
-app\services\bartender_service.py
+```powershell
+$env:SHOPBRIDGE_BARTENDER_MODE="activex"
+$env:SHOPBRIDGE_SHOW_BARTENDER_WINDOW="false"
 ```
 
-It is not called automatically yet.
+The BarTender window is hidden by default during normal printing.
 
-The BarTender executable path can be configured with:
+The legacy `bartend.exe` command path is kept for debug helpers and can be configured with:
 
 ```powershell
 $env:SHOPBRIDGE_BARTEND_EXE_PATH="C:\Program Files (x86)\Seagull\BarTender Suite\bartend.exe"

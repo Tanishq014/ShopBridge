@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import BARTEND_EXE_PATH, PRINT_JOBS_DIR
 from app.models import PrintJob
+from app.services.bartender_activex_service import print_with_named_substrings
 from app.services.field_config import parse_required_fields
 
 
@@ -97,6 +98,86 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
     db.commit()
     db.refresh(job)
     return path
+
+
+def _named_substring_values(job: PrintJob) -> dict[str, str]:
+    variant = job.variant
+    family = variant.family
+    field_values = {
+        "barcode": variant.barcode,
+        "brand": variant.brand or "",
+        "item_display_name": variant.item_display_name,
+        "family_name": family.family_name,
+        "article": variant.article_no or "",
+        "article_no": variant.article_no or "",
+        "size": variant.size or "",
+        "batch_no": variant.batch_no or "",
+        "expiry": variant.expiry or "",
+        "mrp": _money(variant.mrp),
+        "selling_price": _money(variant.selling_price),
+        "coded_price": variant.coded_price or "",
+    }
+    return {
+        field_name: field_values.get(field_name, "")
+        for field_name in parse_required_fields(job.template.required_fields)
+    }
+
+
+def _mark_failed(db: Session, job: PrintJob, error_message: str) -> PrintJob:
+    job.status = "failed"
+    job.printed_at = None
+    job.error_message = error_message[:1800]
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def process_print_job(
+    db: Session,
+    job: PrintJob,
+    *,
+    mode: str,
+    show_bartender_window: bool = False,
+) -> PrintJob:
+    db.refresh(job)
+    clean_mode = mode.strip().lower()
+    if clean_mode == "csv":
+        try:
+            create_csv_print_job(db, job)
+        except Exception as exc:
+            return _mark_failed(db, job, f"CSV print job generation failed: {exc}")
+        db.refresh(job)
+        return job
+
+    values = _named_substring_values(job)
+    try:
+        print_with_named_substrings(
+            job.template.bartender_file_path,
+            values,
+            job.copies,
+            visible=show_bartender_window,
+        )
+    except Exception as exc:
+        active_x_error = str(exc)
+        try:
+            fallback_path = create_csv_print_job(db, job)
+            fallback_message = f"CSV fallback created: {fallback_path}"
+        except Exception as csv_exc:
+            fallback_message = f"CSV fallback also failed: {csv_exc}"
+        return _mark_failed(
+            db,
+            job,
+            f"ActiveX print failed: {active_x_error}. {fallback_message}",
+        )
+
+    job.status = "printed"
+    job.printed_at = datetime.utcnow()
+    job.error_message = None
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
 
 
 def build_bartend_command(job: PrintJob, bartend_exe_path: str = BARTEND_EXE_PATH) -> list[str]:

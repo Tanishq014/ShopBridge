@@ -14,7 +14,7 @@ from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
 from app.services.barcode_service import assign_barcode
 from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substring_values
-from app.services.bartender_service import create_csv_print_job
+from app.services.bartender_service import process_print_job
 from app.services.field_config import (
     SUPPORTED_FIELDS,
     field_label,
@@ -24,6 +24,7 @@ from app.services.field_config import (
     parse_required_fields,
 )
 from app.services.price_code_service import generate_coded_price
+from app.services.settings_service import get_bartender_settings, save_bartender_settings
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 
 
@@ -227,9 +228,26 @@ def _create_print_job(
     db.add(job)
     db.commit()
     db.refresh(job)
-    create_csv_print_job(db, job)
+    settings = get_bartender_settings()
+    process_print_job(
+        db,
+        job,
+        mode=settings.mode,
+        show_bartender_window=settings.show_bartender_window,
+    )
     db.refresh(job)
     return job
+
+
+def _print_redirect(job: PrintJob, template: TemplateMaster, category: str = "clothes") -> RedirectResponse:
+    query: dict[str, object] = {
+        "printed": job.id,
+        "template_id": template.id,
+        "category": category,
+    }
+    if job.status == "failed" and job.error_message:
+        query["print_error"] = job.error_message
+    return RedirectResponse(f"/new-stock?{urlencode(query)}", status_code=303)
 
 
 def _workflow_context(
@@ -290,9 +308,20 @@ def new_stock(
     category: str = "clothes",
     extracted: str | None = None,
     extract_error: str | None = None,
+    print_error: str | None = None,
     db: Session = Depends(get_db),
 ):
-    message = f"Print job #{printed} created." if printed else None
+    message = None
+    if printed:
+        job = db.get(PrintJob, printed)
+        if job and job.status == "printed":
+            message = f"Print job #{printed} sent to BarTender."
+        elif job and job.status == "pending":
+            message = f"CSV print job #{printed} created."
+        elif job and job.status == "failed":
+            message = f"Print job #{printed} failed. CSV fallback may be available."
+        else:
+            message = f"Print job #{printed} created."
     if extracted:
         message = f"Extracted fields: {extracted}"
     return templates.TemplateResponse(
@@ -302,7 +331,7 @@ def new_stock(
             request,
             db,
             message=message,
-            error=extract_error,
+            error=print_error or extract_error,
             selected_template_id=template_id,
             selected_category=category,
         ),
@@ -395,12 +424,9 @@ def print_new_stock(
                 "workflow.html",
                 _workflow_context(request, db, error="Select an existing item before quick reprint."),
                 status_code=400,
-            )
-        job = _create_print_job(db, source_variant, template, copies)
-        return RedirectResponse(
-            f"/new-stock?{urlencode({'printed': job.id, 'template_id': template.id, 'category': category})}",
-            status_code=303,
         )
+        job = _create_print_job(db, source_variant, template, copies)
+        return _print_redirect(job, template, category)
 
     required_fields = parse_required_fields(template.required_fields)
     required_field_set = set(required_fields)
@@ -524,14 +550,11 @@ def print_new_stock(
         return templates.TemplateResponse(
             request,
             "workflow.html",
-            _workflow_context(request, db, error=f"Variant saved, but print CSV failed: {exc}"),
+            _workflow_context(request, db, error=f"Variant saved, but print job failed: {exc}"),
             status_code=500,
         )
 
-    return RedirectResponse(
-        f"/new-stock?{urlencode({'printed': job.id, 'template_id': template.id, 'category': category})}",
-        status_code=303,
-    )
+    return _print_redirect(job, template, category)
 
 
 @router.post("/new-stock/quick-reprint")
@@ -553,7 +576,7 @@ def quick_reprint(
         return RedirectResponse("/new-stock", status_code=303)
 
     job = _create_print_job(db, variant, template, copies)
-    return RedirectResponse(f"/new-stock?printed={job.id}", status_code=303)
+    return _print_redirect(job, template, variant.family.category or "clothes")
 
 
 @router.get("/recent-prints", response_class=HTMLResponse)
@@ -576,7 +599,7 @@ def reprint_job(job_id: int, db: Session = Depends(get_db)):
     old_job = db.get(PrintJob, job_id)
     if old_job and old_job.variant and old_job.template:
         job = _create_print_job(db, old_job.variant, old_job.template, old_job.copies)
-        return RedirectResponse(f"/new-stock?printed={job.id}", status_code=303)
+        return _print_redirect(job, old_job.template, old_job.variant.family.category or "clothes")
     return RedirectResponse("/recent-prints", status_code=303)
 
 
@@ -608,7 +631,11 @@ def reports(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/settings", response_class=HTMLResponse)
-def settings(request: Request, db: Session = Depends(get_db)):
+def settings(
+    request: Request,
+    settings_saved: int | None = None,
+    db: Session = Depends(get_db),
+):
     scan_bartender_template_folder(db)
     template_rows = db.execute(select(TemplateMaster).order_by(TemplateMaster.template_name)).scalars().all()
     active_templates = [template for template in template_rows if template.active_status]
@@ -639,5 +666,20 @@ def settings(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "stats": stats,
             "ready_to_label": bool(ready_templates),
+            "bartender_settings": get_bartender_settings(),
+            "settings_saved": bool(settings_saved),
         },
     )
+
+
+@router.post("/settings/bartender")
+def update_bartender_settings(
+    mode: str = Form("activex"),
+    show_bartender_window: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    save_bartender_settings(
+        mode=mode,
+        show_bartender_window=show_bartender_window,
+    )
+    return RedirectResponse("/settings?settings_saved=1", status_code=303)
