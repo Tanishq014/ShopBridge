@@ -44,9 +44,13 @@
               {% endfor %}
             </select>
           </label>
-          <label>
-            Qty labels
-            <input name="copies" id="copiesInput" type="number" min="1" value="1" required>
+          <label class="span-two">
+            Search existing item
+            <div class="combo" id="variantCombo">
+              <input id="variantSearch" autocomplete="off" placeholder="Type to find an item; template will follow the selection" role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
+              <button class="combo-toggle" type="button" id="variantSearchToggle">Show</button>
+              <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
+            </div>
           </label>
         </div>
       </div>
@@ -73,14 +77,6 @@
           <span class="mode-pill" id="modePill">New or selected item</span>
         </div>
         <div class="form-grid three">
-          <label class="span-two">
-            Search existing item
-            <div class="combo" id="variantCombo">
-              <input id="variantSearch" autocomplete="off" placeholder="Select existing item or type to find" role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
-              <button class="combo-toggle" type="button" id="variantSearchToggle">Show</button>
-              <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
-            </div>
-          </label>
           <label>
             Billing Item
             <span class="field-hint">Used later for billing/scanning</span>
@@ -457,7 +453,8 @@
         fields.expiry,
         fields.mrp,
         fields.selling,
-        fields.coded
+        fields.coded,
+        fields.copies
       ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
     }
 
@@ -1039,10 +1036,15 @@
 
     function filteredVariants() {
       const query = variantSearch.value.trim().toLowerCase();
-      const rows = query
-        ? variants.filter(item => variantLabel(item).toLowerCase().includes(query))
-        : variants;
-      return rows.slice(0, 30);
+      const templateId = String(templateSelect.value || "").trim();
+      const rows = variants.filter(item => {
+        if (templateId && String(item.template_id || "") !== templateId) {
+          return false;
+        }
+        return !query || variantLabel(item).toLowerCase().includes(query);
+      });
+      return rows
+        .slice(0, 30);
     }
 
     function renderVariantMenu() {
