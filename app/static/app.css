@@ -371,6 +371,7 @@ tbody tr:last-child td {
 }
 
 .notice,
+.warning,
 .error {
   border-radius: 8px;
   margin-bottom: 16px;
@@ -381,6 +382,12 @@ tbody tr:last-child td {
   background: #eaf4ff;
   border: 1px solid #b8d9ff;
   color: #164a7a;
+}
+
+.warning {
+  background: #fff8e8;
+  border: 1px solid #f0c36a;
+  color: var(--warn);
 }
 
 .error {

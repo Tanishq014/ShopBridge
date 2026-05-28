@@ -141,6 +141,14 @@ def _constant(constants: Any, names: tuple[str, ...], fallback: Any) -> Any:
     return fallback
 
 
+def _exception_detail(exc: Exception) -> str:
+    parts = [str(exc).strip()]
+    args = getattr(exc, "args", ())
+    if args:
+        parts.append(f"args={args!r}")
+    return " | ".join(part for part in parts if part)
+
+
 def extract_named_substring_values(template_path: str) -> dict[str, str]:
     path = _validate_template_path(template_path)
     win32com_client = _win32com_client()
@@ -277,7 +285,7 @@ def export_print_preview_to_image(
                 bt_format.SetNamedSubStringValue(field_name, field_value)
             except Exception as exc:
                 raise BarTenderActiveXError(
-                    f"Could not set BarTender field '{field_name}' for preview."
+                    f"Could not set BarTender field '{field_name}' for preview: {_exception_detail(exc)}"
                 ) from exc
 
         colors = _constant(
@@ -320,7 +328,9 @@ def export_print_preview_to_image(
                 )
             except Exception as second_exc:
                 raise BarTenderActiveXError(
-                    "BarTender could not export a preview image for this template."
+                    "BarTender could not export a preview image for this template. "
+                    f"First attempt: {_exception_detail(first_exc)}. "
+                    f"Second attempt: {_exception_detail(second_exc)}."
                 ) from second_exc or first_exc
 
         files = sorted(preview_dir.glob(f"{token}_*.{image_type}"))

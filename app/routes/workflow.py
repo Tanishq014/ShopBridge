@@ -267,9 +267,9 @@ def _refresh_cached_preview_error(template: TemplateMaster) -> str | None:
             visible=get_bartender_settings().show_bartender_window,
         )
     except BarTenderActiveXError as exc:
-        return f"Fields were extracted, but raw preview could not be cached: {exc}"
+        return f"Fields were extracted. Raw preview was not cached: {exc}"
     except Exception as exc:
-        return f"Fields were extracted, but raw preview could not be cached: {exc}"
+        return f"Fields were extracted. Raw preview was not cached: {exc}"
     return None
 
 
@@ -324,6 +324,7 @@ def _workflow_context(
     request: Request,
     db: Session,
     message: str | None = None,
+    warning: str | None = None,
     error: str | None = None,
     selected_template_id: int | None = None,
     selected_category: str = "clothes",
@@ -345,6 +346,7 @@ def _workflow_context(
     return {
         "request": request,
         "message": message,
+        "warning": warning,
         "error": error,
         "categories": CATEGORY_CHOICES,
         "families": families,
@@ -378,6 +380,7 @@ def new_stock(
     category: str = "clothes",
     extracted: str | None = None,
     extract_error: str | None = None,
+    preview_warning: str | None = None,
     print_error: str | None = None,
     db: Session = Depends(get_db),
 ):
@@ -401,6 +404,7 @@ def new_stock(
             request,
             db,
             message=message,
+            warning=preview_warning,
             error=print_error or extract_error,
             selected_template_id=template_id,
             selected_category=category,
@@ -439,7 +443,7 @@ def extract_workflow_template_fields(
     query = {"template_id": template.id, "category": category, "extracted": extracted}
     preview_error = _refresh_cached_preview_error(template)
     if preview_error:
-        query["extract_error"] = preview_error
+        query["preview_warning"] = preview_error
     return RedirectResponse(
         f"/new-stock?{urlencode(query)}",
         status_code=303,

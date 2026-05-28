@@ -128,9 +128,9 @@ def _refresh_cached_preview_error(template: TemplateMaster) -> str | None:
             visible=get_bartender_settings().show_bartender_window,
         )
     except BarTenderActiveXError as exc:
-        return f"Template saved, but raw preview could not be cached: {exc}"
+        return f"Template fields were saved. Raw preview was not cached: {exc}"
     except Exception as exc:
-        return f"Template saved, but raw preview could not be cached: {exc}"
+        return f"Template fields were saved. Raw preview was not cached: {exc}"
     return None
 
 
@@ -142,7 +142,7 @@ def list_templates(
     skipped: int | None = None,
     extracted: str | None = None,
     extract_error: str | None = None,
-    preview_error: str | None = None,
+    preview_warning: str | None = None,
     db: Session = Depends(get_db),
 ):
     scan_result = scan_bartender_template_folder(db)
@@ -185,7 +185,8 @@ def list_templates(
             "selected_path_in_folder": selected_path_in_folder,
             "category_choices": CATEGORY_CHOICES,
             "message": message,
-            "error": preview_error or extract_error,
+            "warning": preview_warning,
+            "error": extract_error,
             "supported_fields": SUPPORTED_FIELDS,
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
@@ -269,7 +270,7 @@ def create_template(
     preview_error = _refresh_cached_preview_error(template)
     if preview_error:
         return RedirectResponse(
-            f"/templates?{urlencode({'preview_error': preview_error})}",
+            f"/templates?{urlencode({'preview_warning': preview_error})}",
             status_code=303,
         )
     return RedirectResponse("/templates", status_code=303)
@@ -318,7 +319,7 @@ def extract_template_fields(
     query = {"extracted": extracted}
     preview_error = _refresh_cached_preview_error(template)
     if preview_error:
-        query["preview_error"] = preview_error
+        query["preview_warning"] = preview_error
     if return_to == "edit":
         query["edit_id"] = str(template.id)
     return RedirectResponse(
@@ -397,7 +398,7 @@ def update_template(
     preview_error = _refresh_cached_preview_error(template)
     if preview_error:
         return RedirectResponse(
-            f"/templates?{urlencode({'edit_id': template.id, 'preview_error': preview_error})}",
+            f"/templates?{urlencode({'edit_id': template.id, 'preview_warning': preview_error})}",
             status_code=303,
         )
     return RedirectResponse("/templates", status_code=303)
