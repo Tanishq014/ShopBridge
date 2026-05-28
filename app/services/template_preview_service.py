@@ -5,7 +5,6 @@ from pathlib import Path
 from app.config import PREVIEWS_DIR
 from app.models import TemplateMaster
 from app.services.bartender_activex_service import export_print_preview_to_image
-from app.services.field_config import parse_field_defaults
 
 
 TEMPLATE_PREVIEWS_DIR = PREVIEWS_DIR / "templates"
@@ -35,10 +34,9 @@ def refresh_cached_template_preview(template: TemplateMaster, *, visible: bool =
     TEMPLATE_PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
     clear_cached_template_preview(template)
 
-    default_values = parse_field_defaults(template.default_field_values)
     generated_path = export_print_preview_to_image(
         template.bartender_file_path,
-        default_values,
+        {},
         TEMPLATE_PREVIEWS_DIR,
         visible=visible,
     )
