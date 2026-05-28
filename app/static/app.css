@@ -429,6 +429,22 @@ tbody tr:last-child td {
   overflow-wrap: anywhere;
 }
 
+.detail-grid {
+  display: grid;
+  gap: 10px 16px;
+  grid-template-columns: 150px minmax(0, 1fr);
+  margin: 0;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.detail-grid dd {
+  margin: 0;
+}
+
 .preview-wrap {
   display: flex;
   justify-content: center;
@@ -561,6 +577,11 @@ tbody tr:last-child td {
   border-color: #f0c36a;
 }
 
+.info-state {
+  background: #eaf4ff;
+  border-color: #b8d9ff;
+}
+
 .section-line {
   align-items: center;
   display: flex;
@@ -638,7 +659,7 @@ tbody tr:last-child td {
   border-bottom: 1px solid #edf1f6;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   padding-bottom: 8px;
 }
 

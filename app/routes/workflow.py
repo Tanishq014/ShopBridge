@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
-from app.services.barcode_service import assign_barcode, generate_next_barcode
+from app.services.barcode_service import assign_barcode, generate_configured_barcode
 from app.services.bartender_activex_service import (
     BarTenderActiveXError,
     export_print_preview_to_image,
@@ -28,7 +28,12 @@ from app.services.field_config import (
     parse_required_fields,
 )
 from app.services.price_code_service import generate_coded_price
-from app.services.settings_service import get_bartender_settings, save_bartender_settings
+from app.services.settings_service import (
+    get_barcode_settings,
+    get_bartender_settings,
+    save_barcode_settings,
+    save_bartender_settings,
+)
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 from app.services.template_preview_service import (
     cached_template_preview_path,
@@ -223,12 +228,92 @@ def _find_or_create_family(
     return family
 
 
+def _same_text(left: str | None, right: str | None) -> bool:
+    return (left or "").strip().lower() == (right or "").strip().lower()
+
+
+def _same_money(left: Decimal | None, right: Decimal | None) -> bool:
+    if left is None and right is None:
+        return True
+    if left is None or right is None:
+        return False
+    return left.quantize(Decimal("0.01")) == right.quantize(Decimal("0.01"))
+
+
+def _price_changed(
+    variant: LabelVariant | None,
+    *,
+    mrp: Decimal | None,
+    selling_price: Decimal | None,
+    coded_price: str,
+) -> bool:
+    if not variant:
+        return False
+    return (
+        not _same_money(variant.mrp, mrp)
+        or not _same_money(variant.selling_price, selling_price)
+        or not _same_text(variant.coded_price, coded_price)
+    )
+
+
+def _find_exact_variant(
+    db: Session,
+    *,
+    category: str,
+    template: TemplateMaster,
+    required_fields: list[str],
+    item_display_name: str,
+    brand: str,
+    article_no: str,
+    size: str,
+    mrp: Decimal | None,
+    selling_price: Decimal | None,
+    coded_price: str,
+) -> LabelVariant | None:
+    query = (
+        select(LabelVariant)
+        .join(ProductFamily)
+        .where(LabelVariant.status == "active")
+        .where(func.lower(LabelVariant.item_display_name) == item_display_name.strip().lower())
+        .where(ProductFamily.category == category)
+        .where(LabelVariant.template_id == template.id)
+    )
+    candidates = db.execute(query).scalars().all()
+    required = set(required_fields)
+
+    for candidate in candidates:
+        if mrp is not None and not _same_money(candidate.mrp, mrp):
+            continue
+        if coded_price.strip():
+            if not _same_text(candidate.coded_price, coded_price):
+                continue
+        elif selling_price is not None and not _same_money(candidate.selling_price, selling_price):
+            continue
+        if "brand" in required and brand.strip() and not _same_text(candidate.brand, brand):
+            continue
+        if ("article" in required or "article_no" in required) and article_no.strip() and not _same_text(candidate.article_no, article_no):
+            continue
+        if "size" in required and size.strip() and not _same_text(candidate.size, size):
+            continue
+        return candidate
+    return None
+
+
 def _create_print_job(
     db: Session,
     variant: LabelVariant,
     template: TemplateMaster,
     copies: int,
 ) -> PrintJob:
+    if not variant.id:
+        raise ValueError("Cannot print before the item is saved.")
+    if not (variant.barcode or "").strip():
+        raise ValueError("Cannot print an item without a barcode.")
+    if not template or not template.id:
+        raise ValueError("Cannot print without a saved template.")
+    if not parse_required_fields(template.required_fields):
+        raise ValueError("Cannot print before extracting template fields.")
+
     job = PrintJob(
         variant_id=variant.id,
         template_id=template.id,
@@ -239,12 +324,18 @@ def _create_print_job(
     db.commit()
     db.refresh(job)
     settings = get_bartender_settings()
-    process_print_job(
-        db,
-        job,
-        mode=settings.mode,
-        show_bartender_window=settings.show_bartender_window,
-    )
+    try:
+        process_print_job(
+            db,
+            job,
+            mode=settings.mode,
+            show_bartender_window=settings.show_bartender_window,
+        )
+    except Exception as exc:
+        job.status = "failed"
+        job.error_message = f"Print failed before completion: {exc}"[:1800]
+        db.add(job)
+        db.commit()
     db.refresh(job)
     return job
 
@@ -294,7 +385,10 @@ def _form_field_values(
     barcode_value = barcode.strip()
     required_fields = parse_required_fields(template.required_fields)
     if not barcode_value and "barcode" in required_fields:
-        barcode_value = generate_next_barcode(db)
+        try:
+            barcode_value = generate_configured_barcode(db, category=template.category)
+        except ValueError:
+            barcode_value = "manual"
 
     article_value = article_no.strip()
     item_name_value = item_display_name.strip() or family_name.strip()
@@ -329,6 +423,8 @@ def _workflow_context(
     error: str | None = None,
     selected_template_id: int | None = None,
     selected_category: str = "clothes",
+    initial_variant_id: int | None = None,
+    initial_duplicate: bool = False,
 ) -> dict[str, object]:
     scan_bartender_template_folder(db)
     families = _active_families(db)
@@ -360,6 +456,8 @@ def _workflow_context(
         "size_values_json": _size_values(variants),
         "selected_template_id": selected_template_id,
         "selected_category": selected_category,
+        "initial_variant_id": initial_variant_id,
+        "initial_duplicate": initial_duplicate,
         "template_path_exists": template_path_exists,
         "template_warning": (
             "No active template was found. Add one in Settings -> Templates."
@@ -383,6 +481,8 @@ def new_stock(
     extract_error: str | None = None,
     preview_warning: str | None = None,
     print_error: str | None = None,
+    load_variant_id: int | None = None,
+    duplicate_variant_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     message = None
@@ -409,6 +509,8 @@ def new_stock(
             error=print_error or extract_error,
             selected_template_id=template_id,
             selected_category=category,
+            initial_variant_id=duplicate_variant_id or load_variant_id,
+            initial_duplicate=bool(duplicate_variant_id),
         ),
     )
 
@@ -589,6 +691,7 @@ def print_new_stock(
             return "" if stored_value is None else str(stored_value)
         return ""
 
+    final_category = category.strip().lower()
     final_family_name = family_name.strip() or item_display_name.strip()
     if not final_family_name:
         return templates.TemplateResponse(
@@ -643,23 +746,47 @@ def print_new_stock(
             status_code=400,
         )
 
+    if not source_variant and workflow_mode not in {"duplicate", "new_barcode"}:
+        source_variant = _find_exact_variant(
+            db,
+            category=final_category,
+            template=template,
+            required_fields=required_fields,
+            item_display_name=item_name_value,
+            brand=brand_value,
+            article_no=article_value,
+            size=size_value,
+            mrp=mrp_value,
+            selling_price=selling,
+            coded_price=coded,
+        )
+
     family = _find_or_create_family(
         db=db,
-        category=category.strip().lower(),
+        category=final_category,
         family_id=_int_or_none(family_id),
         family_name=final_family_name,
         item_display_name=item_name_value,
     )
 
-    update_existing = source_variant is not None and workflow_mode != "duplicate"
+    price_changed = _price_changed(
+        source_variant,
+        mrp=mrp_value,
+        selling_price=selling,
+        coded_price=coded,
+    )
+    create_new_barcode = (
+        source_variant is None
+        or workflow_mode in {"duplicate", "new_barcode"}
+        or (price_changed and workflow_mode != "update_existing")
+    )
+    update_existing = source_variant is not None and not create_new_barcode
+
     if update_existing:
         variant = source_variant
-        requested_barcode = barcode.strip()
-        if requested_barcode and requested_barcode != variant.barcode:
-            variant.barcode = assign_barcode(db, requested_barcode, exclude_variant_id=variant.id)
     else:
         try:
-            final_barcode = assign_barcode(db, barcode)
+            final_barcode = assign_barcode(db, barcode, category=final_category)
         except ValueError as exc:
             return templates.TemplateResponse(
                 request,
@@ -722,6 +849,46 @@ def quick_reprint(
 
     job = _create_print_job(db, variant, template, copies)
     return _print_redirect(job, template, variant.family.category or "clothes")
+
+
+@router.get("/items/{variant_id}", response_class=HTMLResponse)
+def item_detail(variant_id: int, request: Request, db: Session = Depends(get_db)):
+    variant = db.get(LabelVariant, variant_id)
+    if not variant:
+        return RedirectResponse("/new-stock", status_code=303)
+    jobs = db.execute(
+        select(PrintJob)
+        .where(PrintJob.variant_id == variant.id)
+        .order_by(PrintJob.created_at.desc(), PrintJob.id.desc())
+    ).scalars().all()
+    return templates.TemplateResponse(
+        request,
+        "item_detail.html",
+        {
+            "request": request,
+            "variant": variant,
+            "jobs": jobs,
+            "category": variant.family.category or "clothes",
+            "template_id": _variant_template_id(variant) or "",
+        },
+    )
+
+
+@router.post("/items/{variant_id}/reprint")
+def item_reprint(
+    variant_id: int,
+    copies: int = Form(1),
+    db: Session = Depends(get_db),
+):
+    variant = db.get(LabelVariant, variant_id)
+    if not variant:
+        return RedirectResponse("/new-stock", status_code=303)
+    selected_template_id = _variant_template_id(variant)
+    template = db.get(TemplateMaster, selected_template_id) if selected_template_id else None
+    if not template or not template.active_status:
+        return RedirectResponse(f"/items/{variant.id}", status_code=303)
+    job = _create_print_job(db, variant, template, copies)
+    return RedirectResponse(f"/items/{variant.id}?printed={job.id}", status_code=303)
 
 
 @router.get("/recent-prints", response_class=HTMLResponse)
@@ -812,6 +979,7 @@ def settings(
             "stats": stats,
             "ready_to_label": bool(ready_templates),
             "bartender_settings": get_bartender_settings(),
+            "barcode_settings": get_barcode_settings(),
             "settings_saved": bool(settings_saved),
         },
     )
@@ -821,10 +989,16 @@ def settings(
 def update_bartender_settings(
     mode: str = Form("activex"),
     show_bartender_window: bool = Form(False),
+    barcode_mode: str = Form("short_numeric"),
+    barcode_length: int = Form(6),
     db: Session = Depends(get_db),
 ):
     save_bartender_settings(
         mode=mode,
         show_bartender_window=show_bartender_window,
+    )
+    save_barcode_settings(
+        mode=barcode_mode,
+        length=barcode_length,
     )
     return RedirectResponse("/settings?settings_saved=1", status_code=303)

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Item {{ variant.barcode }} - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header compact-header">
+    <div>
+      <h1>{{ variant.item_display_name }}</h1>
+      <p class="mono">{{ variant.barcode }}</p>
+    </div>
+    <div class="form-actions">
+      <a class="button" href="/new-stock?load_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Edit / Print</a>
+      <a class="button primary" href="/new-stock?duplicate_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Duplicate / New Price</a>
+    </div>
+  </section>
+
+  <section class="workflow-grid">
+    <div class="panel">
+      <div class="section-line">
+        <h2>Saved Label Record</h2>
+        <span class="badge ok">{{ variant.status }}</span>
+      </div>
+      <dl class="detail-grid">
+        <dt>Barcode</dt><dd class="mono">{{ variant.barcode }}</dd>
+        <dt>Billing Item</dt><dd>{{ variant.family.family_name }}</dd>
+        <dt>Category</dt><dd>{{ variant.family.category or "" }}</dd>
+        <dt>Template</dt><dd>{{ variant.template.template_name if variant.template else "" }}</dd>
+        <dt>Brand</dt><dd>{{ variant.brand or "" }}</dd>
+        <dt>Sticker Name</dt><dd>{{ variant.item_display_name }}</dd>
+        <dt>Article No</dt><dd>{{ variant.article_no or "" }}</dd>
+        <dt>Size</dt><dd>{{ variant.size or "" }}</dd>
+        <dt>Batch No</dt><dd>{{ variant.batch_no or "" }}</dd>
+        <dt>Expiry</dt><dd>{{ variant.expiry or "" }}</dd>
+        <dt>MRP</dt><dd>{{ "%.2f"|format(variant.mrp) if variant.mrp is not none else "" }}</dd>
+        <dt>Selling Price</dt><dd>{{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}</dd>
+        <dt>Code</dt><dd>{{ variant.coded_price or "" }}</dd>
+      </dl>
+    </div>
+
+    <aside class="workflow-side">
+      <section class="panel">
+        <h2>Reprint</h2>
+        <form class="form-grid" method="post" action="/items/{{ variant.id }}/reprint">
+          <label>
+            Qty labels
+            <input name="copies" type="number" min="1" value="1" required>
+          </label>
+          <button class="button primary" type="submit">Reprint Same Barcode</button>
+        </form>
+      </section>
+    </aside>
+  </section>
+
+  <section class="panel">
+    <div class="section-line">
+      <h2>Print History</h2>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Copies</th>
+          <th>Created</th>
+          <th>Printed</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td>#{{ job.id }}</td>
+            <td>{{ job.status }}</td>
+            <td>{{ job.copies }}</td>
+            <td>{{ job.created_at }}</td>
+            <td>{{ job.printed_at or "" }}</td>
+            <td>{{ job.error_message or "" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6">No print jobs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

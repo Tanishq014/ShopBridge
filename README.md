@@ -36,9 +36,12 @@ data\shopbridge.db
 
 ## Barcode Rules
 
-- Internal generated barcodes start at `240000000001`.
-- Generated barcodes are unique in ShopBridge.
-- Existing company barcodes can be entered or scanned manually.
+- No label should print unless a Label Variant is saved with a non-empty unique barcode.
+- New items get a generated barcode before printing.
+- Existing items reuse their saved barcode unless `Duplicate / New Price` or `Create new barcode` is used.
+- Generated barcode mode is set in Settings: short numeric, short alphanumeric, category prefix, or manual/company barcode.
+- Generated barcodes default to 5-8 characters and are unique in ShopBridge.
+- Existing company barcodes can be entered or scanned manually from the advanced barcode field.
 
 ## Coded Price
 
@@ -120,3 +123,11 @@ $env:SHOPBRIDGE_TALLY_DSN="YourDsnName"
 - No Tally XML import.
 - No hard delete routes. Records are deactivated or marked inactive/cancelled.
 - BarTender ActiveX printing does not save changes back into `.btw` files.
+
+## Smoke Checks
+
+Run local barcode/save/print-flow checks without BarTender:
+
+```powershell
+.\.venv\Scripts\python scripts\smoke_checks.py
+```

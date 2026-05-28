@@ -9,7 +9,7 @@
   </section>
 
   {% if settings_saved %}
-    <div class="notice">BarTender print settings saved.</div>
+    <div class="notice">Settings saved.</div>
   {% endif %}
 
   <section class="setup-hero {{ 'ready' if ready_to_label else 'needs-work' }}">
@@ -41,8 +41,21 @@
         <input type="checkbox" name="show_bartender_window" value="true" {% if bartender_settings.show_bartender_window %}checked{% endif %}>
         Show BarTender window while printing
       </label>
+      <label>
+        Barcode mode
+        <select name="barcode_mode">
+          <option value="short_numeric" {% if barcode_settings.mode == "short_numeric" %}selected{% endif %}>Short numeric</option>
+          <option value="short_alphanumeric" {% if barcode_settings.mode == "short_alphanumeric" %}selected{% endif %}>Short alphanumeric</option>
+          <option value="category_prefix" {% if barcode_settings.mode == "category_prefix" %}selected{% endif %}>Category prefix</option>
+          <option value="manual_company_barcode" {% if barcode_settings.mode == "manual_company_barcode" %}selected{% endif %}>Manual / company barcode</option>
+        </select>
+      </label>
+      <label>
+        Barcode length
+        <input name="barcode_length" type="number" min="5" max="8" value="{{ barcode_settings.length }}">
+      </label>
       <div class="form-actions">
-        <button class="button primary" type="submit">Save Print Settings</button>
+        <button class="button primary" type="submit">Save Settings</button>
       </div>
     </form>
   </section>

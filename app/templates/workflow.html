@@ -99,7 +99,7 @@
             <input name="item_display_name" id="itemNameInput">
           </label>
           <label id="barcodeField" data-field="barcode">
-            Barcode
+            Barcode (advanced)
             <input name="barcode" id="barcodeInput" placeholder="Blank = auto">
           </label>
           <label id="articleField" data-field="article_no">
@@ -131,6 +131,24 @@
             Code
             <input name="coded_price" id="codedInput" placeholder="Auto from selling">
           </label>
+        </div>
+
+        <div class="workflow-state info-state compact-message" id="matchSuggestion" hidden>
+          <strong>Existing item found. Reuse barcode?</strong>
+          <span id="matchSuggestionText"></span>
+          <div class="form-actions">
+            <button class="button small primary" type="button" id="reuseMatchButton">Reuse barcode</button>
+            <button class="button small" type="button" id="newBarcodeFromMatchButton">Create new barcode</button>
+          </div>
+        </div>
+
+        <div class="workflow-state warn-state compact-message" id="priceDecisionWarning" hidden>
+          <strong>Price/MRP changed. Create new barcode or update existing?</strong>
+          <span>Default is a new barcode so old labels can still scan correctly.</span>
+          <div class="form-actions">
+            <button class="button small primary" type="button" id="createNewPriceButton">Create new barcode</button>
+            <button class="button small" type="button" id="updateExistingPriceButton">Update existing barcode</button>
+          </div>
         </div>
 
         <div class="quick-row">
@@ -189,6 +207,7 @@
                 <strong>{{ item.item_display_name }}</strong>
                 <span>{{ item.brand or item.family.family_name }}{% if item.article_no %} / {{ item.article_no }}{% endif %}{% if item.size %} / {{ item.size }}{% endif %}</span>
               </button>
+              <a class="button small" href="/items/{{ item.id }}">Open</a>
               <form method="post" action="/new-stock/quick-reprint">
                 <input type="hidden" name="variant_id" value="{{ item.id }}">
                 <input type="hidden" name="template_id" value="{{ item.template_id or item.family.default_template_id or '' }}">
@@ -220,6 +239,8 @@
     const templatesData = {{ templates_json|tojson }};
     const sizeValues = {{ size_values_json|tojson }};
     const categories = {{ categories|tojson }};
+    const initialVariantId = "{{ initial_variant_id or '' }}";
+    const initialDuplicate = {{ 'true' if initial_duplicate else 'false' }};
 
     const form = document.getElementById("stockForm");
     const workflowMode = document.getElementById("workflowMode");
@@ -237,6 +258,13 @@
     const templateBadge = document.getElementById("templateBadge");
     const duplicateButton = document.getElementById("duplicateButton");
     const quickReprintButton = document.getElementById("quickReprintButton");
+    const matchSuggestion = document.getElementById("matchSuggestion");
+    const matchSuggestionText = document.getElementById("matchSuggestionText");
+    const reuseMatchButton = document.getElementById("reuseMatchButton");
+    const newBarcodeFromMatchButton = document.getElementById("newBarcodeFromMatchButton");
+    const priceDecisionWarning = document.getElementById("priceDecisionWarning");
+    const createNewPriceButton = document.getElementById("createNewPriceButton");
+    const updateExistingPriceButton = document.getElementById("updateExistingPriceButton");
     const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
     const extractTemplateId = document.getElementById("extractTemplateId");
     const extractCategory = document.getElementById("extractCategory");
@@ -251,6 +279,8 @@
     const actualPreviewError = document.getElementById("actualPreviewError");
     const simulatedPreview = document.getElementById("simulatedPreview");
     let actualPreviewUrl = "";
+    let selectedVariantSnapshot = null;
+    let autoMatchVariantId = "";
 
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -320,6 +350,17 @@
     function money(value) {
       const number = Number(value || 0);
       return number.toFixed(2);
+    }
+
+    function normalizedText(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function moneyText(value) {
+      const clean = String(value || "").trim();
+      if (!clean) return "";
+      const number = Number(clean);
+      return Number.isFinite(number) ? number.toFixed(2) : clean;
     }
 
     function setMode(mode, label) {
@@ -414,6 +455,108 @@
       return required.has("item_display_name") || required.has("design");
     }
 
+    function selectedVariant() {
+      return variants.find(item => String(item.id) === String(existingVariantId.value));
+    }
+
+    function valuesMatchVariant(variant) {
+      const required = requiredFieldSet();
+      if (!variant || normalizedText(variant.item_display_name) !== normalizedText(fields.item.value || familyName.value)) {
+        return false;
+      }
+      if (normalizedText(variant.category) !== normalizedText(categorySelect.value)) {
+        return false;
+      }
+      if (String(variant.template_id || "") !== String(templateSelect.value || "")) {
+        return false;
+      }
+      if (moneyText(variant.mrp) !== moneyText(fields.mrp.value)) {
+        return false;
+      }
+      if (String(fields.coded.value || "").trim()) {
+        if (normalizedText(variant.coded_price) !== normalizedText(fields.coded.value)) {
+          return false;
+        }
+      } else if (String(fields.selling.value || "").trim() && moneyText(variant.selling_price) !== moneyText(fields.selling.value)) {
+        return false;
+      }
+      if (required.has("brand") && String(fields.brand.value || "").trim() && normalizedText(variant.brand) !== normalizedText(fields.brand.value)) {
+        return false;
+      }
+      if (requiresArticle(required) && String(fields.article.value || "").trim() && normalizedText(variant.article_no) !== normalizedText(fields.article.value)) {
+        return false;
+      }
+      if (required.has("size") && String(fields.size.value || "").trim() && normalizedText(variant.size) !== normalizedText(fields.size.value)) {
+        return false;
+      }
+      return true;
+    }
+
+    function priceChangedFromVariant(variant) {
+      if (!variant) return false;
+      return moneyText(variant.mrp) !== moneyText(fields.mrp.value)
+        || moneyText(variant.selling_price) !== moneyText(fields.selling.value)
+        || normalizedText(variant.coded_price) !== normalizedText(fields.coded.value);
+    }
+
+    function exactMatch() {
+      if (!templateSelect.value || !String(fields.item.value || familyName.value).trim()) {
+        return null;
+      }
+      return variants.find(valuesMatchVariant) || null;
+    }
+
+    function showExistingBarcodeState(variant) {
+      fields.barcode.value = variant ? variant.barcode || "" : fields.barcode.value;
+      fields.barcode.readOnly = Boolean(variant);
+    }
+
+    function refreshRecordDecision() {
+      matchSuggestion.hidden = true;
+      priceDecisionWarning.hidden = true;
+
+      const selected = selectedVariant();
+      if (selected && selectedVariantSnapshot && priceChangedFromVariant(selected)) {
+        priceDecisionWarning.hidden = false;
+        if (workflowMode.value !== "update_existing") {
+          setMode("new_barcode", "Creating new barcode for new price");
+          fields.barcode.value = "";
+          fields.barcode.readOnly = false;
+        }
+        return;
+      }
+
+      if (selected && String(selected.id) !== String(autoMatchVariantId)) {
+        showExistingBarcodeState(selected);
+        if (!["quick_reprint", "update_existing"].includes(workflowMode.value)) {
+          setMode("print", "Updating selected item");
+        }
+        return;
+      }
+
+      const match = exactMatch();
+      if (match && !["duplicate", "new_barcode"].includes(workflowMode.value)) {
+        autoMatchVariantId = String(match.id);
+        existingVariantId.value = match.id;
+        familyId.value = match.family_id || "";
+        showExistingBarcodeState(match);
+        matchSuggestionText.textContent = `${match.item_display_name} / ${match.barcode}`;
+        matchSuggestion.hidden = false;
+        setMode("print", "Reusing existing barcode");
+        return;
+      }
+
+      if (autoMatchVariantId && String(existingVariantId.value) === autoMatchVariantId) {
+        existingVariantId.value = "";
+        familyId.value = "";
+        autoMatchVariantId = "";
+      }
+      if (!existingVariantId.value && !["duplicate", "new_barcode"].includes(workflowMode.value)) {
+        fields.barcode.readOnly = false;
+        setMode("print", "New item");
+      }
+    }
+
     function applyCategory(preserveTemplateId) {
       const category = categorySelect.value;
       Array.from(templateSelect.options).forEach(option => {
@@ -479,6 +622,8 @@
         const visible = readyForEntry && (
           fieldName === "article_no"
             ? requiresArticle(required)
+            : fieldName === "barcode"
+              ? true
             : fieldName === "item_display_name" || fieldName === "design"
               ? requiresItemName(required)
               : required.has(fieldName)
@@ -659,10 +804,13 @@
       if (!variant) return;
       clearActualPreview();
       existingVariantId.value = duplicate ? "" : variant.id;
+      autoMatchVariantId = "";
+      selectedVariantSnapshot = duplicate ? null : {...variant};
       familyId.value = variant.family_id || "";
       familyName.value = variant.family_name || "";
       categorySelect.value = variant.category || categorySelect.value;
       fields.barcode.value = duplicate ? "" : variant.barcode;
+      fields.barcode.readOnly = !duplicate;
       fields.brand.value = variant.brand || "";
       fields.item.value = variant.item_display_name || "";
       fields.article.value = variant.article_no || "";
@@ -674,7 +822,7 @@
       fields.coded.value = variant.coded_price || "";
       variantSearch.value = variant.search || "";
       applyCategory(variant.template_id || "");
-      setMode(duplicate ? "duplicate" : "print", duplicate ? "Duplicating previous item" : "Updating selected item");
+      setMode(duplicate ? "new_barcode" : "print", duplicate ? "Creating new barcode from previous item" : "Updating selected item");
       updatePreview();
     }
 
@@ -691,6 +839,7 @@
       byId("previewMrp").textContent = "MRP: Rs. " + money(fields.mrp.value);
       byId("previewCode").textContent = "Code: " + (fields.coded.value || "-");
       byId("previewBarcode").textContent = fields.barcode.value || "auto";
+      refreshRecordDecision();
       templateBadge.textContent = !hasTemplate
         ? "Select template"
         : !pathReady
@@ -780,11 +929,48 @@
       if (variant) {
         populateVariant(variant, true);
       } else {
-        setMode("duplicate", "New item from current values");
+        setMode("new_barcode", "New item from current values");
         existingVariantId.value = "";
+        autoMatchVariantId = "";
+        selectedVariantSnapshot = null;
         fields.barcode.value = "";
+        fields.barcode.readOnly = false;
         updatePreview();
       }
+    });
+
+    reuseMatchButton.addEventListener("click", () => {
+      const match = selectedVariant();
+      if (match) {
+        populateVariant(match, false);
+      }
+    });
+
+    newBarcodeFromMatchButton.addEventListener("click", () => {
+      existingVariantId.value = "";
+      autoMatchVariantId = "";
+      selectedVariantSnapshot = null;
+      fields.barcode.value = "";
+      fields.barcode.readOnly = false;
+      setMode("new_barcode", "Creating new barcode");
+      matchSuggestion.hidden = true;
+      updatePreview();
+    });
+
+    createNewPriceButton.addEventListener("click", () => {
+      fields.barcode.value = "";
+      fields.barcode.readOnly = false;
+      setMode("new_barcode", "Creating new barcode for new price");
+      priceDecisionWarning.hidden = false;
+      updatePreview();
+    });
+
+    updateExistingPriceButton.addEventListener("click", () => {
+      const variant = selectedVariant();
+      showExistingBarcodeState(variant);
+      setMode("update_existing", "Updating existing barcode");
+      priceDecisionWarning.hidden = true;
+      updatePreview();
     });
 
     quickReprintButton.addEventListener("click", () => {
@@ -816,5 +1002,11 @@
     });
 
     applyCategory();
+    if (initialVariantId) {
+      const initialVariant = variants.find(item => String(item.id) === String(initialVariantId));
+      if (initialVariant) {
+        populateVariant(initialVariant, initialDuplicate);
+      }
+    }
   </script>
 {% endblock %}

@@ -9,12 +9,26 @@ from app.config import BARTENDER_MODE, DATA_DIR, SHOW_BARTENDER_WINDOW
 BARTENDER_MODE_KEY = "bartender_mode"
 SHOW_BARTENDER_WINDOW_KEY = "show_bartender_window"
 VALID_BARTENDER_MODES = {"activex", "csv"}
+BARCODE_MODE_KEY = "barcode_mode"
+BARCODE_LENGTH_KEY = "barcode_length"
+VALID_BARCODE_MODES = {
+    "short_numeric",
+    "short_alphanumeric",
+    "category_prefix",
+    "manual_company_barcode",
+}
 
 
 @dataclass(frozen=True)
 class BarTenderSettings:
     mode: str
     show_bartender_window: bool
+
+
+@dataclass(frozen=True)
+class BarcodeSettings:
+    mode: str
+    length: int
 
 
 def _default_mode() -> str:
@@ -65,6 +79,12 @@ def ensure_default_settings() -> None:
     if SHOW_BARTENDER_WINDOW_KEY not in settings:
         settings[SHOW_BARTENDER_WINDOW_KEY] = _bool_text(SHOW_BARTENDER_WINDOW)
         changed = True
+    if BARCODE_MODE_KEY not in settings:
+        settings[BARCODE_MODE_KEY] = "short_numeric"
+        changed = True
+    if BARCODE_LENGTH_KEY not in settings:
+        settings[BARCODE_LENGTH_KEY] = "6"
+        changed = True
     if changed:
         _write_settings(settings)
 
@@ -101,3 +121,35 @@ def save_bartender_settings(
     settings[SHOW_BARTENDER_WINDOW_KEY] = _bool_text(show_bartender_window)
     _write_settings(settings)
     return get_bartender_settings()
+
+
+def _barcode_length(value: str | None) -> int:
+    try:
+        length = int(value or 6)
+    except (TypeError, ValueError):
+        length = 6
+    return min(8, max(5, length))
+
+
+def get_barcode_settings() -> BarcodeSettings:
+    ensure_default_settings()
+    settings = _read_settings()
+    mode = settings.get(BARCODE_MODE_KEY, "short_numeric").strip().lower()
+    if mode not in VALID_BARCODE_MODES:
+        mode = "short_numeric"
+    return BarcodeSettings(
+        mode=mode,
+        length=_barcode_length(settings.get(BARCODE_LENGTH_KEY)),
+    )
+
+
+def save_barcode_settings(*, mode: str, length: int) -> BarcodeSettings:
+    clean_mode = mode.strip().lower()
+    if clean_mode not in VALID_BARCODE_MODES:
+        clean_mode = "short_numeric"
+
+    settings = _read_settings()
+    settings[BARCODE_MODE_KEY] = clean_mode
+    settings[BARCODE_LENGTH_KEY] = str(_barcode_length(str(length)))
+    _write_settings(settings)
+    return get_barcode_settings()
