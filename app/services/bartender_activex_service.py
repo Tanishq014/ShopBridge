@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import os
 import logging
+import platform
 from pathlib import Path
+import sys
+import threading
 from typing import Any
 
 try:
@@ -134,7 +138,8 @@ def _dispatch_bartender(win32com_client: Any) -> Any:
         return win32com_client.Dispatch("BarTender.Application")
     except Exception as exc:
         raise BarTenderActiveXError(
-            "BarTender ActiveX is unavailable. Check that BarTender is installed, licensed, and COM automation is registered."
+            "BarTender ActiveX Dispatch failed for ProgID 'BarTender.Application'. "
+            f"Error: {_exception_detail(exc)}. {_runtime_detail()}."
         ) from exc
 
 
@@ -155,11 +160,57 @@ def _exception_detail(exc: Exception) -> str:
     return " | ".join(part for part in parts if part)
 
 
+def _runtime_detail() -> str:
+    return (
+        f"python={sys.executable}; "
+        f"bitness={platform.architecture()[0]}; "
+        f"pid={os.getpid()}; "
+        f"thread={threading.current_thread().name}"
+    )
+
+
+def _ensure_pythoncom() -> None:
+    if pythoncom is None:
+        raise BarTenderActiveXError(
+            "pywin32 is not installed or pythoncom could not be imported. Run: pip install -r requirements.txt"
+        )
+
+
 def _ensure_preview_com_helpers() -> None:
-    if pythoncom is None or VARIANT is None:
+    _ensure_pythoncom()
+    if VARIANT is None:
         raise BarTenderActiveXError(
             "pywin32 preview support is not installed. Run: pip install -r requirements.txt"
         )
+
+
+def _co_initialize() -> bool:
+    _ensure_pythoncom()
+    try:
+        pythoncom.CoInitialize()
+    except Exception as exc:
+        raise BarTenderActiveXError(
+            f"Could not initialize COM for BarTender automation: {_exception_detail(exc)}. {_runtime_detail()}."
+        ) from exc
+    return True
+
+
+def _co_uninitialize(initialized: bool) -> None:
+    if not initialized or pythoncom is None:
+        return
+    try:
+        pythoncom.CoUninitialize()
+    except Exception:
+        pass
+
+
+@contextmanager
+def _com_session():
+    initialized = _co_initialize()
+    try:
+        yield _win32com_client()
+    finally:
+        _co_uninitialize(initialized)
 
 
 def _message_variant_detail(messages: Any) -> str:
@@ -172,39 +223,40 @@ def _message_variant_detail(messages: Any) -> str:
 
 def extract_named_substring_values(template_path: str) -> dict[str, str]:
     path = _validate_template_path(template_path)
-    win32com_client = _win32com_client()
 
     bt_app = None
     bt_format = None
-    constants = win32com_client.constants
 
-    try:
-        bt_app = _dispatch_bartender(win32com_client)
-        bt_app.Visible = False
+    with _com_session() as win32com_client:
+        constants = win32com_client.constants
 
         try:
-            bt_format = bt_app.Formats.Open(str(path), False, "")
-        except Exception as exc:
-            raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
+            bt_app = _dispatch_bartender(win32com_client)
+            bt_app.Visible = False
 
-        try:
-            raw_fields = bt_format.NamedSubStrings.GetAll(",", ":")
-        except Exception as exc:
-            raise BarTenderActiveXError(
-                "Could not read named data sources from this BarTender template."
-            ) from exc
+            try:
+                bt_format = bt_app.Formats.Open(str(path), False, "")
+            except Exception as exc:
+                raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
 
-        logger.info("BarTender NamedSubStrings.GetAll raw output: %s", raw_fields)
-        defaults = _parse_named_substring_values(raw_fields)
-        fields = list(defaults)
-        logger.info("BarTender parsed named data source fields: %s", fields)
-        logger.info("BarTender parsed named data source defaults: %s", defaults)
-        if not fields:
-            raise BarTenderActiveXError("No named data sources found in this BarTender template.")
-        return defaults
-    finally:
-        _close_without_saving(bt_format, constants)
-        _quit_without_saving(bt_app, constants)
+            try:
+                raw_fields = bt_format.NamedSubStrings.GetAll(",", ":")
+            except Exception as exc:
+                raise BarTenderActiveXError(
+                    "Could not read named data sources from this BarTender template."
+                ) from exc
+
+            logger.info("BarTender NamedSubStrings.GetAll raw output: %s", raw_fields)
+            defaults = _parse_named_substring_values(raw_fields)
+            fields = list(defaults)
+            logger.info("BarTender parsed named data source fields: %s", fields)
+            logger.info("BarTender parsed named data source defaults: %s", defaults)
+            if not fields:
+                raise BarTenderActiveXError("No named data sources found in this BarTender template.")
+            return defaults
+        finally:
+            _close_without_saving(bt_format, constants)
+            _quit_without_saving(bt_app, constants)
 
 
 def print_with_named_substrings(
@@ -214,57 +266,58 @@ def print_with_named_substrings(
     visible: bool = False,
 ) -> dict[str, object]:
     path = _validate_template_path(template_path)
-    win32com_client = _win32com_client()
 
     bt_app = None
     bt_format = None
-    constants = win32com_client.constants
     copy_count = max(1, int(copies or 1))
 
-    try:
-        bt_app = _dispatch_bartender(win32com_client)
-        bt_app.Visible = bool(visible)
+    with _com_session() as win32com_client:
+        constants = win32com_client.constants
 
         try:
-            bt_format = bt_app.Formats.Open(str(path), False, "")
-        except Exception as exc:
-            raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
+            bt_app = _dispatch_bartender(win32com_client)
+            bt_app.Visible = bool(visible)
 
-        clean_values = {
-            str(field_name).strip(): "" if field_value is None else str(field_value)
-            for field_name, field_value in values.items()
-            if str(field_name).strip()
-        }
-        for field_name, field_value in clean_values.items():
             try:
-                bt_format.SetNamedSubStringValue(field_name, field_value)
+                bt_format = bt_app.Formats.Open(str(path), False, "")
+            except Exception as exc:
+                raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
+
+            clean_values = {
+                str(field_name).strip(): "" if field_value is None else str(field_value)
+                for field_name, field_value in values.items()
+                if str(field_name).strip()
+            }
+            for field_name, field_value in clean_values.items():
+                try:
+                    bt_format.SetNamedSubStringValue(field_name, field_value)
+                except Exception as exc:
+                    raise BarTenderActiveXError(
+                        f"Could not set BarTender field '{field_name}'. Check that the named data source exists in the template."
+                    ) from exc
+
+            try:
+                bt_format.IdenticalCopiesOfLabel = copy_count
             except Exception as exc:
                 raise BarTenderActiveXError(
-                    f"Could not set BarTender field '{field_name}'. Check that the named data source exists in the template."
+                    f"Could not set label copies to {copy_count} in BarTender."
                 ) from exc
 
-        try:
-            bt_format.IdenticalCopiesOfLabel = copy_count
-        except Exception as exc:
-            raise BarTenderActiveXError(
-                f"Could not set label copies to {copy_count} in BarTender."
-            ) from exc
+            try:
+                result = bt_format.PrintOut(False, False)
+            except Exception as exc:
+                raise BarTenderActiveXError("BarTender print failed while sending the job.") from exc
 
-        try:
-            result = bt_format.PrintOut(False, False)
-        except Exception as exc:
-            raise BarTenderActiveXError("BarTender print failed while sending the job.") from exc
-
-        return {
-            "mode": "activex",
-            "printed": True,
-            "copies": copy_count,
-            "fields": list(clean_values),
-            "result": "" if result is None else str(result),
-        }
-    finally:
-        _close_without_saving(bt_format, constants)
-        _quit_without_saving(bt_app, constants)
+            return {
+                "mode": "activex",
+                "printed": True,
+                "copies": copy_count,
+                "fields": list(clean_values),
+                "result": "" if result is None else str(result),
+            }
+        finally:
+            _close_without_saving(bt_format, constants)
+            _quit_without_saving(bt_app, constants)
 
 
 def export_print_preview_to_image(
@@ -277,11 +330,9 @@ def export_print_preview_to_image(
     dpi: int = 200,
 ) -> Path:
     path = _validate_template_path(template_path)
-    win32com_client = _win32com_client()
 
     bt_app = None
     bt_format = None
-    constants = win32com_client.constants
     preview_dir = Path(output_dir)
     preview_dir.mkdir(parents=True, exist_ok=True)
     image_type = "png"
@@ -292,63 +343,66 @@ def export_print_preview_to_image(
         except OSError:
             pass
 
-    try:
-        bt_app = _dispatch_bartender(win32com_client)
-        bt_app.Visible = bool(visible)
+    with _com_session() as win32com_client:
+        constants = win32com_client.constants
 
         try:
-            bt_format = bt_app.Formats.Open(str(path), False, "")
-        except Exception as exc:
-            raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
+            bt_app = _dispatch_bartender(win32com_client)
+            bt_app.Visible = bool(visible)
 
-        clean_values = {
-            str(field_name).strip(): "" if field_value is None else str(field_value)
-            for field_name, field_value in values.items()
-            if str(field_name).strip()
-        }
-        for field_name, field_value in clean_values.items():
             try:
-                bt_format.SetNamedSubStringValue(field_name, field_value)
+                bt_format = bt_app.Formats.Open(str(path), False, "")
+            except Exception as exc:
+                raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
+
+            clean_values = {
+                str(field_name).strip(): "" if field_value is None else str(field_value)
+                for field_name, field_value in values.items()
+                if str(field_name).strip()
+            }
+            for field_name, field_value in clean_values.items():
+                try:
+                    bt_format.SetNamedSubStringValue(field_name, field_value)
+                except Exception as exc:
+                    raise BarTenderActiveXError(
+                        f"Could not set BarTender field '{field_name}' for preview: {_exception_detail(exc)}"
+                    ) from exc
+
+            _ensure_preview_com_helpers()
+            msgs = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_DISPATCH, None)
+
+            try:
+                result = bt_format.ExportPrintPreviewRangeToImage(
+                    "1",
+                    str(preview_dir),
+                    file_template,
+                    "png",
+                    4,
+                    dpi,
+                    16777215,
+                    1,
+                    True,
+                    True,
+                    msgs,
+                )
             except Exception as exc:
                 raise BarTenderActiveXError(
-                    f"Could not set BarTender field '{field_name}' for preview: {_exception_detail(exc)}"
+                    "BarTender could not export a preview image with ExportPrintPreviewRangeToImage. "
+                    f"Error: {_exception_detail(exc)}. "
+                    f"Result: not returned. "
+                    f"Messages: {_message_variant_detail(msgs)}. "
+                    f"Output dir: {preview_dir}."
                 ) from exc
 
-        _ensure_preview_com_helpers()
-        msgs = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_DISPATCH, None)
-
-        try:
-            result = bt_format.ExportPrintPreviewRangeToImage(
-                "1",
-                str(preview_dir),
-                file_template,
-                "png",
-                4,
-                dpi,
-                16777215,
-                1,
-                True,
-                True,
-                msgs,
-            )
-        except Exception as exc:
-            raise BarTenderActiveXError(
-                "BarTender could not export a preview image with ExportPrintPreviewRangeToImage. "
-                f"Error: {_exception_detail(exc)}. "
-                f"Result: not returned. "
-                f"Messages: {_message_variant_detail(msgs)}. "
-                f"Output dir: {preview_dir}."
-            ) from exc
-
-        files = sorted(preview_dir.glob("preview_*.png"))
-        if result != 0 or not files:
-            raise BarTenderActiveXError(
-                "BarTender preview export did not complete. "
-                f"Result: {result}. "
-                f"Messages: {_message_variant_detail(msgs)}. "
-                f"Output dir: {preview_dir}."
-            )
-        return files[0]
-    finally:
-        _close_without_saving(bt_format, constants)
-        _quit_without_saving(bt_app, constants)
+            files = sorted(preview_dir.glob("preview_*.png"))
+            if result != 0 or not files:
+                raise BarTenderActiveXError(
+                    "BarTender preview export did not complete. "
+                    f"Result: {result}. "
+                    f"Messages: {_message_variant_detail(msgs)}. "
+                    f"Output dir: {preview_dir}."
+                )
+            return files[0]
+        finally:
+            _close_without_saving(bt_format, constants)
+            _quit_without_saving(bt_app, constants)
