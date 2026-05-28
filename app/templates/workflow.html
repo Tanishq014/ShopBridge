@@ -78,8 +78,7 @@
         </div>
         <div class="form-grid three">
           <label>
-            Billing Item
-            <span class="field-hint">Used later for billing/scanning</span>
+            Billing Item <span class="field-hint-inline">(used later for billing/scanning)</span>
             <input name="family_name" id="familyName" list="familyOptions">
             <datalist id="familyOptions">
               {% for family in families %}
@@ -1223,6 +1222,7 @@
 
     Array.from(new Set([variantSearch, familyName, ...Object.values(inputByField)])).forEach(field => {
       field.addEventListener("focus", () => field.select());
+      field.addEventListener("click", () => field.select());
       field.addEventListener("mouseup", event => event.preventDefault());
       field.addEventListener("keydown", handleEntryArrowNavigation);
     });

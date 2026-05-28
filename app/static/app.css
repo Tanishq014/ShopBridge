@@ -234,6 +234,12 @@ label {
   font-weight: 400;
 }
 
+.field-hint-inline {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 input,
 select,
 textarea {
