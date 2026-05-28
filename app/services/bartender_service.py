@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import BARTEND_EXE_PATH, PRINT_JOBS_DIR
 from app.models import PrintJob
-from app.services.bartender_activex_service import print_with_named_substrings
+from app.services.bartender_activex_service import print_with_activex
 from app.services.field_config import parse_required_fields
 
 
@@ -152,7 +152,7 @@ def process_print_job(
 
     values = _named_substring_values(job)
     try:
-        print_with_named_substrings(
+        print_with_activex(
             job.template.bartender_file_path,
             values,
             job.copies,

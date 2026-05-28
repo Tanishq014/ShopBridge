@@ -153,7 +153,10 @@ def _constant(constants: Any, names: tuple[str, ...], fallback: Any) -> Any:
 
 
 def _exception_detail(exc: Exception) -> str:
-    parts = [str(exc).strip()]
+    parts = [repr(exc)]
+    message = str(exc).strip()
+    if message and message != repr(exc):
+        parts.append(message)
     args = getattr(exc, "args", ())
     if args:
         parts.append(f"args={args!r}")
@@ -318,6 +321,20 @@ def print_with_named_substrings(
         finally:
             _close_without_saving(bt_format, constants)
             _quit_without_saving(bt_app, constants)
+
+
+def print_with_activex(
+    template_path: str,
+    values: dict[str, str],
+    copies: int,
+    visible: bool = False,
+) -> dict[str, object]:
+    return print_with_named_substrings(
+        template_path,
+        values,
+        copies,
+        visible=visible,
+    )
 
 
 def export_print_preview_to_image(

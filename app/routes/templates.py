@@ -1,15 +1,19 @@
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import BARTENDER_TEMPLATES_DIR, TEMPLATES_DIR
+from app.config import BARTENDER_TEMPLATES_DIR, PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import TemplateMaster
-from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substring_values
+from app.services.bartender_activex_service import (
+    BarTenderActiveXError,
+    export_print_preview_to_image,
+    extract_named_substring_values,
+)
 from app.services.field_config import (
     SUPPORTED_FIELD_NAMES,
     SUPPORTED_FIELDS,
@@ -326,6 +330,41 @@ def extract_template_fields(
         f"/templates?{urlencode(query)}",
         status_code=303,
     )
+
+
+@router.get("/{template_pk}/debug-preview")
+def debug_template_preview(template_pk: int, db: Session = Depends(get_db)):
+    template = db.get(TemplateMaster, template_pk)
+    if not template:
+        return JSONResponse({"ok": False, "error": "Template was not found."}, status_code=404)
+
+    output_dir = PREVIEWS_DIR / "debug" / f"template_{template.id}"
+    try:
+        path = export_print_preview_to_image(
+            template.bartender_file_path,
+            {},
+            output_dir,
+            visible=get_bartender_settings().show_bartender_window,
+        )
+    except BarTenderActiveXError as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "template_id": template.id,
+                "template_path": template.bartender_file_path,
+                "output_dir": str(output_dir),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return {
+        "ok": True,
+        "template_id": template.id,
+        "template_path": template.bartender_file_path,
+        "output_dir": str(output_dir),
+        "preview_path": str(path),
+    }
 
 
 @router.post("/{template_pk}")
