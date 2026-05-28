@@ -11,12 +11,12 @@ SHOW_BARTENDER_WINDOW_KEY = "show_bartender_window"
 VALID_BARTENDER_MODES = {"activex", "csv"}
 BARCODE_MODE_KEY = "barcode_mode"
 BARCODE_LENGTH_KEY = "barcode_length"
-VALID_BARCODE_MODES = {
-    "short_numeric",
-    "short_alphanumeric",
-    "category_prefix",
-    "manual_company_barcode",
-}
+BARCODE_GENERATION_MODE_KEY = "barcode_generation_mode"
+DEFAULT_BARCODE_LENGTH_KEY = "default_barcode_length"
+BARCODE_ALLOWED_CHARS_KEY = "barcode_allowed_chars"
+BARCODE_GENERATION_MODE = "template_length_safe_alphanumeric"
+DEFAULT_BARCODE_ALLOWED_CHARS = "23456789BFGJKLMNQRUVWXY"
+VALID_BARCODE_MODES = {BARCODE_GENERATION_MODE}
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,17 @@ class BarTenderSettings:
 
 @dataclass(frozen=True)
 class BarcodeSettings:
-    mode: str
-    length: int
+    generation_mode: str
+    default_length: int
+    allowed_chars: str
+
+    @property
+    def mode(self) -> str:
+        return self.generation_mode
+
+    @property
+    def length(self) -> int:
+        return self.default_length
 
 
 def _default_mode() -> str:
@@ -79,11 +88,14 @@ def ensure_default_settings() -> None:
     if SHOW_BARTENDER_WINDOW_KEY not in settings:
         settings[SHOW_BARTENDER_WINDOW_KEY] = _bool_text(SHOW_BARTENDER_WINDOW)
         changed = True
-    if BARCODE_MODE_KEY not in settings:
-        settings[BARCODE_MODE_KEY] = "short_numeric"
+    if BARCODE_GENERATION_MODE_KEY not in settings:
+        settings[BARCODE_GENERATION_MODE_KEY] = settings.get(BARCODE_MODE_KEY, BARCODE_GENERATION_MODE)
         changed = True
-    if BARCODE_LENGTH_KEY not in settings:
-        settings[BARCODE_LENGTH_KEY] = "6"
+    if DEFAULT_BARCODE_LENGTH_KEY not in settings:
+        settings[DEFAULT_BARCODE_LENGTH_KEY] = settings.get(BARCODE_LENGTH_KEY, "6")
+        changed = True
+    if BARCODE_ALLOWED_CHARS_KEY not in settings:
+        settings[BARCODE_ALLOWED_CHARS_KEY] = DEFAULT_BARCODE_ALLOWED_CHARS
         changed = True
     if changed:
         _write_settings(settings)
@@ -131,25 +143,42 @@ def _barcode_length(value: str | None) -> int:
     return min(8, max(5, length))
 
 
+def _barcode_allowed_chars(value: str | None) -> str:
+    allowed = []
+    seen: set[str] = set()
+    for char in (value or DEFAULT_BARCODE_ALLOWED_CHARS).upper():
+        if char in DEFAULT_BARCODE_ALLOWED_CHARS and char not in seen:
+            allowed.append(char)
+            seen.add(char)
+    return "".join(allowed) or DEFAULT_BARCODE_ALLOWED_CHARS
+
+
 def get_barcode_settings() -> BarcodeSettings:
     ensure_default_settings()
     settings = _read_settings()
-    mode = settings.get(BARCODE_MODE_KEY, "short_numeric").strip().lower()
+    mode = settings.get(BARCODE_GENERATION_MODE_KEY, BARCODE_GENERATION_MODE).strip().lower()
     if mode not in VALID_BARCODE_MODES:
-        mode = "short_numeric"
+        mode = BARCODE_GENERATION_MODE
     return BarcodeSettings(
-        mode=mode,
-        length=_barcode_length(settings.get(BARCODE_LENGTH_KEY)),
+        generation_mode=mode,
+        default_length=_barcode_length(settings.get(DEFAULT_BARCODE_LENGTH_KEY)),
+        allowed_chars=_barcode_allowed_chars(settings.get(BARCODE_ALLOWED_CHARS_KEY)),
     )
 
 
-def save_barcode_settings(*, mode: str, length: int) -> BarcodeSettings:
-    clean_mode = mode.strip().lower()
+def save_barcode_settings(
+    *,
+    generation_mode: str,
+    default_length: int,
+    allowed_chars: str,
+) -> BarcodeSettings:
+    clean_mode = generation_mode.strip().lower()
     if clean_mode not in VALID_BARCODE_MODES:
-        clean_mode = "short_numeric"
+        clean_mode = BARCODE_GENERATION_MODE
 
     settings = _read_settings()
-    settings[BARCODE_MODE_KEY] = clean_mode
-    settings[BARCODE_LENGTH_KEY] = str(_barcode_length(str(length)))
+    settings[BARCODE_GENERATION_MODE_KEY] = clean_mode
+    settings[DEFAULT_BARCODE_LENGTH_KEY] = str(_barcode_length(str(default_length)))
+    settings[BARCODE_ALLOWED_CHARS_KEY] = _barcode_allowed_chars(allowed_chars)
     _write_settings(settings)
     return get_barcode_settings()

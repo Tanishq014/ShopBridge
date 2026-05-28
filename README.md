@@ -39,8 +39,9 @@ data\shopbridge.db
 - No label should print unless a Label Variant is saved with a non-empty unique barcode.
 - New items get a generated barcode before printing.
 - Existing items reuse their saved barcode unless `Duplicate / New Price` or `Create new barcode` is used.
-- Generated barcode mode is set in Settings: short numeric, short alphanumeric, category prefix, or manual/company barcode.
-- Generated barcodes default to 5-8 characters and are unique in ShopBridge.
+- Generated barcode mode is set in Settings as `template_length_safe_alphanumeric`.
+- Generated barcode length comes from the selected template's extracted sample barcode when available; otherwise it uses the default length setting.
+- Generated barcodes use only `23456789BFGJKLMNQRUVWXY`, uppercase, and avoid consecutive numbers.
 - Existing company barcodes can be entered or scanned manually from the advanced barcode field.
 
 ## Coded Price

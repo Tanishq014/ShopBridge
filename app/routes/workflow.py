@@ -138,6 +138,8 @@ def _variant_payload(variant: LabelVariant) -> dict[str, object]:
 
 
 def _template_payload(template: TemplateMaster) -> dict[str, object]:
+    field_defaults = parse_field_defaults(template.default_field_values)
+    field_defaults.pop("barcode", None)
     return {
         "id": template.id,
         "template_id": template.template_id,
@@ -145,7 +147,7 @@ def _template_payload(template: TemplateMaster) -> dict[str, object]:
         "category": (template.category or "").strip().lower(),
         "label_size": template.label_size or "",
         "required_fields": parse_required_fields(template.required_fields),
-        "field_defaults": parse_field_defaults(template.default_field_values),
+        "field_defaults": field_defaults,
         "path_exists": template_path_exists(template),
         "cached_preview_url": cached_template_preview_url(template),
         "recent": False,
@@ -386,7 +388,7 @@ def _form_field_values(
     required_fields = parse_required_fields(template.required_fields)
     if not barcode_value and "barcode" in required_fields:
         try:
-            barcode_value = generate_configured_barcode(db, category=template.category)
+            barcode_value = generate_configured_barcode(db, template=template)
         except ValueError:
             barcode_value = "manual"
 
@@ -537,8 +539,11 @@ def extract_workflow_template_fields(
         )
 
     fields = list(field_defaults)
+    barcode_sample = field_defaults.get("barcode", "").strip()
+    default_values = {field: value for field, value in field_defaults.items() if field != "barcode"}
     template.required_fields = format_required_fields(fields)
-    template.default_field_values = format_field_defaults(field_defaults)
+    template.default_field_values = format_field_defaults(default_values)
+    template.barcode_sample_value = barcode_sample or None
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -615,6 +620,21 @@ def preview_template_image(
     return FileResponse(path, media_type="image/png", filename=path.name)
 
 
+@router.post("/new-stock/generate-barcode")
+def generate_new_stock_barcode(
+    template_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    template = db.get(TemplateMaster, template_id)
+    if not template or not template.active_status:
+        return JSONResponse({"error": "Select an active template before generating a barcode."}, status_code=400)
+    try:
+        barcode = generate_configured_barcode(db, template=template)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return {"barcode": barcode, "length": len(barcode)}
+
+
 @router.post("/new-stock/print", response_class=HTMLResponse)
 def print_new_stock(
     request: Request,
@@ -635,6 +655,7 @@ def print_new_stock(
     coded_price: str = Form(""),
     template_id: int = Form(...),
     copies: int = Form(1),
+    manual_barcode_override: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     template = db.get(TemplateMaster, template_id)
@@ -784,9 +805,25 @@ def print_new_stock(
 
     if update_existing:
         variant = source_variant
+        requested_barcode = barcode.strip()
+        if manual_barcode_override and requested_barcode and requested_barcode != variant.barcode:
+            try:
+                variant.barcode = assign_barcode(
+                    db,
+                    requested_barcode,
+                    exclude_variant_id=variant.id,
+                    template=template,
+                )
+            except ValueError as exc:
+                return templates.TemplateResponse(
+                    request,
+                    "workflow.html",
+                    _workflow_context(request, db, error=str(exc)),
+                    status_code=400,
+                )
     else:
         try:
-            final_barcode = assign_barcode(db, barcode, category=final_category)
+            final_barcode = assign_barcode(db, barcode, template=template)
         except ValueError as exc:
             return templates.TemplateResponse(
                 request,
@@ -989,8 +1026,9 @@ def settings(
 def update_bartender_settings(
     mode: str = Form("activex"),
     show_bartender_window: bool = Form(False),
-    barcode_mode: str = Form("short_numeric"),
-    barcode_length: int = Form(6),
+    barcode_generation_mode: str = Form("template_length_safe_alphanumeric"),
+    default_barcode_length: int = Form(6),
+    barcode_allowed_chars: str = Form("23456789BFGJKLMNQRUVWXY"),
     db: Session = Depends(get_db),
 ):
     save_bartender_settings(
@@ -998,7 +1036,8 @@ def update_bartender_settings(
         show_bartender_window=show_bartender_window,
     )
     save_barcode_settings(
-        mode=barcode_mode,
-        length=barcode_length,
+        generation_mode=barcode_generation_mode,
+        default_length=default_barcode_length,
+        allowed_chars=barcode_allowed_chars,
     )
     return RedirectResponse("/settings?settings_saved=1", status_code=303)

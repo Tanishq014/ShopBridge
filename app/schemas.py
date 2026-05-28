@@ -14,6 +14,7 @@ class TemplateMasterBase(BaseModel):
     printer_name: Optional[str] = None
     required_fields: Optional[str] = None
     default_field_values: Optional[str] = None
+    barcode_sample_value: Optional[str] = None
     active_status: bool = True
 
 

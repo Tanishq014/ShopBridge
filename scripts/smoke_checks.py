@@ -22,6 +22,7 @@ from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import LabelVariant, PrintJob, TemplateMaster  # noqa: E402
 from app.routes import workflow  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
+from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -73,6 +74,10 @@ def print_item(db, template, **overrides):
     return workflow.print_new_stock(**data)
 
 
+def has_consecutive_numbers(value: str) -> bool:
+    return any(left.isdigit() and right.isdigit() for left, right in zip(value, value[1:]))
+
+
 def main() -> None:
     init_db()
     workflow.template_path_exists = lambda template: True
@@ -86,6 +91,7 @@ def main() -> None:
             category="toys",
             bartender_file_path=str(TMP_DIR / "smoke.btw"),
             required_fields="item_display_name,mrp,coded_price,size,barcode",
+            barcode_sample_value="13HPX",
             active_status=True,
         )
         db.add(template)
@@ -96,7 +102,9 @@ def main() -> None:
         first = db.query(LabelVariant).filter_by(item_display_name="Toy Car").one()
         first_barcode = first.barcode
         assert_true(bool(first_barcode), "new item did not receive a barcode")
-        assert_true(5 <= len(first_barcode) <= 8, "generated barcode is not short")
+        assert_true(len(first_barcode) == 5, "generated barcode did not use template sample length")
+        assert_true(set(first_barcode) <= set(DEFAULT_BARCODE_ALLOWED_CHARS), "generated barcode used disallowed characters")
+        assert_true(not has_consecutive_numbers(first_barcode), "generated barcode has consecutive numbers")
         assert_true(db.query(PrintJob).filter_by(variant_id=first.id).count() == 1, "new item print job missing")
 
         print_item(

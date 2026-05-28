@@ -103,7 +103,6 @@ def _submitted_field_defaults(
         "item_display_name": default_item_display_name,
         "design": default_design or default_item_display_name,
         "family_name": default_family_name,
-        "barcode": default_barcode,
         "article": default_article,
         "size": default_size,
         "batch_no": default_batch_no,
@@ -326,8 +325,11 @@ def extract_template_fields(
         )
 
     fields = list(field_defaults)
+    barcode_sample = field_defaults.get("barcode", "").strip()
+    default_values = {field: value for field, value in field_defaults.items() if field != "barcode"}
     template.required_fields = format_required_fields(fields)
-    template.default_field_values = format_field_defaults(field_defaults) or None
+    template.default_field_values = format_field_defaults(default_values) or None
+    template.barcode_sample_value = barcode_sample or None
     db.add(template)
     db.commit()
     db.refresh(template)

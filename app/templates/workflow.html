@@ -98,10 +98,6 @@
             <span id="itemNameLabel">Sticker Name</span>
             <input name="item_display_name" id="itemNameInput">
           </label>
-          <label id="barcodeField" data-field="barcode">
-            Barcode (advanced)
-            <input name="barcode" id="barcodeInput" placeholder="Blank = auto">
-          </label>
           <label id="articleField" data-field="article_no">
             <span id="articleLabel">Article No</span>
             <input name="article_no" id="articleInput">
@@ -132,6 +128,23 @@
             <input name="coded_price" id="codedInput" placeholder="Auto from selling">
           </label>
         </div>
+
+        <details class="advanced-box" id="barcodeAdvanced">
+          <summary>Advanced barcode <span class="mono" id="barcodeSummary">auto</span></summary>
+          <div class="form-grid three">
+            <label id="barcodeField" data-field="barcode">
+              Barcode
+              <input name="barcode" id="barcodeInput" placeholder="Auto generated">
+            </label>
+            <label class="checkline">
+              <input type="checkbox" name="manual_barcode_override" value="true" id="manualBarcodeOverride">
+              Manual override
+            </label>
+            <div class="form-actions">
+              <button class="button" type="button" id="regenerateBarcodeButton">Regenerate barcode</button>
+            </div>
+          </div>
+        </details>
 
         <div class="workflow-state info-state compact-message" id="matchSuggestion" hidden>
           <strong>Existing item found. Reuse barcode?</strong>
@@ -265,6 +278,9 @@
     const priceDecisionWarning = document.getElementById("priceDecisionWarning");
     const createNewPriceButton = document.getElementById("createNewPriceButton");
     const updateExistingPriceButton = document.getElementById("updateExistingPriceButton");
+    const barcodeSummary = document.getElementById("barcodeSummary");
+    const manualBarcodeOverride = document.getElementById("manualBarcodeOverride");
+    const regenerateBarcodeButton = document.getElementById("regenerateBarcodeButton");
     const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
     const extractTemplateId = document.getElementById("extractTemplateId");
     const extractCategory = document.getElementById("extractCategory");
@@ -281,6 +297,7 @@
     let actualPreviewUrl = "";
     let selectedVariantSnapshot = null;
     let autoMatchVariantId = "";
+    let barcodeGenerationPending = false;
 
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -506,9 +523,72 @@
       return variants.find(valuesMatchVariant) || null;
     }
 
-    function showExistingBarcodeState(variant) {
+    function showExistingBarcodeState(variant, resetManualOverride = true) {
       fields.barcode.value = variant ? variant.barcode || "" : fields.barcode.value;
       fields.barcode.readOnly = Boolean(variant);
+      if (resetManualOverride) {
+        manualBarcodeOverride.checked = false;
+      }
+      refreshBarcodeControls();
+    }
+
+    function barcodeIsExistingReadOnly() {
+      return Boolean(existingVariantId.value) && workflowMode.value !== "new_barcode" && !manualBarcodeOverride.checked;
+    }
+
+    function refreshBarcodeControls() {
+      const existingReadOnly = barcodeIsExistingReadOnly();
+      fields.barcode.readOnly = existingReadOnly;
+      regenerateBarcodeButton.hidden = Boolean(existingVariantId.value) && workflowMode.value !== "new_barcode";
+      barcodeSummary.textContent = fields.barcode.value ? fields.barcode.value : "auto";
+    }
+
+    async function requestGeneratedBarcode(force) {
+      if (barcodeGenerationPending || !templateSelect.value) {
+        return;
+      }
+      if (!force && String(fields.barcode.value || "").trim()) {
+        refreshBarcodeControls();
+        return;
+      }
+      if (Boolean(existingVariantId.value) && workflowMode.value !== "new_barcode") {
+        refreshBarcodeControls();
+        return;
+      }
+
+      barcodeGenerationPending = true;
+      regenerateBarcodeButton.disabled = true;
+      try {
+        const payload = new FormData();
+        payload.append("template_id", templateSelect.value);
+        const response = await fetch("/new-stock/generate-barcode", {
+          method: "POST",
+          body: payload
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || "Could not generate barcode.");
+        }
+        const data = await response.json();
+        fields.barcode.value = data.barcode || "";
+        refreshBarcodeControls();
+        updatePreview();
+      } catch (error) {
+        fields.barcode.placeholder = error.message || "Could not generate barcode";
+      } finally {
+        barcodeGenerationPending = false;
+        regenerateBarcodeButton.disabled = false;
+      }
+    }
+
+    function maybeGenerateBarcode(readyForEntry) {
+      refreshBarcodeControls();
+      if (!readyForEntry) {
+        return;
+      }
+      if (!existingVariantId.value || workflowMode.value === "new_barcode") {
+        requestGeneratedBarcode(false);
+      }
     }
 
     function refreshRecordDecision() {
@@ -518,16 +598,24 @@
       const selected = selectedVariant();
       if (selected && selectedVariantSnapshot && priceChangedFromVariant(selected)) {
         priceDecisionWarning.hidden = false;
-        if (workflowMode.value !== "update_existing") {
+        if (!["update_existing", "new_barcode"].includes(workflowMode.value)) {
           setMode("new_barcode", "Creating new barcode for new price");
           fields.barcode.value = "";
-          fields.barcode.readOnly = false;
+          manualBarcodeOverride.checked = false;
+          refreshBarcodeControls();
+          requestGeneratedBarcode(false);
+        } else {
+          refreshBarcodeControls();
         }
         return;
       }
 
       if (selected && String(selected.id) !== String(autoMatchVariantId)) {
-        showExistingBarcodeState(selected);
+        if (!manualBarcodeOverride.checked) {
+          showExistingBarcodeState(selected, false);
+        } else {
+          refreshBarcodeControls();
+        }
         if (!["quick_reprint", "update_existing"].includes(workflowMode.value)) {
           setMode("print", "Updating selected item");
         }
@@ -552,9 +640,9 @@
         autoMatchVariantId = "";
       }
       if (!existingVariantId.value && !["duplicate", "new_barcode"].includes(workflowMode.value)) {
-        fields.barcode.readOnly = false;
         setMode("print", "New item");
       }
+      refreshBarcodeControls();
     }
 
     function applyCategory(preserveTemplateId) {
@@ -636,6 +724,7 @@
       extractCategory.value = categorySelect.value;
       applyTemplateDefaults(readyForEntry);
       updatePreview();
+      maybeGenerateBarcode(readyForEntry);
       showCachedTemplatePreview();
     }
 
@@ -806,11 +895,11 @@
       existingVariantId.value = duplicate ? "" : variant.id;
       autoMatchVariantId = "";
       selectedVariantSnapshot = duplicate ? null : {...variant};
+      manualBarcodeOverride.checked = false;
       familyId.value = variant.family_id || "";
       familyName.value = variant.family_name || "";
       categorySelect.value = variant.category || categorySelect.value;
       fields.barcode.value = duplicate ? "" : variant.barcode;
-      fields.barcode.readOnly = !duplicate;
       fields.brand.value = variant.brand || "";
       fields.item.value = variant.item_display_name || "";
       fields.article.value = variant.article_no || "";
@@ -823,6 +912,11 @@
       variantSearch.value = variant.search || "";
       applyCategory(variant.template_id || "");
       setMode(duplicate ? "new_barcode" : "print", duplicate ? "Creating new barcode from previous item" : "Updating selected item");
+      if (duplicate) {
+        requestGeneratedBarcode(false);
+      } else {
+        refreshBarcodeControls();
+      }
       updatePreview();
     }
 
@@ -934,7 +1028,9 @@
         autoMatchVariantId = "";
         selectedVariantSnapshot = null;
         fields.barcode.value = "";
-        fields.barcode.readOnly = false;
+        manualBarcodeOverride.checked = false;
+        refreshBarcodeControls();
+        requestGeneratedBarcode(false);
         updatePreview();
       }
     });
@@ -951,17 +1047,19 @@
       autoMatchVariantId = "";
       selectedVariantSnapshot = null;
       fields.barcode.value = "";
-      fields.barcode.readOnly = false;
+      manualBarcodeOverride.checked = false;
       setMode("new_barcode", "Creating new barcode");
       matchSuggestion.hidden = true;
+      requestGeneratedBarcode(true);
       updatePreview();
     });
 
     createNewPriceButton.addEventListener("click", () => {
       fields.barcode.value = "";
-      fields.barcode.readOnly = false;
+      manualBarcodeOverride.checked = false;
       setMode("new_barcode", "Creating new barcode for new price");
       priceDecisionWarning.hidden = false;
+      requestGeneratedBarcode(true);
       updatePreview();
     });
 
@@ -970,6 +1068,18 @@
       showExistingBarcodeState(variant);
       setMode("update_existing", "Updating existing barcode");
       priceDecisionWarning.hidden = true;
+      updatePreview();
+    });
+
+    manualBarcodeOverride.addEventListener("change", () => {
+      refreshBarcodeControls();
+    });
+
+    regenerateBarcodeButton.addEventListener("click", () => {
+      fields.barcode.value = "";
+      manualBarcodeOverride.checked = false;
+      setMode("new_barcode", "Creating new barcode");
+      requestGeneratedBarcode(true);
       updatePreview();
     });
 

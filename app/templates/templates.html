@@ -177,12 +177,14 @@
             <p class="muted-text">These values prefill New Stock for this template. Click a filled box once to replace it.</p>
             <div class="field-default-inputs">
               {% for field in supported_fields %}
+                {% if field.name != "barcode" %}
                 {% set default_field_active = field.name in selected_required_fields or (field.name == 'article' and 'article_no' in selected_required_fields) or (field.name == 'design' and 'item_display_name' in selected_required_fields) or (field.name == 'item_display_name' and 'design' in selected_required_fields) %}
                 <label class="default-field-row" data-default-field="{{ field.name }}" {% if not default_field_active %}hidden{% endif %}>
                   {{ field.label }}
                   {% set default_value = selected_default_values.get(field.name, selected_default_values.get('article_no', '') if field.name == 'article' else selected_default_values.get('item_display_name', '') if field.name == 'design' else selected_default_values.get('design', '') if field.name == 'item_display_name' else '') %}
                   <input class="select-on-focus" name="default_{{ field.name }}" value="{{ default_value }}" {% if not default_field_active %}disabled{% endif %}>
                 </label>
+                {% endif %}
               {% endfor %}
             </div>
           </div>

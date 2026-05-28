@@ -70,6 +70,9 @@ def _migrate_existing_sqlite() -> None:
         if "default_field_values" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE template_masters ADD COLUMN default_field_values TEXT"))
+        if "barcode_sample_value" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE template_masters ADD COLUMN barcode_sample_value VARCHAR(120)"))
 
 
 def get_db():
