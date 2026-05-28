@@ -87,6 +87,16 @@
               {% endfor %}
             </datalist>
           </label>
+          <label id="mrpField" data-field="mrp">
+            MRP
+            <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
+          </label>
+          <label id="sellingField" data-field="selling_price">
+            Selling price
+            <input name="selling_price" id="sellingInput" type="number" min="0" step="0.01">
+          </label>
+        </div>
+        <div class="form-grid three">
           <label id="brandField" data-field="brand">
             Brand
             <input name="brand" id="brandInput">
@@ -111,14 +121,6 @@
           <label id="expiryField" data-field="expiry">
             Expiry
             <input name="expiry" id="expiryInput" placeholder="MM/YYYY">
-          </label>
-          <label id="mrpField" data-field="mrp">
-            MRP
-            <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
-          </label>
-          <label id="sellingField" data-field="selling_price">
-            Selling price
-            <input name="selling_price" id="sellingInput" type="number" min="0" step="0.01">
           </label>
           <label id="codedField" data-field="coded_price">
             Code
