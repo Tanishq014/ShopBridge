@@ -143,25 +143,25 @@
               <button class="button" type="button" id="regenerateBarcodeButton">Regenerate barcode</button>
             </div>
           </div>
+
+          <div class="workflow-state info-state compact-message" id="matchSuggestion" hidden>
+            <strong>Existing item found. Reuse barcode?</strong>
+            <span id="matchSuggestionText"></span>
+            <div class="form-actions">
+              <button class="button small primary" type="button" id="reuseMatchButton">Reuse barcode</button>
+              <button class="button small" type="button" id="newBarcodeFromMatchButton">Create new barcode</button>
+            </div>
+          </div>
+
+          <div class="workflow-state warn-state compact-message" id="priceDecisionWarning" hidden>
+            <strong>Label details changed.</strong>
+            <span>ShopBridge will create a new barcode by default so old labels keep scanning correctly.</span>
+            <div class="form-actions">
+              <button class="button small primary" type="button" id="createNewPriceButton">Create new barcode</button>
+              <button class="button small" type="button" id="updateExistingPriceButton">Update existing barcode</button>
+            </div>
+          </div>
         </details>
-
-        <div class="workflow-state info-state compact-message" id="matchSuggestion" hidden>
-          <strong>Existing item found. Reuse barcode?</strong>
-          <span id="matchSuggestionText"></span>
-          <div class="form-actions">
-            <button class="button small primary" type="button" id="reuseMatchButton">Reuse barcode</button>
-            <button class="button small" type="button" id="newBarcodeFromMatchButton">Create new barcode</button>
-          </div>
-        </div>
-
-        <div class="workflow-state warn-state compact-message" id="priceDecisionWarning" hidden>
-          <strong>Price/MRP changed. Create new barcode or update existing?</strong>
-          <span>Default is a new barcode so old labels can still scan correctly.</span>
-          <div class="form-actions">
-            <button class="button small primary" type="button" id="createNewPriceButton">Create new barcode</button>
-            <button class="button small" type="button" id="updateExistingPriceButton">Update existing barcode</button>
-          </div>
-        </div>
 
         <div class="quick-row">
           <button class="button primary print-button" type="button" id="printButton" disabled>Print Labels</button>
@@ -608,6 +608,9 @@
       if (String(variant.template_id || "") !== String(templateSelect.value || "")) {
         return false;
       }
+      if (String(familyName.value || "").trim() && normalizedText(variant.family_name) !== normalizedText(familyName.value)) {
+        return false;
+      }
       if (moneyText(variant.mrp) !== moneyText(fields.mrp.value)) {
         return false;
       }
@@ -634,12 +637,27 @@
       if (required.has("size") && String(fields.size.value || "").trim() && normalizedText(variant.size) !== normalizedText(fields.size.value)) {
         return false;
       }
+      if (required.has("batch_no") && String(fields.batch.value || "").trim() && normalizedText(variant.batch_no) !== normalizedText(fields.batch.value)) {
+        return false;
+      }
+      if (required.has("expiry") && String(fields.expiry.value || "").trim() && normalizedText(variant.expiry) !== normalizedText(fields.expiry.value)) {
+        return false;
+      }
       return true;
     }
 
-    function priceChangedFromVariant(variant) {
+    function labelDetailsChangedFromVariant(variant) {
       if (!variant) return false;
-      return moneyText(variant.mrp) !== moneyText(fields.mrp.value)
+      return normalizedText(variant.family_name) !== normalizedText(familyName.value)
+        || normalizedText(variant.category) !== normalizedText(categorySelect.value)
+        || String(variant.template_id || "") !== String(templateSelect.value || "")
+        || normalizedText(variant.brand) !== normalizedText(fields.brand.value)
+        || normalizedText(variant.item_display_name) !== normalizedText(fields.item.value || familyName.value)
+        || normalizedText(variant.article_no) !== normalizedText(fields.article.value)
+        || normalizedText(variant.size) !== normalizedText(fields.size.value)
+        || normalizedText(variant.batch_no) !== normalizedText(fields.batch.value)
+        || normalizedText(variant.expiry) !== normalizedText(fields.expiry.value)
+        || moneyText(variant.mrp) !== moneyText(fields.mrp.value)
         || moneyText(variant.selling_price) !== moneyText(fields.selling.value)
         || normalizedText(variant.coded_price) !== normalizedText(fields.coded.value);
     }
@@ -724,10 +742,10 @@
       priceDecisionWarning.hidden = true;
 
       const selected = selectedVariant();
-      if (selected && selectedVariantSnapshot && priceChangedFromVariant(selected)) {
+      if (selected && labelDetailsChangedFromVariant(selected)) {
         priceDecisionWarning.hidden = false;
         if (!["update_existing", "new_barcode"].includes(workflowMode.value)) {
-          setMode("new_barcode", "Creating new barcode for new price");
+          setMode("new_barcode", "Creating new barcode for changed details");
           fields.barcode.value = "";
           manualBarcodeOverride.checked = false;
           refreshBarcodeControls();
@@ -1223,6 +1241,7 @@
 
     Array.from(new Set([variantSearch, familyName, ...Object.values(inputByField)])).forEach(field => {
       field.addEventListener("focus", () => field.select());
+      field.addEventListener("click", () => field.select());
       field.addEventListener("keydown", handleEntryArrowNavigation);
     });
 
@@ -1249,7 +1268,7 @@
     createNewPriceButton.addEventListener("click", () => {
       fields.barcode.value = "";
       manualBarcodeOverride.checked = false;
-      setMode("new_barcode", "Creating new barcode for new price");
+      setMode("new_barcode", "Creating new barcode for changed details");
       priceDecisionWarning.hidden = true;
       requestGeneratedBarcode(true);
       updatePreview();
@@ -1288,7 +1307,9 @@
     });
 
     printButton.addEventListener("click", () => {
-      setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
+      if (!["new_barcode", "update_existing"].includes(workflowMode.value)) {
+        setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
+      }
       openPrintSheet();
     });
 

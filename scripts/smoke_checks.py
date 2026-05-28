@@ -120,6 +120,20 @@ def main() -> None:
         assert_true(first.barcode == first_barcode, "existing item did not reuse barcode")
         assert_true(db.query(LabelVariant).filter_by(item_display_name="Toy Car").count() == 1, "existing print duplicated item")
 
+        print_item(
+            db,
+            template,
+            existing_variant_id=str(first.id),
+            item_display_name="Toy Car",
+            mrp="100",
+            coded_price="AA",
+            size="M",
+        )
+        toy_car_variants = db.query(LabelVariant).filter_by(item_display_name="Toy Car").all()
+        assert_true(len(toy_car_variants) == 2, "changed existing item did not create a new label record")
+        changed_detail_variant = [item for item in toy_car_variants if item.id != first.id][0]
+        assert_true(changed_detail_variant.barcode != first_barcode, "changed existing item reused the old barcode")
+
         try:
             assign_barcode(db, first_barcode)
             raise AssertionError("duplicate barcode was not blocked")

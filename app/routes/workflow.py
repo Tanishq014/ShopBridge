@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
-from app.services.barcode_service import assign_barcode, generate_configured_barcode
+from app.services.barcode_service import assign_barcode, generate_configured_barcode, normalize_barcode
 from app.services.bartender_activex_service import (
     BarTenderActiveXError,
     export_print_preview_to_image,
@@ -258,16 +258,57 @@ def _price_changed(
     )
 
 
+def _label_details_changed(
+    variant: LabelVariant | None,
+    *,
+    category: str,
+    family_name: str,
+    template: TemplateMaster,
+    brand: str,
+    item_display_name: str,
+    article_no: str,
+    size: str,
+    batch_no: str,
+    expiry: str,
+    mrp: Decimal | None,
+    selling_price: Decimal | None,
+    coded_price: str,
+) -> bool:
+    if not variant:
+        return False
+    family = variant.family
+    return (
+        not _same_text(family.category if family else "", category)
+        or not _same_text(family.family_name if family else "", family_name)
+        or _variant_template_id(variant) != template.id
+        or not _same_text(variant.brand, brand)
+        or not _same_text(variant.item_display_name, item_display_name)
+        or not _same_text(variant.article_no, article_no)
+        or not _same_text(variant.size, size)
+        or not _same_text(variant.batch_no, batch_no)
+        or not _same_text(variant.expiry, expiry)
+        or _price_changed(
+            variant,
+            mrp=mrp,
+            selling_price=selling_price,
+            coded_price=coded_price,
+        )
+    )
+
+
 def _find_exact_variant(
     db: Session,
     *,
     category: str,
     template: TemplateMaster,
     required_fields: list[str],
+    family_name: str,
     item_display_name: str,
     brand: str,
     article_no: str,
     size: str,
+    batch_no: str,
+    expiry: str,
     mrp: Decimal | None,
     selling_price: Decimal | None,
     coded_price: str,
@@ -296,11 +337,17 @@ def _find_exact_variant(
                 continue
         elif candidate.coded_price:
             continue
+        if family_name.strip() and not _same_text(candidate.family.family_name, family_name):
+            continue
         if "brand" in required and brand.strip() and not _same_text(candidate.brand, brand):
             continue
         if ("article" in required or "article_no" in required) and article_no.strip() and not _same_text(candidate.article_no, article_no):
             continue
         if "size" in required and size.strip() and not _same_text(candidate.size, size):
+            continue
+        if "batch_no" in required and batch_no.strip() and not _same_text(candidate.batch_no, batch_no):
+            continue
+        if "expiry" in required and expiry.strip() and not _same_text(candidate.expiry, expiry):
             continue
         return candidate
     return None
@@ -779,10 +826,13 @@ def print_new_stock(
             category=final_category,
             template=template,
             required_fields=required_fields,
+            family_name=final_family_name,
             item_display_name=item_name_value,
             brand=brand_value,
             article_no=article_value,
             size=size_value,
+            batch_no=batch_value,
+            expiry=expiry_value,
             mrp=mrp_value,
             selling_price=selling,
             coded_price=coded,
@@ -796,8 +846,17 @@ def print_new_stock(
         item_display_name=item_name_value,
     )
 
-    price_changed = _price_changed(
+    details_changed = _label_details_changed(
         source_variant,
+        category=final_category,
+        family_name=final_family_name,
+        template=template,
+        brand=brand_value,
+        item_display_name=item_name_value,
+        article_no=article_value,
+        size=size_value,
+        batch_no=batch_value,
+        expiry=expiry_value,
         mrp=mrp_value,
         selling_price=selling,
         coded_price=coded,
@@ -805,7 +864,7 @@ def print_new_stock(
     create_new_barcode = (
         source_variant is None
         or workflow_mode in {"duplicate", "new_barcode"}
-        or (price_changed and workflow_mode != "update_existing")
+        or (details_changed and workflow_mode != "update_existing")
     )
     update_existing = source_variant is not None and not create_new_barcode
 
@@ -828,8 +887,16 @@ def print_new_stock(
                     status_code=400,
                 )
     else:
+        requested_barcode = barcode
+        if (
+            source_variant
+            and details_changed
+            and not manual_barcode_override
+            and normalize_barcode(requested_barcode) == normalize_barcode(source_variant.barcode)
+        ):
+            requested_barcode = ""
         try:
-            final_barcode = assign_barcode(db, barcode, template=template)
+            final_barcode = assign_barcode(db, requested_barcode, template=template)
         except ValueError as exc:
             return templates.TemplateResponse(
                 request,
