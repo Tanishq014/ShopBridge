@@ -304,6 +304,7 @@ def _form_field_values(
         "barcode": barcode_value,
         "brand": brand.strip(),
         "item_display_name": item_name_value,
+        "design": item_name_value,
         "family_name": final_family_name,
         "article": article_value,
         "article_no": article_value,
@@ -575,6 +576,8 @@ def print_new_stock(
     def field_is_required(field_name: str) -> bool:
         if field_name == "article_no":
             return "article_no" in required_field_set or "article" in required_field_set
+        if field_name == "item_display_name":
+            return "item_display_name" in required_field_set or "design" in required_field_set
         return field_name in required_field_set
 
     def value_or_preserved(field_name: str, raw_value: str, attr_name: str | None = None) -> str:
@@ -612,6 +615,7 @@ def print_new_stock(
     field_values = {
         "brand": brand_value,
         "item_display_name": item_name_value,
+        "design": item_name_value,
         "family_name": final_family_name,
         "article": article_value,
         "article_no": article_value,

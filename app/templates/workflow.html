@@ -95,7 +95,7 @@
             <input name="brand" id="brandInput">
           </label>
           <label id="itemNameField" data-field="item_display_name">
-            Sticker Name
+            <span id="itemNameLabel">Sticker Name</span>
             <input name="item_display_name" id="itemNameInput">
           </label>
           <label id="barcodeField" data-field="barcode">
@@ -276,6 +276,7 @@
     const dynamicFields = [
       "brand",
       "item_display_name",
+      "design",
       "article_no",
       "size",
       "batch_no",
@@ -288,6 +289,7 @@
     const inputByField = {
       brand: fields.brand,
       item_display_name: fields.item,
+      design: fields.item,
       article_no: fields.article,
       size: fields.size,
       batch_no: fields.batch,
@@ -300,6 +302,7 @@
     const containerByField = {
       brand: byId("brandField"),
       item_display_name: byId("itemNameField"),
+      design: byId("itemNameField"),
       article_no: byId("articleField"),
       size: byId("sizeField"),
       batch_no: byId("batchField"),
@@ -357,7 +360,13 @@
 
     function templateDefaultValue(template, fieldName) {
       const defaults = template && template.field_defaults ? template.field_defaults : {};
-      const aliases = fieldName === "article_no" ? ["article_no", "article"] : [fieldName];
+      const aliases = fieldName === "article_no"
+        ? ["article_no", "article"]
+        : fieldName === "item_display_name"
+          ? ["item_display_name", "design"]
+          : fieldName === "design"
+            ? ["design", "item_display_name"]
+            : [fieldName];
       for (const alias of aliases) {
         const value = defaults[alias];
         if (value !== undefined && value !== null && String(value).trim()) {
@@ -369,6 +378,10 @@
 
     function requiresArticle(required) {
       return required.has("article") || required.has("article_no");
+    }
+
+    function requiresItemName(required) {
+      return required.has("item_display_name") || required.has("design");
     }
 
     function applyCategory(preserveTemplateId) {
@@ -391,6 +404,7 @@
 
       const settings = categorySettings[category] || categorySettings.clothes;
       byId("articleLabel").textContent = settings.article;
+      byId("itemNameLabel").textContent = requiredFieldSet().has("design") ? "Design" : "Sticker Name";
       byId("sizeLabel").textContent = settings.size;
       byId("batchLabel").textContent = settings.batch;
       refreshSizeOptions(category);
@@ -432,7 +446,13 @@
       dynamicFields.forEach(fieldName => {
         const container = containerByField[fieldName];
         const input = inputByField[fieldName];
-        const visible = readyForEntry && (fieldName === "article_no" ? requiresArticle(required) : required.has(fieldName));
+        const visible = readyForEntry && (
+          fieldName === "article_no"
+            ? requiresArticle(required)
+            : fieldName === "item_display_name" || fieldName === "design"
+              ? requiresItemName(required)
+              : required.has(fieldName)
+        );
         container.hidden = !visible;
         input.required = visible && !["barcode", "coded_price"].includes(fieldName);
       });
@@ -651,7 +671,7 @@
 
       const showMappedPreview = hasTemplate && pathReady && required.size > 0;
       showPreviewElement("previewBrandBlock", showMappedPreview && required.has("brand"));
-      showPreviewElement("previewNameBlock", showMappedPreview && required.has("item_display_name"));
+      showPreviewElement("previewNameBlock", showMappedPreview && requiresItemName(required));
       showPreviewElement("previewArticle", showMappedPreview && requiresArticle(required));
       showPreviewElement("previewSize", showMappedPreview && required.has("size"));
       showPreviewElement("previewBatch", showMappedPreview && required.has("batch_no"));

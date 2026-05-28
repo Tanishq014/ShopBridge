@@ -9,6 +9,8 @@ import sys
 import threading
 from typing import Any
 
+from app.services.field_config import normalize_field_name
+
 try:
     import pythoncom  # type: ignore
     from win32com.client import VARIANT  # type: ignore
@@ -57,7 +59,7 @@ def _parse_named_substring_values(
         if not text or name_value_separator not in text:
             continue
         field_name, field_value = text.split(name_value_separator, 1)
-        field_name = field_name.strip()
+        field_name = normalize_field_name(field_name)
         if field_name and field_name not in values:
             values[field_name] = field_value.strip()
     return values
@@ -224,6 +226,45 @@ def _message_variant_detail(messages: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _actual_named_substring_names(bt_format: Any) -> list[str]:
+    try:
+        raw_fields = bt_format.NamedSubStrings.GetAll(",", ":")
+    except Exception:
+        return []
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for record in str(raw_fields or "").split(":"):
+        text = record.strip()
+        if not text or "," not in text:
+            continue
+        field_name = text.split(",", 1)[0].strip()
+        if field_name and field_name not in seen:
+            names.append(field_name)
+            seen.add(field_name)
+    return names
+
+
+def _values_for_actual_template_fields(bt_format: Any, values: dict[str, str]) -> dict[str, str]:
+    normalized_values = {
+        normalize_field_name(field_name): "" if field_value is None else str(field_value)
+        for field_name, field_value in values.items()
+        if normalize_field_name(field_name)
+    }
+    actual_names = _actual_named_substring_names(bt_format)
+    if not actual_names:
+        return normalized_values
+
+    mapped: dict[str, str] = {}
+    for actual_name in actual_names:
+        normalized_name = normalize_field_name(actual_name)
+        if normalized_name in normalized_values:
+            mapped[actual_name] = normalized_values[normalized_name]
+        elif normalized_name == "design" and "item_display_name" in normalized_values:
+            mapped[actual_name] = normalized_values["item_display_name"]
+    return mapped
+
+
 def extract_named_substring_values(template_path: str) -> dict[str, str]:
     path = _validate_template_path(template_path)
 
@@ -286,11 +327,7 @@ def print_with_named_substrings(
             except Exception as exc:
                 raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
 
-            clean_values = {
-                str(field_name).strip(): "" if field_value is None else str(field_value)
-                for field_name, field_value in values.items()
-                if str(field_name).strip()
-            }
+            clean_values = _values_for_actual_template_fields(bt_format, values)
             for field_name, field_value in clean_values.items():
                 try:
                     bt_format.SetNamedSubStringValue(field_name, field_value)
@@ -372,11 +409,7 @@ def export_print_preview_to_image(
             except Exception as exc:
                 raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
 
-            clean_values = {
-                str(field_name).strip(): "" if field_value is None else str(field_value)
-                for field_name, field_value in values.items()
-                if str(field_name).strip()
-            }
+            clean_values = _values_for_actual_template_fields(bt_format, values)
             for field_name, field_value in clean_values.items():
                 try:
                     bt_format.SetNamedSubStringValue(field_name, field_value)

@@ -60,6 +60,10 @@ def _row_field_default_badges(template: TemplateMaster) -> list[dict[str, str]]:
         active_fields.add("article_no")
     if "article_no" in active_fields:
         active_fields.add("article")
+    if "design" in active_fields:
+        active_fields.add("item_display_name")
+    if "item_display_name" in active_fields:
+        active_fields.add("design")
     defaults = parse_field_defaults(template.default_field_values)
     return [
         {"name": field, "label": field_label(field), "value": value}
@@ -73,6 +77,7 @@ def _submitted_field_defaults(
     active_fields: list[str] | None,
     default_brand: str = "",
     default_item_display_name: str = "",
+    default_design: str = "",
     default_family_name: str = "",
     default_barcode: str = "",
     default_article: str = "",
@@ -89,9 +94,14 @@ def _submitted_field_defaults(
         active_field_set.add("article_no")
     if "article_no" in active_field_set:
         active_field_set.add("article")
+    if "design" in active_field_set:
+        active_field_set.add("item_display_name")
+    if "item_display_name" in active_field_set:
+        active_field_set.add("design")
     values = {
         "brand": default_brand,
         "item_display_name": default_item_display_name,
+        "design": default_design or default_item_display_name,
         "family_name": default_family_name,
         "barcode": default_barcode,
         "article": default_article,
@@ -221,6 +231,7 @@ def create_template(
     raw_required_fields: str = Form(""),
     default_brand: str = Form(""),
     default_item_display_name: str = Form(""),
+    default_design: str = Form(""),
     default_family_name: str = Form(""),
     default_barcode: str = Form(""),
     default_article: str = Form(""),
@@ -255,6 +266,7 @@ def create_template(
             active_fields=required_field_list,
             default_brand=default_brand,
             default_item_display_name=default_item_display_name,
+            default_design=default_design,
             default_family_name=default_family_name,
             default_barcode=default_barcode,
             default_article=default_article,
@@ -382,6 +394,7 @@ def update_template(
     raw_required_fields: str = Form(""),
     default_brand: str = Form(""),
     default_item_display_name: str = Form(""),
+    default_design: str = Form(""),
     default_family_name: str = Form(""),
     default_barcode: str = Form(""),
     default_article: str = Form(""),
@@ -419,6 +432,7 @@ def update_template(
         active_fields=required_field_list,
         default_brand=default_brand,
         default_item_display_name=default_item_display_name,
+        default_design=default_design,
         default_family_name=default_family_name,
         default_barcode=default_barcode,
         default_article=default_article,
