@@ -4,6 +4,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,15 @@ def _dispatch_bartender(win32com_client: Any) -> Any:
         ) from exc
 
 
+def _constant(constants: Any, names: tuple[str, ...], fallback: Any) -> Any:
+    for name in names:
+        try:
+            return getattr(constants, name)
+        except Exception:
+            continue
+    return fallback
+
+
 def extract_named_substring_values(template_path: str) -> dict[str, str]:
     path = _validate_template_path(template_path)
     win32com_client = _win32com_client()
@@ -223,6 +233,104 @@ def print_with_named_substrings(
             "fields": list(clean_values),
             "result": "" if result is None else str(result),
         }
+    finally:
+        _close_without_saving(bt_format, constants)
+        _quit_without_saving(bt_app, constants)
+
+
+def export_print_preview_to_image(
+    template_path: str,
+    values: dict[str, str],
+    output_dir: str | Path,
+    *,
+    visible: bool = False,
+    image_type: str = "jpg",
+    dpi: int = 200,
+) -> Path:
+    path = _validate_template_path(template_path)
+    win32com_client = _win32com_client()
+
+    bt_app = None
+    bt_format = None
+    constants = win32com_client.constants
+    preview_dir = Path(output_dir)
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    token = f"preview_{uuid4().hex}"
+    file_template = f"{token}_%PageNumber%.{image_type}"
+
+    try:
+        bt_app = _dispatch_bartender(win32com_client)
+        bt_app.Visible = bool(visible)
+
+        try:
+            bt_format = bt_app.Formats.Open(str(path), False, "")
+        except Exception as exc:
+            raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
+
+        clean_values = {
+            str(field_name).strip(): "" if field_value is None else str(field_value)
+            for field_name, field_value in values.items()
+            if str(field_name).strip()
+        }
+        for field_name, field_value in clean_values.items():
+            try:
+                bt_format.SetNamedSubStringValue(field_name, field_value)
+            except Exception as exc:
+                raise BarTenderActiveXError(
+                    f"Could not set BarTender field '{field_name}' for preview."
+                ) from exc
+
+        colors = _constant(
+            constants,
+            ("btColors24Bit", "BtColors_btColors24Bit", "btColors24bit", "BtColors_btColors24bit"),
+            3,
+        )
+        save_option = _do_not_save_value(constants)
+        messages = None
+        try:
+            messages = win32com_client.Dispatch("BarTender.Messages")
+        except Exception:
+            messages = None
+
+        try:
+            bt_format.ExportPrintPreviewToImage(
+                str(preview_dir),
+                file_template,
+                image_type,
+                colors,
+                dpi,
+                16777215,
+                save_option,
+                True,
+                False,
+                messages,
+            )
+        except Exception as first_exc:
+            try:
+                bt_format.ExportPrintPreviewToImage(
+                    str(preview_dir),
+                    file_template,
+                    image_type,
+                    colors,
+                    dpi,
+                    16777215,
+                    save_option,
+                    True,
+                    False,
+                )
+            except Exception as second_exc:
+                raise BarTenderActiveXError(
+                    "BarTender could not export a preview image for this template."
+                ) from second_exc or first_exc
+
+        files = sorted(preview_dir.glob(f"{token}_*.{image_type}"))
+        if not files:
+            direct_path = preview_dir / file_template.replace("%PageNumber%", "1")
+            if direct_path.exists():
+                files = [direct_path]
+        if not files:
+            raise BarTenderActiveXError("BarTender did not create a preview image.")
+        return files[0]
     finally:
         _close_without_saving(bt_format, constants)
         _quit_without_saving(bt_app, constants)

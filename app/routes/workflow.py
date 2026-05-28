@@ -4,16 +4,20 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.config import TEMPLATES_DIR
+from app.config import PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
-from app.services.barcode_service import assign_barcode
-from app.services.bartender_activex_service import BarTenderActiveXError, extract_named_substring_values
+from app.services.barcode_service import assign_barcode, generate_next_barcode
+from app.services.bartender_activex_service import (
+    BarTenderActiveXError,
+    export_print_preview_to_image,
+    extract_named_substring_values,
+)
 from app.services.bartender_service import process_print_job
 from app.services.field_config import (
     SUPPORTED_FIELDS,
@@ -250,6 +254,53 @@ def _print_redirect(job: PrintJob, template: TemplateMaster, category: str = "cl
     return RedirectResponse(f"/new-stock?{urlencode(query)}", status_code=303)
 
 
+def _form_field_values(
+    db: Session,
+    template: TemplateMaster,
+    *,
+    barcode: str,
+    brand: str,
+    item_display_name: str,
+    family_name: str,
+    article_no: str,
+    size: str,
+    batch_no: str,
+    expiry: str,
+    mrp: str,
+    selling_price: str,
+    coded_price: str,
+) -> dict[str, str]:
+    selling = _decimal_or_none(selling_price)
+    mrp_value = _decimal_or_none(mrp)
+    barcode_value = barcode.strip()
+    required_fields = parse_required_fields(template.required_fields)
+    if not barcode_value and "barcode" in required_fields:
+        barcode_value = generate_next_barcode(db)
+
+    article_value = article_no.strip()
+    item_name_value = item_display_name.strip() or family_name.strip()
+    final_family_name = family_name.strip() or item_name_value
+    coded = coded_price.strip() or generate_coded_price(selling) or ""
+    standard_values = {
+        "barcode": barcode_value,
+        "brand": brand.strip(),
+        "item_display_name": item_name_value,
+        "family_name": final_family_name,
+        "article": article_value,
+        "article_no": article_value,
+        "size": size.strip(),
+        "batch_no": batch_no.strip(),
+        "expiry": expiry.strip(),
+        "mrp": _money(mrp_value),
+        "selling_price": _money(selling),
+        "coded_price": coded,
+    }
+    return {
+        field_name: standard_values.get(field_name, "")
+        for field_name in required_fields
+    }
+
+
 def _workflow_context(
     request: Request,
     db: Session,
@@ -369,6 +420,57 @@ def extract_workflow_template_fields(
         f"/new-stock?{urlencode({'template_id': template.id, 'category': category, 'extracted': extracted})}",
         status_code=303,
     )
+
+
+@router.post("/new-stock/preview-image")
+def preview_template_image(
+    template_id: int = Form(...),
+    barcode: str = Form(""),
+    brand: str = Form(""),
+    item_display_name: str = Form(""),
+    family_name: str = Form(""),
+    article_no: str = Form(""),
+    size: str = Form(""),
+    batch_no: str = Form(""),
+    expiry: str = Form(""),
+    mrp: str = Form(""),
+    selling_price: str = Form(""),
+    coded_price: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    template = db.get(TemplateMaster, template_id)
+    if not template or not template.active_status:
+        return JSONResponse({"error": "Select an active template."}, status_code=400)
+    if not template_path_exists(template):
+        return JSONResponse({"error": "Selected template file is missing on this PC."}, status_code=400)
+    if not parse_required_fields(template.required_fields):
+        return JSONResponse({"error": "Extract fields for this template before generating a preview."}, status_code=400)
+
+    values = _form_field_values(
+        db,
+        template,
+        barcode=barcode,
+        brand=brand,
+        item_display_name=item_display_name,
+        family_name=family_name,
+        article_no=article_no,
+        size=size,
+        batch_no=batch_no,
+        expiry=expiry,
+        mrp=mrp,
+        selling_price=selling_price,
+        coded_price=coded_price,
+    )
+    try:
+        path = export_print_preview_to_image(
+            template.bartender_file_path,
+            values,
+            PREVIEWS_DIR,
+            visible=get_bartender_settings().show_bartender_window,
+        )
+    except BarTenderActiveXError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return FileResponse(path, media_type="image/jpeg", filename=path.name)
 
 
 @router.post("/new-stock/print", response_class=HTMLResponse)

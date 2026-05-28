@@ -13,6 +13,7 @@ def _path_from_env(name: str, default: Path) -> Path:
 DATA_DIR = _path_from_env("SHOPBRIDGE_DATA_DIR", PROJECT_ROOT / "data")
 PRINT_JOBS_DIR = _path_from_env("SHOPBRIDGE_PRINT_JOBS_DIR", PROJECT_ROOT / "print_jobs")
 EXPORTS_DIR = _path_from_env("SHOPBRIDGE_EXPORTS_DIR", PROJECT_ROOT / "exports")
+PREVIEWS_DIR = _path_from_env("SHOPBRIDGE_PREVIEWS_DIR", EXPORTS_DIR / "previews")
 BARTENDER_TEMPLATES_DIR = _path_from_env(
     "SHOPBRIDGE_BARTENDER_TEMPLATES_DIR",
     PROJECT_ROOT / "bartender_templates",

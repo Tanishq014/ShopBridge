@@ -7,3 +7,7 @@ data/*.db
 data/shopbridge.db*
 data/settings.json
 *.db-journal
+exports/*
+!exports/.gitkeep
+print_jobs/*
+!print_jobs/.gitkeep

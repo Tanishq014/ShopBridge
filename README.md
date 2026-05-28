@@ -66,6 +66,8 @@ ShopBridge scans that folder on startup and when opening Settings or New Stock. 
 
 Normal printing uses BarTender ActiveX direct print. ShopBridge opens the selected `.btw`, sets named data source values, sets copies, prints without showing the print dialog, then closes without saving the `.btw`.
 
+The New Stock page can also generate an actual BarTender preview image from the selected `.btw` by clicking `Actual Preview`. This uses BarTender's print preview export and does not print, create a print job, or save changes to the `.btw`.
+
 CSV mode remains available in Settings as a fallback/debug route. CSV fallback files are written in:
 
 ```text

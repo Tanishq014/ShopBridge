@@ -6,6 +6,7 @@ from app.config import (
     DATA_DIR,
     DATABASE_URL,
     EXPORTS_DIR,
+    PREVIEWS_DIR,
     PRINT_JOBS_DIR,
 )
 
@@ -17,7 +18,7 @@ Base = declarative_base()
 
 
 def ensure_directories() -> None:
-    for directory in (DATA_DIR, PRINT_JOBS_DIR, EXPORTS_DIR, BARTENDER_TEMPLATES_DIR):
+    for directory in (DATA_DIR, PRINT_JOBS_DIR, EXPORTS_DIR, PREVIEWS_DIR, BARTENDER_TEMPLATES_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
 
