@@ -165,6 +165,7 @@ def list_templates(
     row_field_maps = {row.id: _field_badges(row.required_fields) for row in template_rows}
     row_default_maps = {row.id: _row_field_default_badges(row) for row in template_rows}
     row_status = {row.id: _template_status(row) for row in template_rows}
+    row_preview_urls = {row.id: cached_template_preview_url(row) for row in template_rows}
     folder_options = folder_template_options()
     selected_template_path = template.bartender_file_path if template else ""
     selected_path_in_folder = any(
@@ -192,8 +193,8 @@ def list_templates(
             "row_field_maps": row_field_maps,
             "row_default_maps": row_default_maps,
             "row_status": row_status,
+            "row_preview_urls": row_preview_urls,
             "template_path_exists": template_path_exists,
-            "cached_template_preview_url": cached_template_preview_url,
             "ready_count": sum(1 for row in template_rows if _template_status(row)["label"] == "ready"),
             "missing_count": sum(1 for row in template_rows if _template_status(row)["label"] == "missing file"),
             "unmapped_count": sum(1 for row in template_rows if _template_status(row)["label"] == "needs fields"),
