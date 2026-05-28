@@ -83,6 +83,7 @@
           </label>
           <label>
             Billing Item
+            <span class="field-hint">Used later for billing/scanning</span>
             <input name="family_name" id="familyName" list="familyOptions">
             <datalist id="familyOptions">
               {% for family in families %}
@@ -167,7 +168,8 @@
         <div class="quick-row">
           <button class="button" type="button" id="duplicateButton">Duplicate Previous</button>
           <button class="button" type="submit" id="quickReprintButton">Quick Reprint</button>
-          <button class="button primary print-button" type="submit" id="printButton" disabled>Print Labels</button>
+          <button class="button" type="button" id="directPrintButton" disabled>Print Current Qty</button>
+          <button class="button primary print-button" type="button" id="printButton" disabled>Print Labels</button>
         </div>
       </div>
     </form>
@@ -247,6 +249,28 @@
     </aside>
   </section>
 
+  <div class="print-sheet" id="printSheet" hidden>
+    <div class="print-sheet-backdrop" id="printSheetBackdrop"></div>
+    <section class="print-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="printSheetTitle">
+      <div class="section-line">
+        <h2 id="printSheetTitle">Print Labels</h2>
+        <button class="button small" type="button" id="closePrintSheetButton">Close</button>
+      </div>
+      <label>
+        Number of labels
+        <input id="printCopiesInput" type="number" min="1" inputmode="numeric">
+      </label>
+      <div class="copy-blocks">
+        {% for copies in [1, 2, 3, 4, 5, 6, 8, 10, 12, 24] %}
+          <button type="button" data-copy-count="{{ copies }}">{{ copies }}</button>
+        {% endfor %}
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="button" id="confirmPrintButton">Print</button>
+      </div>
+    </section>
+  </div>
+
   <script>
     const variants = {{ variants_json|tojson }};
     const templatesData = {{ templates_json|tojson }};
@@ -289,6 +313,12 @@
     const missingTemplateState = document.getElementById("missingTemplateState");
     const unmappedTemplateState = document.getElementById("unmappedTemplateState");
     const printButton = document.getElementById("printButton");
+    const directPrintButton = document.getElementById("directPrintButton");
+    const printSheet = document.getElementById("printSheet");
+    const printSheetBackdrop = document.getElementById("printSheetBackdrop");
+    const printCopiesInput = document.getElementById("printCopiesInput");
+    const closePrintSheetButton = document.getElementById("closePrintSheetButton");
+    const confirmPrintButton = document.getElementById("confirmPrintButton");
     const actualPreviewButton = document.getElementById("actualPreviewButton");
     const actualPreviewBlock = document.getElementById("actualPreviewBlock");
     const actualPreviewImage = document.getElementById("actualPreviewImage");
@@ -298,6 +328,8 @@
     let selectedVariantSnapshot = null;
     let autoMatchVariantId = "";
     let barcodeGenerationPending = false;
+    let allowFormSubmit = false;
+    const storageKey = "shopbridge.newStockState.v3";
 
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -383,6 +415,102 @@
     function setMode(mode, label) {
       workflowMode.value = mode;
       modePill.textContent = label;
+    }
+
+    function readyToPrint() {
+      return !printButton.disabled && Boolean(templateSelect.value);
+    }
+
+    function submitPrint(copyCount) {
+      const cleanCopies = Math.max(1, Number.parseInt(copyCount || fields.copies.value || "1", 10) || 1);
+      fields.copies.value = cleanCopies;
+      saveWorkflowState();
+      allowFormSubmit = true;
+      form.requestSubmit();
+    }
+
+    function openPrintSheet() {
+      if (!readyToPrint()) {
+        return;
+      }
+      printCopiesInput.value = fields.copies.value || "1";
+      printSheet.hidden = false;
+      window.setTimeout(() => {
+        printCopiesInput.focus();
+        printCopiesInput.select();
+      }, 0);
+    }
+
+    function closePrintSheet() {
+      printSheet.hidden = true;
+    }
+
+    function visibleEntryFields() {
+      return [
+        variantSearch,
+        familyName,
+        fields.brand,
+        fields.item,
+        fields.article,
+        fields.size,
+        fields.batch,
+        fields.expiry,
+        fields.mrp,
+        fields.selling,
+        fields.coded
+      ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
+    }
+
+    function moveEntryFocus(currentField, direction) {
+      const entries = visibleEntryFields();
+      const index = entries.indexOf(currentField);
+      if (index === -1) {
+        return;
+      }
+      const next = entries[index + direction];
+      if (next) {
+        next.focus();
+        next.select();
+      }
+    }
+
+    function caretAtStart(field) {
+      try {
+        return field.selectionStart === 0 && field.selectionEnd === 0;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function caretAtEnd(field) {
+      try {
+        return field.selectionStart === field.value.length && field.selectionEnd === field.value.length;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function handleEntryArrowNavigation(event) {
+      if (!printSheet.hidden || event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+      const target = event.target;
+      if (!visibleEntryFields().includes(target)) {
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveEntryFocus(target, 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveEntryFocus(target, -1);
+      } else if (event.key === "ArrowRight" && caretAtEnd(target)) {
+        event.preventDefault();
+        moveEntryFocus(target, 1);
+      } else if (event.key === "ArrowLeft" && caretAtStart(target)) {
+        event.preventDefault();
+        moveEntryFocus(target, -1);
+      }
     }
 
     function visibleTemplateOptions() {
@@ -701,6 +829,7 @@
       itemSection.hidden = !readyForEntry;
       familyName.required = readyForEntry;
       printButton.disabled = !readyForEntry;
+      directPrintButton.disabled = !readyForEntry;
       actualPreviewButton.disabled = !readyForEntry;
       setupPill.textContent = readyForEntry ? "Ready for item entry" : hasTemplate ? "Template setup needed" : "Choose template first";
 
@@ -711,6 +840,8 @@
           fieldName === "article_no"
             ? requiresArticle(required)
             : fieldName === "barcode"
+              ? true
+            : fieldName === "selling_price"
               ? true
             : fieldName === "item_display_name" || fieldName === "design"
               ? requiresItemName(required)
@@ -745,6 +876,71 @@
           input.value = defaultValue;
         }
       });
+    }
+
+    function workflowState() {
+      return {
+        category: categorySelect.value,
+        template_id: templateSelect.value,
+        existing_variant_id: existingVariantId.value,
+        family_id: familyId.value,
+        family_name: familyName.value,
+        variant_search: variantSearch.value,
+        workflow_mode: workflowMode.value,
+        barcode: existingVariantId.value || manualBarcodeOverride.checked ? fields.barcode.value : "",
+        manual_barcode_override: manualBarcodeOverride.checked,
+        brand: fields.brand.value,
+        item_display_name: fields.item.value,
+        article_no: fields.article.value,
+        size: fields.size.value,
+        batch_no: fields.batch.value,
+        expiry: fields.expiry.value,
+        mrp: fields.mrp.value,
+        selling_price: fields.selling.value,
+        coded_price: fields.coded.value,
+        copies: fields.copies.value
+      };
+    }
+
+    function saveWorkflowState() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(workflowState()));
+      } catch (error) {
+        // Local storage can be unavailable in locked-down browsers.
+      }
+    }
+
+    function restoreWorkflowState() {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      } catch (error) {
+        saved = null;
+      }
+      if (!saved || initialVariantId) {
+        return false;
+      }
+
+      categorySelect.value = saved.category || categorySelect.value;
+      templateSelect.value = saved.template_id || templateSelect.value;
+      existingVariantId.value = saved.existing_variant_id || "";
+      familyId.value = saved.family_id || "";
+      familyName.value = saved.family_name || "";
+      variantSearch.value = saved.variant_search || "";
+      workflowMode.value = saved.workflow_mode || "print";
+      manualBarcodeOverride.checked = Boolean(saved.manual_barcode_override);
+      fields.barcode.value = saved.barcode || "";
+      fields.brand.value = saved.brand || "";
+      fields.item.value = saved.item_display_name || "";
+      fields.article.value = saved.article_no || "";
+      fields.size.value = saved.size || "";
+      fields.batch.value = saved.batch_no || "";
+      fields.expiry.value = saved.expiry || "";
+      fields.mrp.value = saved.mrp || "";
+      fields.selling.value = saved.selling_price || "";
+      fields.coded.value = saved.coded_price || "";
+      fields.copies.value = saved.copies || "1";
+      return true;
     }
 
     function revokeActualPreviewObjectUrl() {
@@ -918,6 +1114,7 @@
         refreshBarcodeControls();
       }
       updatePreview();
+      saveWorkflowState();
     }
 
     function updatePreview() {
@@ -958,6 +1155,7 @@
 
     variantSearch.addEventListener("focus", openVariantMenu);
     variantSearch.addEventListener("input", openVariantMenu);
+    variantSearch.addEventListener("input", saveWorkflowState);
     variantSearch.addEventListener("change", () => {
       const value = variantSearch.value.trim().toLowerCase();
       const variant = variants.find(item => variantLabel(item).toLowerCase() === value);
@@ -988,34 +1186,41 @@
       if (!familyName.value.trim()) {
         familyId.value = "";
       }
+      saveWorkflowState();
     });
+    familyName.addEventListener("input", saveWorkflowState);
 
     categorySelect.addEventListener("change", () => {
       clearActualPreview();
       applyCategory();
+      saveWorkflowState();
     });
 
     templateSelect.addEventListener("change", () => {
       clearActualPreview();
       applyTemplateFields();
+      saveWorkflowState();
     });
 
     Object.values(fields).forEach(field => {
       field.addEventListener("input", () => {
         clearActualPreview();
         updatePreview();
+        saveWorkflowState();
       });
       field.addEventListener("change", () => {
         clearActualPreview();
         updatePreview();
+        saveWorkflowState();
       });
     });
 
     actualPreviewButton.addEventListener("click", generateActualPreview);
 
-    [variantSearch, familyName, ...Object.values(inputByField)].forEach(field => {
+    Array.from(new Set([variantSearch, familyName, ...Object.values(inputByField)])).forEach(field => {
       field.addEventListener("focus", () => field.select());
       field.addEventListener("mouseup", event => event.preventDefault());
+      field.addEventListener("keydown", handleEntryArrowNavigation);
     });
 
     duplicateButton.addEventListener("click", () => {
@@ -1032,6 +1237,7 @@
         refreshBarcodeControls();
         requestGeneratedBarcode(false);
         updatePreview();
+        saveWorkflowState();
       }
     });
 
@@ -1052,6 +1258,7 @@
       matchSuggestion.hidden = true;
       requestGeneratedBarcode(true);
       updatePreview();
+      saveWorkflowState();
     });
 
     createNewPriceButton.addEventListener("click", () => {
@@ -1061,6 +1268,7 @@
       priceDecisionWarning.hidden = false;
       requestGeneratedBarcode(true);
       updatePreview();
+      saveWorkflowState();
     });
 
     updateExistingPriceButton.addEventListener("click", () => {
@@ -1069,10 +1277,12 @@
       setMode("update_existing", "Updating existing barcode");
       priceDecisionWarning.hidden = true;
       updatePreview();
+      saveWorkflowState();
     });
 
     manualBarcodeOverride.addEventListener("change", () => {
       refreshBarcodeControls();
+      saveWorkflowState();
     });
 
     regenerateBarcodeButton.addEventListener("click", () => {
@@ -1081,15 +1291,56 @@
       setMode("new_barcode", "Creating new barcode");
       requestGeneratedBarcode(true);
       updatePreview();
+      saveWorkflowState();
     });
 
     quickReprintButton.addEventListener("click", () => {
       setMode("quick_reprint", "Quick reprint selected item");
     });
 
+    form.addEventListener("submit", event => {
+      if (!allowFormSubmit) {
+        event.preventDefault();
+        openPrintSheet();
+      }
+      allowFormSubmit = false;
+    });
+
     printButton.addEventListener("click", () => {
-      if (workflowMode.value === "quick_reprint") {
-        setMode("print", existingVariantId.value ? "Updating selected item" : "New or selected item");
+      setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
+      openPrintSheet();
+    });
+
+    directPrintButton.addEventListener("click", () => {
+      setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
+      submitPrint(fields.copies.value);
+    });
+
+    confirmPrintButton.addEventListener("click", () => {
+      submitPrint(printCopiesInput.value);
+    });
+
+    closePrintSheetButton.addEventListener("click", closePrintSheet);
+    printSheetBackdrop.addEventListener("click", closePrintSheet);
+    printCopiesInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitPrint(printCopiesInput.value);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        closePrintSheet();
+      }
+    });
+    document.querySelectorAll("[data-copy-count]").forEach(button => {
+      button.addEventListener("click", () => {
+        submitPrint(button.dataset.copyCount);
+      });
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.ctrlKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        openPrintSheet();
       }
     });
 
@@ -1111,12 +1362,21 @@
       });
     });
 
-    applyCategory();
+    const restoredWorkflowState = restoreWorkflowState();
+    applyCategory(templateSelect.value);
     if (initialVariantId) {
       const initialVariant = variants.find(item => String(item.id) === String(initialVariantId));
       if (initialVariant) {
         populateVariant(initialVariant, initialDuplicate);
       }
+    } else if (restoredWorkflowState && existingVariantId.value) {
+      const restoredVariant = variants.find(item => String(item.id) === String(existingVariantId.value));
+      if (restoredVariant) {
+        selectedVariantSnapshot = {...restoredVariant};
+      }
+      refreshBarcodeControls();
+      updatePreview();
     }
+    window.addEventListener("beforeunload", saveWorkflowState);
   </script>
 {% endblock %}

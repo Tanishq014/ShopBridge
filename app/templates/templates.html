@@ -178,7 +178,7 @@
             <div class="field-default-inputs">
               {% for field in supported_fields %}
                 {% if field.name != "barcode" %}
-                {% set default_field_active = field.name in selected_required_fields or (field.name == 'article' and 'article_no' in selected_required_fields) or (field.name == 'design' and 'item_display_name' in selected_required_fields) or (field.name == 'item_display_name' and 'design' in selected_required_fields) %}
+                {% set default_field_active = field.name in selected_required_fields or field.name == 'selling_price' or (field.name == 'article' and 'article_no' in selected_required_fields) or (field.name == 'design' and 'item_display_name' in selected_required_fields) or (field.name == 'item_display_name' and 'design' in selected_required_fields) %}
                 <label class="default-field-row" data-default-field="{{ field.name }}" {% if not default_field_active %}hidden{% endif %}>
                   {{ field.label }}
                   {% set default_value = selected_default_values.get(field.name, selected_default_values.get('article_no', '') if field.name == 'article' else selected_default_values.get('item_display_name', '') if field.name == 'design' else selected_default_values.get('design', '') if field.name == 'item_display_name' else '') %}
@@ -213,6 +213,7 @@
       defaultFieldRows.forEach(row => {
         const fieldName = row.dataset.defaultField;
         const visible = selectedFields.has(fieldName)
+          || fieldName === "selling_price"
           || (fieldName === "article" && selectedFields.has("article_no"))
           || (fieldName === "design" && selectedFields.has("item_display_name"))
           || (fieldName === "item_display_name" && selectedFields.has("design"));

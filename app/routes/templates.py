@@ -64,6 +64,7 @@ def _row_field_default_badges(template: TemplateMaster) -> list[dict[str, str]]:
         active_fields.add("item_display_name")
     if "item_display_name" in active_fields:
         active_fields.add("design")
+    active_fields.add("selling_price")
     defaults = parse_field_defaults(template.default_field_values)
     return [
         {"name": field, "label": field_label(field), "value": value}
@@ -98,6 +99,7 @@ def _submitted_field_defaults(
         active_field_set.add("item_display_name")
     if "item_display_name" in active_field_set:
         active_field_set.add("design")
+    active_field_set.add("selling_price")
     values = {
         "brand": default_brand,
         "item_display_name": default_item_display_name,

@@ -228,6 +228,12 @@ label {
   gap: 5px;
 }
 
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 input,
 select,
 textarea {
@@ -614,6 +620,44 @@ tbody tr:last-child td {
 
 .print-button {
   min-width: 150px;
+}
+
+.print-sheet {
+  inset: 0;
+  position: fixed;
+  z-index: 100;
+}
+
+.print-sheet-backdrop {
+  background: rgba(16, 24, 40, 0.36);
+  inset: 0;
+  position: absolute;
+}
+
+.print-sheet-panel {
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(16, 24, 40, 0.24);
+  display: grid;
+  gap: 14px;
+  left: 50%;
+  max-width: 420px;
+  padding: 18px;
+  position: absolute;
+  top: 18%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+}
+
+.copy-blocks {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.copy-blocks button {
+  font-size: 18px;
+  min-height: 48px;
 }
 
 .workflow-side {

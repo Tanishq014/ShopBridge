@@ -347,6 +347,7 @@ def _print_redirect(job: PrintJob, template: TemplateMaster, category: str = "cl
         "printed": job.id,
         "template_id": template.id,
         "category": category,
+        "load_variant_id": job.variant_id,
     }
     if job.status == "failed" and job.error_message:
         query["print_error"] = job.error_message

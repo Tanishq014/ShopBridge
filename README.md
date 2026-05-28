@@ -39,10 +39,13 @@ data\shopbridge.db
 - No label should print unless a Label Variant is saved with a non-empty unique barcode.
 - New items get a generated barcode before printing.
 - Existing items reuse their saved barcode unless `Duplicate / New Price` or `Create new barcode` is used.
+- New Stock remembers the last selected category, template, and entry fields in the browser.
+- Printing opens a copy picker by default. `Ctrl+P` opens the same picker, and `Print Current Qty` keeps the old direct flow.
 - Generated barcode mode is set in Settings as `template_length_safe_alphanumeric`.
 - Generated barcode length comes from the selected template's extracted sample barcode when available; otherwise it uses the default length setting.
 - Generated barcodes use only `23456789BFGJKLMNQRUVWXY`, uppercase, and avoid consecutive numbers.
 - Existing company barcodes can be entered or scanned manually from the advanced barcode field.
+- Billing Item and Selling Price are saved on the label record even when BarTender does not print them.
 
 ## Coded Price
 
