@@ -286,10 +286,15 @@ def _find_exact_variant(
     for candidate in candidates:
         if mrp is not None and not _same_money(candidate.mrp, mrp):
             continue
+        if selling_price is not None:
+            if not _same_money(candidate.selling_price, selling_price):
+                continue
+        elif candidate.selling_price is not None:
+            continue
         if coded_price.strip():
             if not _same_text(candidate.coded_price, coded_price):
                 continue
-        elif selling_price is not None and not _same_money(candidate.selling_price, selling_price):
+        elif candidate.coded_price:
             continue
         if "brand" in required and brand.strip() and not _same_text(candidate.brand, brand):
             continue

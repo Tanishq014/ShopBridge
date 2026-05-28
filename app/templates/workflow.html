@@ -618,11 +618,18 @@
       if (moneyText(variant.mrp) !== moneyText(fields.mrp.value)) {
         return false;
       }
+      if (String(fields.selling.value || "").trim()) {
+        if (moneyText(variant.selling_price) !== moneyText(fields.selling.value)) {
+          return false;
+        }
+      } else if (variant.selling_price !== null && variant.selling_price !== undefined && String(variant.selling_price).trim() !== "") {
+        return false;
+      }
       if (String(fields.coded.value || "").trim()) {
         if (normalizedText(variant.coded_price) !== normalizedText(fields.coded.value)) {
           return false;
         }
-      } else if (String(fields.selling.value || "").trim() && moneyText(variant.selling_price) !== moneyText(fields.selling.value)) {
+      } else if (String(variant.coded_price || "").trim()) {
         return false;
       }
       if (required.has("brand") && String(fields.brand.value || "").trim() && normalizedText(variant.brand) !== normalizedText(fields.brand.value)) {
