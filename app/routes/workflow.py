@@ -30,6 +30,11 @@ from app.services.field_config import (
 from app.services.price_code_service import generate_coded_price
 from app.services.settings_service import get_bartender_settings, save_bartender_settings
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
+from app.services.template_preview_service import (
+    cached_template_preview_path,
+    cached_template_preview_url,
+    refresh_cached_template_preview,
+)
 
 
 router = APIRouter(tags=["workflow"])
@@ -137,6 +142,7 @@ def _template_payload(template: TemplateMaster) -> dict[str, object]:
         "required_fields": parse_required_fields(template.required_fields),
         "field_defaults": parse_field_defaults(template.default_field_values),
         "path_exists": template_path_exists(template),
+        "cached_preview_url": cached_template_preview_url(template),
         "recent": False,
     }
 
@@ -252,6 +258,19 @@ def _print_redirect(job: PrintJob, template: TemplateMaster, category: str = "cl
     if job.status == "failed" and job.error_message:
         query["print_error"] = job.error_message
     return RedirectResponse(f"/new-stock?{urlencode(query)}", status_code=303)
+
+
+def _refresh_cached_preview_error(template: TemplateMaster) -> str | None:
+    try:
+        refresh_cached_template_preview(
+            template,
+            visible=get_bartender_settings().show_bartender_window,
+        )
+    except BarTenderActiveXError as exc:
+        return f"Fields were extracted, but raw preview could not be cached: {exc}"
+    except Exception as exc:
+        return f"Fields were extracted, but raw preview could not be cached: {exc}"
+    return None
 
 
 def _form_field_values(
@@ -415,11 +434,27 @@ def extract_workflow_template_fields(
     template.default_field_values = format_field_defaults(field_defaults)
     db.add(template)
     db.commit()
+    db.refresh(template)
     extracted = ", ".join(fields)
+    query = {"template_id": template.id, "category": category, "extracted": extracted}
+    preview_error = _refresh_cached_preview_error(template)
+    if preview_error:
+        query["extract_error"] = preview_error
     return RedirectResponse(
-        f"/new-stock?{urlencode({'template_id': template.id, 'category': category, 'extracted': extracted})}",
+        f"/new-stock?{urlencode(query)}",
         status_code=303,
     )
+
+
+@router.get("/new-stock/template-preview/{template_id}")
+def cached_template_preview_image(template_id: int, db: Session = Depends(get_db)):
+    template = db.get(TemplateMaster, template_id)
+    if not template or not template.active_status:
+        return JSONResponse({"error": "Template preview was not found."}, status_code=404)
+    path = cached_template_preview_path(template)
+    if not path.is_file():
+        return JSONResponse({"error": "Template preview has not been cached yet."}, status_code=404)
+    return FileResponse(path, media_type="image/jpeg", filename=path.name)
 
 
 @router.post("/new-stock/preview-image")

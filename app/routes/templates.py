@@ -25,6 +25,11 @@ from app.services.template_folder_service import (
     scan_bartender_template_folder,
     template_path_exists,
 )
+from app.services.settings_service import get_bartender_settings
+from app.services.template_preview_service import (
+    cached_template_preview_url,
+    refresh_cached_template_preview,
+)
 
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -116,6 +121,19 @@ def _template_status(template: TemplateMaster) -> dict[str, str]:
     return {"kind": "ok", "label": "ready", "detail": "Usable in New Stock."}
 
 
+def _refresh_cached_preview_error(template: TemplateMaster) -> str | None:
+    try:
+        refresh_cached_template_preview(
+            template,
+            visible=get_bartender_settings().show_bartender_window,
+        )
+    except BarTenderActiveXError as exc:
+        return f"Template saved, but raw preview could not be cached: {exc}"
+    except Exception as exc:
+        return f"Template saved, but raw preview could not be cached: {exc}"
+    return None
+
+
 @router.get("/", response_class=HTMLResponse)
 def list_templates(
     request: Request,
@@ -124,6 +142,7 @@ def list_templates(
     skipped: int | None = None,
     extracted: str | None = None,
     extract_error: str | None = None,
+    preview_error: str | None = None,
     db: Session = Depends(get_db),
 ):
     scan_result = scan_bartender_template_folder(db)
@@ -165,7 +184,7 @@ def list_templates(
             "selected_path_in_folder": selected_path_in_folder,
             "category_choices": CATEGORY_CHOICES,
             "message": message,
-            "error": extract_error,
+            "error": preview_error or extract_error,
             "supported_fields": SUPPORTED_FIELDS,
             "selected_required_fields": selected_fields,
             "advanced_required_fields": ",".join(advanced_fields),
@@ -174,6 +193,7 @@ def list_templates(
             "row_default_maps": row_default_maps,
             "row_status": row_status,
             "template_path_exists": template_path_exists,
+            "cached_template_preview_url": cached_template_preview_url,
             "ready_count": sum(1 for row in template_rows if _template_status(row)["label"] == "ready"),
             "missing_count": sum(1 for row in template_rows if _template_status(row)["label"] == "missing file"),
             "unmapped_count": sum(1 for row in template_rows if _template_status(row)["label"] == "needs fields"),
@@ -244,6 +264,13 @@ def create_template(
     )
     db.add(template)
     db.commit()
+    db.refresh(template)
+    preview_error = _refresh_cached_preview_error(template)
+    if preview_error:
+        return RedirectResponse(
+            f"/templates?{urlencode({'preview_error': preview_error})}",
+            status_code=303,
+        )
     return RedirectResponse("/templates", status_code=303)
 
 
@@ -285,8 +312,12 @@ def extract_template_fields(
     template.default_field_values = format_field_defaults(field_defaults) or None
     db.add(template)
     db.commit()
+    db.refresh(template)
     extracted = ", ".join(fields)
     query = {"extracted": extracted}
+    preview_error = _refresh_cached_preview_error(template)
+    if preview_error:
+        query["preview_error"] = preview_error
     if return_to == "edit":
         query["edit_id"] = str(template.id)
     return RedirectResponse(
@@ -361,6 +392,13 @@ def update_template(
     template.active_status = active_status
     db.add(template)
     db.commit()
+    db.refresh(template)
+    preview_error = _refresh_cached_preview_error(template)
+    if preview_error:
+        return RedirectResponse(
+            f"/templates?{urlencode({'edit_id': template.id, 'preview_error': preview_error})}",
+            status_code=303,
+        )
     return RedirectResponse("/templates", status_code=303)
 
 

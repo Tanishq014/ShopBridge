@@ -4,7 +4,7 @@
   <section class="page-header compact-header">
     <div>
       <h1>New Stock / Print Labels</h1>
-      <p>Fast entry, preview, and BarTender CSV print job creation.</p>
+      <p>Fast entry, template preview, and direct BarTender printing.</p>
     </div>
   </section>
   {% if template_warning %}
@@ -441,6 +441,7 @@
       extractCategory.value = categorySelect.value;
       applyTemplateDefaults(readyForEntry);
       updatePreview();
+      showCachedTemplatePreview();
     }
 
     function applyTemplateDefaults(readyForEntry) {
@@ -462,16 +463,31 @@
       });
     }
 
-    function clearActualPreview() {
+    function revokeActualPreviewObjectUrl() {
       if (actualPreviewUrl) {
         URL.revokeObjectURL(actualPreviewUrl);
         actualPreviewUrl = "";
       }
-      actualPreviewImage.removeAttribute("src");
-      actualPreviewBlock.hidden = true;
+    }
+
+    function showCachedTemplatePreview() {
+      revokeActualPreviewObjectUrl();
       actualPreviewError.hidden = true;
       actualPreviewError.textContent = "";
+      const template = selectedTemplate();
+      if (template && template.cached_preview_url) {
+        actualPreviewImage.src = template.cached_preview_url;
+        actualPreviewBlock.hidden = false;
+        simulatedPreview.hidden = true;
+        return;
+      }
+      actualPreviewImage.removeAttribute("src");
+      actualPreviewBlock.hidden = true;
       simulatedPreview.hidden = false;
+    }
+
+    function clearActualPreview() {
+      showCachedTemplatePreview();
     }
 
     async function generateActualPreview() {
@@ -509,13 +525,13 @@
         if (!blob.type.startsWith("image/")) {
           throw new Error("BarTender did not return an image preview.");
         }
-        clearActualPreview();
+        revokeActualPreviewObjectUrl();
         actualPreviewUrl = URL.createObjectURL(blob);
         actualPreviewImage.src = actualPreviewUrl;
         actualPreviewBlock.hidden = false;
         simulatedPreview.hidden = true;
       } catch (error) {
-        clearActualPreview();
+        showCachedTemplatePreview();
         actualPreviewError.textContent = error.message || "Could not generate actual preview.";
         actualPreviewError.hidden = false;
       } finally {

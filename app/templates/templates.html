@@ -58,6 +58,9 @@
               <td>
                 <span class="badge {{ row_status[row.id].kind }}">{{ row_status[row.id].label }}</span>
                 <div class="muted-text">{{ row_status[row.id].detail }}</div>
+                {% if cached_template_preview_url(row) %}
+                  <div class="muted-text">raw preview cached</div>
+                {% endif %}
               </td>
               <td>
                 <div class="path-cell">{{ row.bartender_file_path }}</div>
