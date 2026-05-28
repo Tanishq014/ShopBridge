@@ -162,9 +162,6 @@
         </div>
 
         <div class="quick-row">
-          <button class="button" type="button" id="duplicateButton">Duplicate Previous</button>
-          <button class="button" type="submit" id="quickReprintButton">Quick Reprint</button>
-          <button class="button" type="button" id="directPrintButton" disabled>Print Current Qty</button>
           <button class="button primary print-button" type="button" id="printButton" disabled>Print Labels</button>
         </div>
       </div>
@@ -289,8 +286,6 @@
     const variantCombo = document.getElementById("variantCombo");
     const templateSelect = document.getElementById("templateSelect");
     const templateBadge = document.getElementById("templateBadge");
-    const duplicateButton = document.getElementById("duplicateButton");
-    const quickReprintButton = document.getElementById("quickReprintButton");
     const matchSuggestion = document.getElementById("matchSuggestion");
     const matchSuggestionText = document.getElementById("matchSuggestionText");
     const reuseMatchButton = document.getElementById("reuseMatchButton");
@@ -309,7 +304,6 @@
     const missingTemplateState = document.getElementById("missingTemplateState");
     const unmappedTemplateState = document.getElementById("unmappedTemplateState");
     const printButton = document.getElementById("printButton");
-    const directPrintButton = document.getElementById("directPrintButton");
     const printSheet = document.getElementById("printSheet");
     const printSheetBackdrop = document.getElementById("printSheetBackdrop");
     const printCopiesInput = document.getElementById("printCopiesInput");
@@ -833,7 +827,6 @@
       itemSection.hidden = !readyForEntry;
       familyName.required = readyForEntry;
       printButton.disabled = !readyForEntry;
-      directPrintButton.disabled = !readyForEntry;
       actualPreviewButton.disabled = !readyForEntry;
       setupPill.textContent = readyForEntry ? "Ready for item entry" : hasTemplate ? "Template setup needed" : "Choose template first";
 
@@ -1232,24 +1225,6 @@
       field.addEventListener("keydown", handleEntryArrowNavigation);
     });
 
-    duplicateButton.addEventListener("click", () => {
-      const variant = variants.find(item => String(item.id) === String(existingVariantId.value));
-      if (variant) {
-        populateVariant(variant, true);
-      } else {
-        setMode("new_barcode", "New item from current values");
-        existingVariantId.value = "";
-        autoMatchVariantId = "";
-        selectedVariantSnapshot = null;
-        fields.barcode.value = "";
-        manualBarcodeOverride.checked = false;
-        refreshBarcodeControls();
-        requestGeneratedBarcode(false);
-        updatePreview();
-        saveWorkflowState();
-      }
-    });
-
     reuseMatchButton.addEventListener("click", () => {
       const match = selectedVariant();
       if (match) {
@@ -1303,10 +1278,6 @@
       saveWorkflowState();
     });
 
-    quickReprintButton.addEventListener("click", () => {
-      setMode("quick_reprint", "Quick reprint selected item");
-    });
-
     form.addEventListener("submit", event => {
       if (!allowFormSubmit) {
         event.preventDefault();
@@ -1318,11 +1289,6 @@
     printButton.addEventListener("click", () => {
       setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
       openPrintSheet();
-    });
-
-    directPrintButton.addEventListener("click", () => {
-      setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
-      submitPrint(fields.copies.value);
     });
 
     confirmPrintButton.addEventListener("click", () => {
