@@ -187,6 +187,38 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/pos/lookup-barcodes")
+async def pos_lookup_barcodes(request: Request, db: Session = Depends(get_db)):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for raw_candidate in payload.get("candidates", []):
+        candidate = normalize_barcode(str(raw_candidate))
+        if candidate and candidate not in seen:
+            candidates.append(candidate)
+            seen.add(candidate)
+        if len(candidates) >= 12:
+            break
+
+    matches = []
+    for candidate in candidates:
+        variant = lookup_saved_price_by_barcode(db, candidate)
+        if variant:
+            matches.append(
+                {
+                    "barcode": variant.barcode,
+                    "item_name": variant.item_display_name,
+                    "selling_price": _money(variant.selling_price),
+                    "missing_price": variant.selling_price is None,
+                }
+            )
+    return {"ok": True, "matches": matches}
+
+
 @router.post("/pos/cart/items/{item_id}/increase")
 def increase_pos_item(item_id: int, db: Session = Depends(get_db)):
     item = db.get(PosCartItem, item_id)

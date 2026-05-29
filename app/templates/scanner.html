@@ -13,6 +13,21 @@
         <span id="scanDetail">Camera scanner will start if this phone supports it.</span>
       </div>
 
+      <div class="scanner-compare" id="scanCompare" hidden>
+        <div>
+          <span>Barcode</span>
+          <strong class="mono" id="barcodeCandidate">-</strong>
+        </div>
+        <div>
+          <span>Text</span>
+          <strong class="mono" id="textCandidate">-</strong>
+        </div>
+        <div class="form-actions" id="scanConflictActions" hidden>
+          <button class="button small primary" type="button" id="useBarcodeButton">Use barcode</button>
+          <button class="button small" type="button" id="useTextButton">Use text</button>
+        </div>
+      </div>
+
       <div class="scanner-video-wrap" id="videoWrap">
         <video id="scannerVideo" autoplay muted playsinline></video>
       </div>
@@ -35,24 +50,166 @@
     const scanDetail = document.getElementById("scanDetail");
     const scannerVideo = document.getElementById("scannerVideo");
     const videoWrap = document.getElementById("videoWrap");
+    const scanCompare = document.getElementById("scanCompare");
+    const barcodeCandidate = document.getElementById("barcodeCandidate");
+    const textCandidate = document.getElementById("textCandidate");
+    const scanConflictActions = document.getElementById("scanConflictActions");
+    const useBarcodeButton = document.getElementById("useBarcodeButton");
+    const useTextButton = document.getElementById("useTextButton");
     const manualScanForm = document.getElementById("manualScanForm");
     const manualBarcodeInput = document.getElementById("manualBarcodeInput");
     const confirmMissingPriceButton = document.getElementById("confirmMissingPriceButton");
 
-    let detector = null;
+    let barcodeDetector = null;
+    let textDetector = null;
     let stream = null;
     let scanning = false;
     let lastBarcode = "";
     let lastScanAt = 0;
     let pendingMissingBarcode = "";
+    let pendingBarcodeResult = "";
+    let pendingTextResult = "";
     let lockedBarcode = "";
     let clearFrames = 0;
+    let lastTextScanAt = 0;
+    let cachedTextCandidates = [];
     let wakeLock = null;
 
     function setStatus(kind, title, detail) {
       scanStatus.className = `scanner-status ${kind}`;
       scanStatus.querySelector("strong").textContent = title;
       scanDetail.textContent = detail || "";
+    }
+
+    function normalizeScanValue(value) {
+      return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    function likelyBarcodeCandidatesFromText(rawText) {
+      const text = String(rawText || "").toUpperCase();
+      const fragments = text.match(/[A-Z0-9][A-Z0-9\s\-_/]{3,}[A-Z0-9]/g) || [];
+      const candidates = [];
+      const seen = new Set();
+      fragments.forEach(fragment => {
+        const candidate = normalizeScanValue(fragment);
+        if (candidate.length >= 5 && candidate.length <= 24 && !seen.has(candidate)) {
+          candidates.push(candidate);
+          seen.add(candidate);
+        }
+      });
+      return candidates;
+    }
+
+    function showComparison(barcodeValue, textValue, showActions) {
+      scanCompare.hidden = !(barcodeValue || textValue || showActions);
+      barcodeCandidate.textContent = barcodeValue || "-";
+      textCandidate.textContent = textValue || "-";
+      scanConflictActions.hidden = !showActions;
+      useBarcodeButton.hidden = !pendingBarcodeResult;
+      useTextButton.hidden = !pendingTextResult;
+    }
+
+    async function lookupSavedBarcodeCandidates(candidates) {
+      const cleanCandidates = Array.from(new Set((candidates || []).map(normalizeScanValue).filter(Boolean))).slice(0, 12);
+      if (!cleanCandidates.length) {
+        return [];
+      }
+      const response = await fetch("/pos/lookup-barcodes", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({candidates: cleanCandidates})
+      });
+      if (!response.ok) {
+        return [];
+      }
+      const payload = await response.json();
+      return payload.matches || [];
+    }
+
+    async function detectTextCandidates() {
+      if (!textDetector) {
+        return [];
+      }
+      const now = Date.now();
+      if (now - lastTextScanAt < 700) {
+        return cachedTextCandidates;
+      }
+      lastTextScanAt = now;
+      try {
+        const textBlocks = await textDetector.detect(scannerVideo);
+        const candidates = [];
+        const seen = new Set();
+        (textBlocks || []).forEach(block => {
+          const rawText = block.rawValue || block.text || block.detectedText || "";
+          likelyBarcodeCandidatesFromText(rawText).forEach(candidate => {
+            if (!seen.has(candidate)) {
+              candidates.push(candidate);
+              seen.add(candidate);
+            }
+          });
+        });
+        cachedTextCandidates = candidates;
+        return candidates;
+      } catch (error) {
+        cachedTextCandidates = [];
+        return [];
+      }
+    }
+
+    function showScanConflict(barcodeValue, textValue) {
+      pendingBarcodeResult = barcodeValue || "";
+      pendingTextResult = textValue || "";
+      showComparison(pendingBarcodeResult, pendingTextResult, true);
+      setStatus("warn", "Barcode and text do not match", "Choose the correct value before adding to cart.");
+      lockBarcode(pendingBarcodeResult || pendingTextResult);
+    }
+
+    async function handleDetectedValues(barcodeRaw, textCandidates) {
+      const barcodeValue = normalizeScanValue(barcodeRaw);
+      const textMatches = await lookupSavedBarcodeCandidates(textCandidates);
+      const textValues = Array.from(new Set(textMatches.map(match => normalizeScanValue(match.barcode)).filter(Boolean)));
+      const textValue = textValues.length === 1 ? textValues[0] : "";
+
+      if (lockedBarcode) {
+        const lockStillVisible = barcodeValue === lockedBarcode || textValues.includes(lockedBarcode);
+        if (lockStillVisible) {
+          return;
+        }
+      }
+
+      pendingBarcodeResult = "";
+      pendingTextResult = "";
+      showComparison(barcodeValue, textValue, false);
+
+      if (barcodeValue && textValues.includes(barcodeValue)) {
+        await sendBarcode(barcodeValue);
+        return;
+      }
+
+      if (barcodeValue && textValues.length === 0) {
+        await sendBarcode(barcodeValue);
+        return;
+      }
+
+      if (barcodeValue && textValues.length > 0 && !textValues.includes(barcodeValue)) {
+        showScanConflict(barcodeValue, textValue || textValues[0]);
+        return;
+      }
+
+      if (!barcodeValue && textValues.length === 1) {
+        await sendBarcode(textValues[0]);
+        return;
+      }
+
+      if (!barcodeValue && textValues.length > 1) {
+        showScanConflict("", textValues[0]);
+        return;
+      }
+
+      if (!barcodeValue && (textCandidates || []).length) {
+        setStatus("warn", "Text detected", "No saved barcode matched the text. Try again or type it manually.");
+        showComparison("", textCandidates[0] || "", false);
+      }
     }
 
     function successSignal() {
@@ -90,7 +247,7 @@
     }
 
     function lockBarcode(barcode) {
-      lockedBarcode = String(barcode || "").trim();
+      lockedBarcode = normalizeScanValue(barcode);
       clearFrames = 0;
     }
 
@@ -146,26 +303,31 @@
     }
 
     async function scanLoop() {
-      if (!detector || !stream) {
+      if (!barcodeDetector || !stream) {
         return;
       }
       if (!scanning && scannerVideo.readyState >= 2) {
         scanning = true;
         try {
-          const barcodes = await detector.detect(scannerVideo);
+          const barcodes = await barcodeDetector.detect(scannerVideo);
+          const textCandidates = await detectTextCandidates();
           if (barcodes && barcodes.length) {
             const rawValue = String(barcodes[0].rawValue || "").trim();
-            if (lockedBarcode && rawValue && rawValue === lockedBarcode) {
+            if (lockedBarcode && normalizeScanValue(rawValue) === lockedBarcode && !textCandidates.length) {
               scanning = false;
             } else {
               clearFrames = 0;
-              await sendBarcode(rawValue);
+              await handleDetectedValues(rawValue, textCandidates);
             }
+          } else if (textCandidates.length) {
+            clearFrames = 0;
+            await handleDetectedValues("", textCandidates);
           } else {
             releaseScanLockIfClear();
-            scanning = false;
           }
         } catch (error) {
+          // Keep scanner alive even when one detection frame fails.
+        } finally {
           scanning = false;
         }
       }
@@ -179,13 +341,24 @@
         return;
       }
       try {
-        detector = new BarcodeDetector({formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"]});
+        barcodeDetector = new BarcodeDetector({formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"]});
+        if ("TextDetector" in window) {
+          try {
+            textDetector = new TextDetector();
+          } catch (error) {
+            textDetector = null;
+          }
+        }
         stream = await navigator.mediaDevices.getUserMedia({
           video: {facingMode: "environment"},
           audio: false
         });
         scannerVideo.srcObject = stream;
-        setStatus("ready", "Ready to scan", "Camera is open. Keep scanning labels.");
+        setStatus(
+          "ready",
+          "Ready to scan",
+          textDetector ? "Camera is open. Barcode and text detection are active." : "Camera is open. Barcode detection is active; text detection is unavailable in this browser."
+        );
         scanLoop();
       } catch (error) {
         videoWrap.hidden = true;
@@ -214,6 +387,28 @@
         lastBarcode = "";
         lockedBarcode = "";
         sendBarcode(barcode, true);
+      }
+    });
+    useBarcodeButton.addEventListener("click", () => {
+      if (pendingBarcodeResult) {
+        const barcode = pendingBarcodeResult;
+        pendingBarcodeResult = "";
+        pendingTextResult = "";
+        lastBarcode = "";
+        lockedBarcode = "";
+        showComparison("", "", false);
+        sendBarcode(barcode);
+      }
+    });
+    useTextButton.addEventListener("click", () => {
+      if (pendingTextResult) {
+        const barcode = pendingTextResult;
+        pendingBarcodeResult = "";
+        pendingTextResult = "";
+        lastBarcode = "";
+        lockedBarcode = "";
+        showComparison("", "", false);
+        sendBarcode(barcode);
       }
     });
 

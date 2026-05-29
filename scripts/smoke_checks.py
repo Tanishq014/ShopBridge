@@ -357,6 +357,11 @@ def main() -> None:
 
         add_response = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(add_response["ok"], "POS scan did not add saved barcode")
+        lookup_response = asyncio.run(
+            pos.pos_lookup_barcodes(DummyJsonRequest({"candidates": [first_barcode, "NOTREAL"]}), db)
+        )
+        assert_true(len(lookup_response["matches"]) == 1, "POS OCR lookup did not return exactly one saved barcode")
+        assert_true(lookup_response["matches"][0]["barcode"] == first_barcode, "POS OCR lookup returned wrong barcode")
         add_again = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(add_again["cart"]["count"] >= 2, "POS scan did not increment quantity")
 

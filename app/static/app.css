@@ -1106,6 +1106,35 @@ tbody tr:last-child td {
   border-color: #f4b8b1;
 }
 
+.scanner-compare {
+  border: 1px solid #d8dde5;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+}
+
+.scanner-compare div {
+  display: grid;
+  gap: 3px;
+}
+
+.scanner-compare span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scanner-compare strong {
+  overflow-wrap: anywhere;
+}
+
+.scanner-compare .form-actions {
+  grid-column: 1 / -1;
+}
+
 .scanner-video-wrap {
   background: #111827;
   border-radius: 8px;
