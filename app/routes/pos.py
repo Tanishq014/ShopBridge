@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
@@ -17,6 +19,11 @@ from app.services.billing_service import lookup_saved_price_by_barcode
 
 router = APIRouter(tags=["pos"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+logger = logging.getLogger(__name__)
+_pos_cart_heartbeat: dict[str, object] = {
+    "signature": None,
+    "last_log_at": 0.0,
+}
 
 
 def _money(value: Decimal | None) -> str:
@@ -125,7 +132,26 @@ def scanner_page(request: Request):
 
 @router.get("/pos/cart")
 def pos_cart(db: Session = Depends(get_db)):
-    return _cart_payload(db)
+    payload = _cart_payload(db)
+    signature = (
+        payload.get("cart_id"),
+        payload.get("count"),
+        payload.get("total"),
+        len(payload.get("items", [])),
+    )
+    now = time.monotonic()
+    last_signature = _pos_cart_heartbeat.get("signature")
+    last_log_at = float(_pos_cart_heartbeat.get("last_log_at") or 0.0)
+    if signature != last_signature or now - last_log_at >= 15:
+        logger.info(
+            "POS cart heartbeat: cart=%s items=%s total=%s",
+            payload.get("cart_id") or "empty",
+            payload.get("count") or 0,
+            payload.get("total") or "0.00",
+        )
+        _pos_cart_heartbeat["signature"] = signature
+        _pos_cart_heartbeat["last_log_at"] = now
+    return payload
 
 
 @router.post("/pos/scan")

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +11,15 @@ from app.routes import families, pos, print_jobs, scan, tally, templates as temp
 
 app = FastAPI(title="ShopBridge", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class _SuppressPosCartAccessLogs(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return "/pos/cart" not in message
+
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressPosCartAccessLogs())
 
 
 @app.on_event("startup")
