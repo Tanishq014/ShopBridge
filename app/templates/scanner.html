@@ -45,6 +45,8 @@
     let lastBarcode = "";
     let lastScanAt = 0;
     let pendingMissingBarcode = "";
+    let lockedBarcode = "";
+    let clearFrames = 0;
     let wakeLock = null;
 
     function setStatus(kind, title, detail) {
@@ -87,6 +89,23 @@
       return false;
     }
 
+    function lockBarcode(barcode) {
+      lockedBarcode = String(barcode || "").trim();
+      clearFrames = 0;
+    }
+
+    function releaseScanLockIfClear() {
+      if (!lockedBarcode) {
+        return;
+      }
+      clearFrames += 1;
+      if (clearFrames >= 4) {
+        lockedBarcode = "";
+        clearFrames = 0;
+        setStatus("ready", "Ready to scan", "Camera is open. Scan the next item.");
+      }
+    }
+
     async function sendBarcode(barcode, allowMissingPrice = false) {
       const cleanBarcode = String(barcode || "").trim();
       if (!cleanBarcode || shouldDebounce(cleanBarcode)) {
@@ -105,6 +124,7 @@
         if (response.ok && payload.ok) {
           successSignal();
           setStatus("ok", "Added to cart", `${payload.item.item_name} - ${payload.item.barcode}`);
+          lockBarcode(cleanBarcode);
           manualBarcodeInput.value = "";
           manualBarcodeInput.focus();
           return;
@@ -113,9 +133,11 @@
           pendingMissingBarcode = cleanBarcode;
           confirmMissingPriceButton.hidden = false;
           setStatus("warn", "Selling price missing", payload.message || "Confirm before adding.");
+          lockBarcode(cleanBarcode);
           return;
         }
         setStatus("error", payload.status === "not_found" ? "Not found" : "Scan failed", payload.message || "Barcode not found.");
+        lockBarcode(cleanBarcode);
       } catch (error) {
         setStatus("error", "Scanner offline", error.message || "Could not reach laptop cart.");
       } finally {
@@ -132,8 +154,15 @@
         try {
           const barcodes = await detector.detect(scannerVideo);
           if (barcodes && barcodes.length) {
-            await sendBarcode(barcodes[0].rawValue || "");
+            const rawValue = String(barcodes[0].rawValue || "").trim();
+            if (lockedBarcode && rawValue && rawValue === lockedBarcode) {
+              scanning = false;
+            } else {
+              clearFrames = 0;
+              await sendBarcode(rawValue);
+            }
           } else {
+            releaseScanLockIfClear();
             scanning = false;
           }
         } catch (error) {
@@ -183,6 +212,7 @@
         const barcode = pendingMissingBarcode;
         pendingMissingBarcode = "";
         lastBarcode = "";
+        lockedBarcode = "";
         sendBarcode(barcode, true);
       }
     });
