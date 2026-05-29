@@ -73,7 +73,23 @@
     let clearFrames = 0;
     let lastTextScanAt = 0;
     let cachedTextCandidates = [];
+    let cameraTrack = null;
     let wakeLock = null;
+    const preferredBarcodeFormats = [
+      "code_128",
+      "code_39",
+      "code_93",
+      "ean_13",
+      "ean_8",
+      "upc_a",
+      "upc_e",
+      "itf",
+      "codabar",
+      "qr_code",
+      "data_matrix",
+      "pdf417",
+      "aztec"
+    ];
 
     function setStatus(kind, title, detail) {
       scanStatus.className = `scanner-status ${kind}`;
@@ -83,6 +99,36 @@
 
     function normalizeScanValue(value) {
       return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    function scoreBarcodeCandidate(candidate) {
+      const rawValue = normalizeScanValue(candidate && candidate.rawValue);
+      if (!rawValue) {
+        return -1;
+      }
+      let score = rawValue.length;
+      const format = String(candidate && candidate.format || "").toLowerCase();
+      if (["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "itf", "codabar"].includes(format)) {
+        score += 8;
+      }
+      if (["data_matrix", "pdf417", "aztec", "qr_code"].includes(format)) {
+        score -= 2;
+      }
+      return score;
+    }
+
+    function pickBestBarcodeCandidate(barcodes) {
+      const candidates = (barcodes || [])
+        .map(candidate => ({
+          ...candidate,
+          rawValue: normalizeScanValue(candidate && candidate.rawValue)
+        }))
+        .filter(candidate => candidate.rawValue);
+      if (!candidates.length) {
+        return "";
+      }
+      candidates.sort((left, right) => scoreBarcodeCandidate(right) - scoreBarcodeCandidate(left));
+      return candidates[0].rawValue || "";
     }
 
     function likelyBarcodeCandidatesFromText(rawText) {
@@ -153,6 +199,53 @@
       } catch (error) {
         cachedTextCandidates = [];
         return [];
+      }
+    }
+
+    async function initBarcodeDetector() {
+      if (!("BarcodeDetector" in window)) {
+        return null;
+      }
+      if (typeof BarcodeDetector.getSupportedFormats === "function") {
+        try {
+          const supportedFormats = await BarcodeDetector.getSupportedFormats();
+          const formats = preferredBarcodeFormats.filter(format => supportedFormats.includes(format));
+          return new BarcodeDetector({formats: formats.length ? formats : supportedFormats});
+        } catch (error) {
+          return new BarcodeDetector({formats: preferredBarcodeFormats});
+        }
+      }
+      return new BarcodeDetector({formats: preferredBarcodeFormats});
+    }
+
+    async function applyCameraEnhancements(track) {
+      cameraTrack = track || null;
+      if (!cameraTrack || typeof cameraTrack.getCapabilities !== "function" || typeof cameraTrack.applyConstraints !== "function") {
+        return;
+      }
+      try {
+        const capabilities = cameraTrack.getCapabilities() || {};
+        const advanced = {};
+        if (capabilities.focusMode && Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes("continuous")) {
+          advanced.focusMode = "continuous";
+        }
+        if (capabilities.exposureMode && Array.isArray(capabilities.exposureMode) && capabilities.exposureMode.includes("continuous")) {
+          advanced.exposureMode = "continuous";
+        }
+        if (capabilities.zoom && typeof capabilities.zoom.min === "number" && typeof capabilities.zoom.max === "number") {
+          const zoomTarget = Math.max(
+            capabilities.zoom.min,
+            Math.min(capabilities.zoom.max, Math.min(2, capabilities.zoom.min + ((capabilities.zoom.max - capabilities.zoom.min) * 0.35)))
+          );
+          if (zoomTarget > 1) {
+            advanced.zoom = zoomTarget;
+          }
+        }
+        if (Object.keys(advanced).length) {
+          await cameraTrack.applyConstraints({advanced: [advanced]});
+        }
+      } catch (error) {
+        // Camera enhancement is optional.
       }
     }
 
@@ -312,7 +405,7 @@
           const barcodes = await barcodeDetector.detect(scannerVideo);
           const textCandidates = await detectTextCandidates();
           if (barcodes && barcodes.length) {
-            const rawValue = String(barcodes[0].rawValue || "").trim();
+            const rawValue = pickBestBarcodeCandidate(barcodes);
             if (lockedBarcode && normalizeScanValue(rawValue) === lockedBarcode && !textCandidates.length) {
               scanning = false;
             } else {
@@ -331,7 +424,7 @@
           scanning = false;
         }
       }
-      window.setTimeout(scanLoop, 250);
+      window.setTimeout(scanLoop, 120);
     }
 
     async function startCameraScanner() {
@@ -341,7 +434,10 @@
         return;
       }
       try {
-        barcodeDetector = new BarcodeDetector({formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"]});
+        barcodeDetector = await initBarcodeDetector();
+        if (!barcodeDetector) {
+          throw new Error("BarcodeDetector is unavailable in this browser.");
+        }
         if ("TextDetector" in window) {
           try {
             textDetector = new TextDetector();
@@ -350,10 +446,22 @@
           }
         }
         stream = await navigator.mediaDevices.getUserMedia({
-          video: {facingMode: "environment"},
+          video: {
+            facingMode: {ideal: "environment"},
+            width: {ideal: 1920},
+            height: {ideal: 1080},
+            frameRate: {ideal: 30, max: 30},
+            aspectRatio: {ideal: 1.333333}
+          },
           audio: false
         });
         scannerVideo.srcObject = stream;
+        try {
+          await scannerVideo.play();
+        } catch (error) {
+          // Autoplay is best-effort on mobile browsers.
+        }
+        await applyCameraEnhancements(stream.getVideoTracks()[0]);
         setStatus(
           "ready",
           "Ready to scan",
