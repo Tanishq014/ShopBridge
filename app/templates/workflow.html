@@ -356,6 +356,7 @@
     let autoMatchVariantId = "";
     let barcodeGenerationPending = false;
     let allowFormSubmit = false;
+    let printSubmissionPending = false;
     let customInputByField = {};
     const storageKey = "shopbridge.newStockState.v3";
 
@@ -686,21 +687,47 @@
 
     function readyToPrint() {
       return !printButton.disabled
+        && !printSubmissionPending
         && Boolean(templateSelect.value)
         && (Boolean(String(fields.selling.value || "").trim()) || printWithoutBillingPrice.checked);
     }
 
+    function setPrintControlsDisabled(disabled) {
+      printButton.disabled = disabled;
+      confirmPrintButton.disabled = disabled;
+      closePrintSheetButton.disabled = disabled;
+      printCopiesInput.disabled = disabled;
+      document.querySelectorAll("[data-copy-count]").forEach(button => {
+        button.disabled = disabled;
+      });
+    }
+
     function submitPrint(copyCount) {
+      if (printSubmissionPending) {
+        return;
+      }
       const cleanCopies = Math.max(1, Number.parseInt(copyCount || fields.copies.value || "1", 10) || 1);
       fields.copies.value = cleanCopies;
       syncExtraFieldValues();
       refreshPriceCodeDetection();
       saveWorkflowState();
+      printSubmissionPending = true;
+      setPrintControlsDisabled(true);
       allowFormSubmit = true;
-      form.requestSubmit();
+      try {
+        form.requestSubmit();
+      } catch (error) {
+        printSubmissionPending = false;
+        setPrintControlsDisabled(false);
+        allowFormSubmit = false;
+        throw error;
+      }
     }
 
     function openPrintSheet() {
+      if (printSubmissionPending) {
+        return;
+      }
       refreshPriceCodeDetection();
       if (!readyToPrint()) {
         if (!String(fields.selling.value || "").trim() && !printWithoutBillingPrice.checked) {
@@ -1793,6 +1820,7 @@
       if (!allowFormSubmit) {
         event.preventDefault();
         openPrintSheet();
+        return;
       }
       allowFormSubmit = false;
     });
@@ -1811,6 +1839,10 @@
     closePrintSheetButton.addEventListener("click", closePrintSheet);
     printSheetBackdrop.addEventListener("click", closePrintSheet);
     printCopiesInput.addEventListener("keydown", event => {
+      if (printSubmissionPending) {
+        event.preventDefault();
+        return;
+      }
       if (event.key === "Enter") {
         event.preventDefault();
         submitPrint(printCopiesInput.value);
@@ -1826,6 +1858,9 @@
     });
 
     document.addEventListener("keydown", event => {
+      if (printSubmissionPending) {
+        return;
+      }
       if (event.ctrlKey && event.key.toLowerCase() === "p") {
         event.preventDefault();
         openPrintSheet();
