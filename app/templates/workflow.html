@@ -28,9 +28,10 @@
         </div>
         <div class="form-actions pricing-toggle-row">
           <label class="checkline">
-            <input type="checkbox" id="showPricingFieldsToggle" checked>
+            <input type="checkbox" id="showPricingFieldsToggle" {% if pricing_fields_visible %}checked{% endif %}>
             Show selling price / margin
           </label>
+          <input type="hidden" name="show_pricing_fields_visible" id="showPricingFieldsValue" value="{{ '1' if pricing_fields_visible else '0' }}">
         </div>
         <div class="form-grid three">
           <label>
@@ -361,6 +362,7 @@
     const actualPreviewImage = document.getElementById("actualPreviewImage");
     const actualPreviewError = document.getElementById("actualPreviewError");
     const simulatedPreview = document.getElementById("simulatedPreview");
+    const showPricingFieldsValue = document.getElementById("showPricingFieldsValue");
     let actualPreviewUrl = "";
     let selectedVariantSnapshot = null;
     let autoMatchVariantId = "";
@@ -368,6 +370,7 @@
     let allowFormSubmit = false;
     let printSubmissionPending = false;
     let customInputByField = {};
+    let pricingFieldsPreferenceVisible = true;
     const storageKey = "shopbridge.newStockState.v3";
 
     const fields = {
@@ -474,16 +477,24 @@
       codedPriceManualOverride.value = enabled ? "true" : "false";
     }
 
-    function setPricingFieldsVisible(visible, persist = false) {
-      showPricingFieldsToggle.checked = Boolean(visible);
-      pricingDetailsRow.hidden = !visible;
+    function applyPricingFieldsVisibility(visible) {
+      pricingDetailsRow.hidden = !Boolean(visible);
+    }
+
+    function setPricingFieldsPreference(visible, persist = false) {
+      pricingFieldsPreferenceVisible = Boolean(visible);
+      showPricingFieldsToggle.checked = pricingFieldsPreferenceVisible;
+      if (showPricingFieldsValue) {
+        showPricingFieldsValue.value = pricingFieldsPreferenceVisible ? "1" : "0";
+      }
+      applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
       if (persist) {
         saveWorkflowState();
       }
     }
 
     function pricingFieldsVisible() {
-      return Boolean(showPricingFieldsToggle.checked);
+      return Boolean(pricingFieldsPreferenceVisible);
     }
 
     function calculateMrpFromMargin() {
@@ -785,7 +796,7 @@
       refreshPriceCodeDetection();
       if (!readyToPrint()) {
         if (!String(fields.selling.value || "").trim()) {
-          setPricingFieldsVisible(true);
+          applyPricingFieldsVisibility(true);
           setPriceCodeInlineState("Code cannot be decoded. Enter selling price manually.", "warn");
           window.setTimeout(() => {
             fields.selling.focus();
@@ -1421,7 +1432,7 @@
         mrp: fields.mrp.value,
         selling_price: fields.selling.value,
         margin_percent: fields.margin.value,
-        show_pricing_fields: pricingFieldsVisible(),
+        show_pricing_fields: pricingFieldsPreferenceVisible,
         coded_price: fields.coded.value,
         coded_price_manual_override: codedPriceManualOverride.value === "true",
         extra_field_values: customFieldState(),
@@ -1444,7 +1455,18 @@
       } catch (error) {
         saved = null;
       }
-      if (!saved || initialVariantId || initialBarcode) {
+      if (!saved) {
+        return false;
+      }
+
+      pricingFieldsPreferenceVisible = saved.show_pricing_fields !== undefined ? Boolean(saved.show_pricing_fields) : true;
+      showPricingFieldsToggle.checked = pricingFieldsPreferenceVisible;
+      if (showPricingFieldsValue) {
+        showPricingFieldsValue.value = pricingFieldsPreferenceVisible ? "1" : "0";
+      }
+      applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
+
+      if (initialVariantId || initialBarcode) {
         return false;
       }
 
@@ -1471,7 +1493,6 @@
       fields.selling.value = saved.selling_price || "";
       fields.margin.value = saved.margin_percent || "";
       fields.coded.value = saved.coded_price || "";
-      setPricingFieldsVisible(saved.show_pricing_fields !== undefined ? Boolean(saved.show_pricing_fields) : true);
       fields.copies.value = saved.copies || "1";
       return true;
     }
@@ -1867,7 +1888,7 @@
     });
 
     showPricingFieldsToggle.addEventListener("change", () => {
-      setPricingFieldsVisible(showPricingFieldsToggle.checked, true);
+      setPricingFieldsPreference(showPricingFieldsToggle.checked, true);
       refreshPriceCodeDetection();
       updatePreview();
     });
@@ -1962,7 +1983,7 @@
     });
 
     const restoredWorkflowState = restoreWorkflowState();
-    setPricingFieldsVisible(pricingFieldsVisible(), false);
+    setPricingFieldsPreference(pricingFieldsPreferenceVisible, false);
     applyCategory(templateSelect.value);
     if (restoredWorkflowState) {
       try {

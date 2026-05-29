@@ -568,6 +568,7 @@ def _workflow_context(
     message: str | None = None,
     warning: str | None = None,
     error: str | None = None,
+    pricing_fields_visible: bool = True,
     selected_template_id: int | None = None,
     selected_category: str = "clothes",
     initial_variant_id: int | None = None,
@@ -616,6 +617,7 @@ def _workflow_context(
             "price_code_letters": price_code_settings.price_code_letters,
             "allow_extraction": price_code_settings.allow_extraction,
         },
+        "pricing_fields_visible": pricing_fields_visible,
         "template_path_exists": template_path_exists,
         "template_warning": (
             "No active template was found. Add one in Settings -> Templates."
@@ -817,31 +819,33 @@ def print_new_stock(
     extra_field_values: str = Form(""),
     selected_price_code_key: str = Form(""),
     print_without_billing_price: bool = Form(False),
+    show_pricing_fields_visible: str = Form("1"),
     template_id: int = Form(...),
     copies: int = Form(1),
     manual_barcode_override: bool = Form(False),
     db: Session = Depends(get_db),
 ):
+    pricing_fields_visible = str(show_pricing_fields_visible).strip().lower() not in {"0", "false", "off", "no"}
     template = db.get(TemplateMaster, template_id)
     if not template or not template.active_status:
         return templates.TemplateResponse(
             request,
             "workflow.html",
-            _workflow_context(request, db, error="Select an active template."),
+            _workflow_context(request, db, error="Select an active template.", pricing_fields_visible=pricing_fields_visible),
             status_code=400,
         )
     if not template_path_exists(template):
         return templates.TemplateResponse(
             request,
             "workflow.html",
-            _workflow_context(request, db, error="Selected template file is missing on this PC. Fix it in Settings -> Templates."),
+            _workflow_context(request, db, error="Selected template file is missing on this PC. Fix it in Settings -> Templates.", pricing_fields_visible=pricing_fields_visible),
             status_code=400,
         )
     if not parse_required_fields(template.required_fields):
         return templates.TemplateResponse(
             request,
             "workflow.html",
-            _workflow_context(request, db, error="Extract fields for the selected template before printing."),
+            _workflow_context(request, db, error="Extract fields for the selected template before printing.", pricing_fields_visible=pricing_fields_visible),
             status_code=400,
         )
 
@@ -851,9 +855,9 @@ def print_new_stock(
             return templates.TemplateResponse(
                 request,
                 "workflow.html",
-                _workflow_context(request, db, error="Select an existing item before quick reprint."),
+                _workflow_context(request, db, error="Select an existing item before quick reprint.", pricing_fields_visible=pricing_fields_visible),
                 status_code=400,
-        )
+            )
         job = _create_print_job(db, source_variant, template, copies)
         return _print_redirect(job, template, category)
 
@@ -882,7 +886,7 @@ def print_new_stock(
         return templates.TemplateResponse(
             request,
             "workflow.html",
-            _workflow_context(request, db, error="Enter an item name."),
+            _workflow_context(request, db, error="Enter an item name.", pricing_fields_visible=pricing_fields_visible),
             status_code=400,
         )
 
@@ -1053,7 +1057,7 @@ def print_new_stock(
                 return templates.TemplateResponse(
                     request,
                     "workflow.html",
-                    _workflow_context(request, db, error=str(exc)),
+                    _workflow_context(request, db, error=str(exc), pricing_fields_visible=pricing_fields_visible),
                     status_code=400,
                 )
     else:
@@ -1071,7 +1075,7 @@ def print_new_stock(
             return templates.TemplateResponse(
                 request,
                 "workflow.html",
-                _workflow_context(request, db, error=str(exc)),
+                _workflow_context(request, db, error=str(exc), pricing_fields_visible=pricing_fields_visible),
                 status_code=400,
             )
         variant = LabelVariant(
@@ -1104,7 +1108,7 @@ def print_new_stock(
         return templates.TemplateResponse(
             request,
             "workflow.html",
-            _workflow_context(request, db, error=f"Variant saved, but print job failed: {exc}"),
+            _workflow_context(request, db, error=f"Variant saved, but print job failed: {exc}", pricing_fields_visible=pricing_fields_visible),
             status_code=500,
         )
 
