@@ -572,6 +572,7 @@ def _workflow_context(
     selected_category: str = "clothes",
     initial_variant_id: int | None = None,
     initial_duplicate: bool = False,
+    initial_barcode: str = "",
 ) -> dict[str, object]:
     scan_bartender_template_folder(db)
     families = _active_families(db)
@@ -606,6 +607,7 @@ def _workflow_context(
         "selected_category": selected_category,
         "initial_variant_id": initial_variant_id,
         "initial_duplicate": initial_duplicate,
+        "initial_barcode": normalize_barcode(initial_barcode),
         "pricing_settings": get_pricing_settings(),
         "price_code_settings": price_code_settings,
         "price_code_settings_json": {
@@ -639,6 +641,7 @@ def new_stock(
     print_error: str | None = None,
     load_variant_id: int | None = None,
     duplicate_variant_id: int | None = None,
+    barcode: str = "",
     db: Session = Depends(get_db),
 ):
     message = None
@@ -667,6 +670,7 @@ def new_stock(
             selected_category=category,
             initial_variant_id=duplicate_variant_id or load_variant_id,
             initial_duplicate=bool(duplicate_variant_id),
+            initial_barcode=barcode,
         ),
     )
 
@@ -809,6 +813,7 @@ def print_new_stock(
     mrp: str = Form(""),
     selling_price: str = Form(""),
     coded_price: str = Form(""),
+    coded_price_manual_override: bool = Form(False),
     extra_field_values: str = Form(""),
     selected_price_code_key: str = Form(""),
     print_without_billing_price: bool = Form(False),
@@ -899,7 +904,15 @@ def print_new_stock(
         if field_name not in extra_values and source_variant and not field_is_required(field_name):
             extra_values[field_name] = field_value
     price_code_settings = get_price_code_settings()
-    coded = generate_coded_price(selling, price_code_settings) if selling is not None else (coded_price.strip() or value_or_preserved("coded_price", coded_price))
+    raw_coded_price = coded_price.strip()
+    if selling is not None:
+        generated_coded = generate_coded_price(selling, price_code_settings)
+        if raw_coded_price and coded_price_manual_override:
+            coded = raw_coded_price
+        else:
+            coded = generated_coded or raw_coded_price or value_or_preserved("coded_price", coded_price)
+    else:
+        coded = raw_coded_price or value_or_preserved("coded_price", coded_price)
 
     field_values = {
         "brand": brand_value,

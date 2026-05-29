@@ -19,6 +19,7 @@
       <input type="hidden" name="copies" id="copiesInput" value="1">
       <input type="hidden" name="extra_field_values" id="extraFieldValuesInput" value="{}">
       <input type="hidden" name="selected_price_code_key" id="selectedPriceCodeKey" value="">
+      <input type="hidden" name="coded_price_manual_override" id="codedPriceManualOverride" value="false">
 
       <div class="workflow-section setup-section">
         <div class="section-line">
@@ -294,6 +295,7 @@
     const categories = {{ categories|tojson }};
     const initialVariantId = "{{ initial_variant_id or '' }}";
     const initialDuplicate = {{ 'true' if initial_duplicate else 'false' }};
+    const initialBarcode = "{{ initial_barcode or '' }}";
     const mrpRounding = Number({{ pricing_settings.mrp_rounding|tojson }});
     const priceCodeSettings = {{ price_code_settings_json|tojson }};
 
@@ -305,6 +307,7 @@
     const familyId = document.getElementById("familyId");
     const extraFieldValuesInput = document.getElementById("extraFieldValuesInput");
     const selectedPriceCodeKey = document.getElementById("selectedPriceCodeKey");
+    const codedPriceManualOverride = document.getElementById("codedPriceManualOverride");
     const familyName = document.getElementById("familyName");
     const categorySelect = document.getElementById("categorySelect");
     const variantSearch = document.getElementById("variantSearch");
@@ -454,6 +457,10 @@
     function showPricingMessage(message) {
       pricingCalcMessage.textContent = message;
       pricingCalcMessage.hidden = !message;
+    }
+
+    function setCodedPriceManualOverride(enabled) {
+      codedPriceManualOverride.value = enabled ? "true" : "false";
     }
 
     function calculateMrpFromMargin() {
@@ -628,14 +635,19 @@
         return;
       }
       if (String(fields.selling.value || "").trim()) {
-        const encoded = encodeSellingPrice(fields.selling.value);
-        if (encoded) {
-          fields.coded.value = encoded;
-          priceCodeDetectionMessage.textContent = `Code auto-filled from Selling Price: ${fields.coded.value}`;
+        if (codedPriceManualOverride.value === "true") {
+          priceCodeDetectionMessage.textContent = "Selling Price is set. Code is being kept as a manual override.";
           priceCodeDetectionMessage.hidden = false;
         } else {
-          priceCodeDetectionMessage.textContent = "Selling Price is set, but the current code mapping cannot encode it. Enter Code manually or update Settings.";
-          priceCodeDetectionMessage.hidden = false;
+          const encoded = encodeSellingPrice(fields.selling.value);
+          if (encoded) {
+            fields.coded.value = encoded;
+            priceCodeDetectionMessage.textContent = `Code auto-filled from Selling Price: ${fields.coded.value}`;
+            priceCodeDetectionMessage.hidden = false;
+          } else {
+            priceCodeDetectionMessage.textContent = "Selling Price is set, but the current code mapping cannot encode it. Enter Code manually or update Settings.";
+            priceCodeDetectionMessage.hidden = false;
+          }
         }
         priceCodeChoiceBox.hidden = true;
         return;
@@ -647,6 +659,7 @@
         selectedPriceCodeKey.value = candidate.key || candidateKey(candidate);
         fields.selling.value = candidate.selling_price;
         fields.coded.value = fields.coded.value || candidate.code;
+        setCodedPriceManualOverride(true);
         priceCodeChoiceBox.hidden = true;
         priceCodeDetectionMessage.textContent = `Detected code ${candidate.code} from ${fieldLabel(candidate.source_field)} -> Selling price ${candidate.selling_price}`;
         priceCodeDetectionMessage.hidden = false;
@@ -1325,6 +1338,7 @@
         selling_price: fields.selling.value,
         margin_percent: fields.margin.value,
         coded_price: fields.coded.value,
+        coded_price_manual_override: codedPriceManualOverride.value === "true",
         extra_field_values: customFieldState(),
         copies: fields.copies.value
       };
@@ -1345,7 +1359,7 @@
       } catch (error) {
         saved = null;
       }
-      if (!saved || initialVariantId) {
+      if (!saved || initialVariantId || initialBarcode) {
         return false;
       }
 
@@ -1360,6 +1374,7 @@
       printWithoutBillingPrice.checked = Boolean(saved.print_without_billing_price);
       selectedPriceCodeKey.value = saved.selected_price_code_key || "";
       extraFieldValuesInput.value = JSON.stringify(saved.extra_field_values || {});
+      setCodedPriceManualOverride(Boolean(saved.coded_price_manual_override));
       fields.barcode.value = saved.barcode || "";
       fields.brand.value = saved.brand || "";
       fields.item.value = saved.item_display_name || "";
@@ -1557,6 +1572,7 @@
       fields.mrp.value = variant.mrp || "";
       fields.selling.value = variant.selling_price || "";
       fields.coded.value = variant.coded_price || "";
+      setCodedPriceManualOverride(!duplicate);
       printWithoutBillingPrice.checked = Boolean(variant.billing_price_missing);
       selectedPriceCodeKey.value = "";
       extraFieldValuesInput.value = JSON.stringify(variant.extra_field_values || {});
@@ -1659,6 +1675,9 @@
     });
 
     Object.values(fields).forEach(field => {
+      if (field === fields.coded) {
+        return;
+      }
       field.addEventListener("input", () => {
         clearActualPreview();
         showPricingMessage("");
@@ -1675,6 +1694,25 @@
         updatePreview();
         saveWorkflowState();
       });
+    });
+
+    fields.coded.addEventListener("input", () => {
+      setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
+      clearActualPreview();
+      showPricingMessage("");
+      selectedPriceCodeKey.value = "";
+      refreshPriceCodeDetection();
+      updatePreview();
+      saveWorkflowState();
+    });
+    fields.coded.addEventListener("change", () => {
+      setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
+      clearActualPreview();
+      showPricingMessage("");
+      selectedPriceCodeKey.value = "";
+      refreshPriceCodeDetection();
+      updatePreview();
+      saveWorkflowState();
     });
 
     actualPreviewButton.addEventListener("click", generateActualPreview);
@@ -1827,6 +1865,12 @@
       if (initialVariant) {
         populateVariant(initialVariant, initialDuplicate);
       }
+    } else if (initialBarcode) {
+      fields.barcode.value = initialBarcode;
+      manualBarcodeOverride.checked = true;
+      refreshBarcodeControls();
+      updatePreview();
+      saveWorkflowState();
     } else if (restoredWorkflowState && existingVariantId.value) {
       const restoredVariant = variants.find(item => String(item.id) === String(existingVariantId.value));
       if (restoredVariant) {

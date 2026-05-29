@@ -83,6 +83,7 @@ def print_item(db, template, **overrides):
         "extra_field_values": "",
         "selected_price_code_key": "",
         "print_without_billing_price": False,
+        "coded_price_manual_override": False,
         "template_id": template.id,
         "copies": 1,
         "db": db,
@@ -288,6 +289,35 @@ def main() -> None:
         assert_true(manual_item.coded_price == "DDD", "manual selling price did not generate coded price")
         billing_item = lookup_saved_price_by_barcode(db, manual_item.barcode)
         assert_true(str(billing_item.selling_price) in {"222.00", "222"}, "billing lookup did not use saved selling price")
+
+        print_item(
+            db,
+            fallback_template,
+            item_display_name="Default Code",
+            article_no="FFF",
+            batch_no="XX",
+            coded_price="ZZZ",
+            selling_price="222",
+            mrp="",
+            size="",
+        )
+        default_code_item = db.query(LabelVariant).filter_by(item_display_name="Default Code").one()
+        assert_true(default_code_item.coded_price == "DDD", "default code was not replaced by selling price")
+
+        print_item(
+            db,
+            fallback_template,
+            item_display_name="Manual Code Override",
+            article_no="FFF",
+            batch_no="XX",
+            coded_price="GIB",
+            coded_price_manual_override=True,
+            selling_price="222",
+            mrp="",
+            size="",
+        )
+        manual_code_item = db.query(LabelVariant).filter_by(item_display_name="Manual Code Override").one()
+        assert_true(manual_code_item.coded_price == "GIB", "manual coded price override was not preserved")
 
         try:
             assign_barcode(db, first_barcode)

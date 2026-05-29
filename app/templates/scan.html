@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Scan / Lookup - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header compact-header">
+    <div>
+      <h1>Scan / Lookup</h1>
+      <p>Scan a saved label barcode to view its saved billing price and print history.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <form class="form-grid inline-form" method="get" action="/scan">
+      <label class="span-two">
+        Barcode
+        <input name="barcode" value="{{ barcode or '' }}" autofocus autocomplete="off" placeholder="Scan or type barcode">
+      </label>
+      <div class="form-actions pricing-actions">
+        <button class="button primary" type="submit">Lookup</button>
+      </div>
+    </form>
+  </section>
+
+  {% if barcode and not variant %}
+    <section class="panel">
+      <div class="empty-state">
+        <strong>Barcode not found</strong>
+        <span class="mono">{{ barcode }}</span>
+        <a class="button primary" href="{{ create_url }}">Create new item with this barcode</a>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if variant %}
+    <section class="workflow-grid">
+      <div class="panel">
+        <div class="section-line">
+          <h2>Saved Label Record</h2>
+          <span class="badge ok">{{ variant.status }}</span>
+        </div>
+        <dl class="detail-grid">
+          <dt>Barcode</dt><dd class="mono">{{ variant.barcode }}</dd>
+          <dt>Item Name</dt><dd>{{ variant.item_display_name }}</dd>
+          <dt>Billing Item</dt><dd>{{ variant.family.family_name }}</dd>
+          <dt>Category</dt><dd>{{ variant.family.category or "" }}</dd>
+          <dt>Template</dt><dd>{{ variant.template.template_name if variant.template else "" }}</dd>
+          <dt>MRP</dt><dd>{{ "%.2f"|format(variant.mrp) if variant.mrp is not none else "" }}</dd>
+          <dt>Selling Price</dt><dd>{{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}</dd>
+          <dt>Code</dt><dd>{{ variant.coded_price or "" }}</dd>
+        </dl>
+        <div class="form-actions">
+          <form method="post" action="/new-stock/quick-reprint">
+            <input type="hidden" name="variant_id" value="{{ variant.id }}">
+            <input type="hidden" name="template_id" value="{{ template_id }}">
+            <input type="hidden" name="copies" value="1">
+            <button class="button primary" type="submit">Reprint Label</button>
+          </form>
+          <a class="button" href="/new-stock?duplicate_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Duplicate / New Price</a>
+          <a class="button" href="/new-stock?load_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Edit Item</a>
+        </div>
+      </div>
+
+      <aside class="workflow-side">
+        <section class="panel">
+          <h2>Print History</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Copies</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for job in jobs %}
+                <tr>
+                  <td>#{{ job.id }}</td>
+                  <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
+                  <td>{{ job.copies }}</td>
+                  <td>{{ job.created_at.strftime("%d-%m-%Y %H:%M") }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4">No print jobs yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+      </aside>
+    </section>
+  {% endif %}
+{% endblock %}
