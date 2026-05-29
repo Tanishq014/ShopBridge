@@ -7,7 +7,7 @@
       <p class="mono">{{ variant.barcode }}</p>
     </div>
     <div class="form-actions">
-      <a class="button" href="/new-stock?load_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Edit / Print</a>
+      <a class="button" href="/new-stock?load_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Edit</a>
       <a class="button primary" href="/new-stock?duplicate_variant_id={{ variant.id }}&template_id={{ template_id }}&category={{ category }}">Duplicate / New Price</a>
     </div>
   </section>
@@ -33,9 +33,9 @@
         <dt>Selling Price</dt><dd>{{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}</dd>
         <dt>Billing Price Missing</dt><dd>{{ "Yes" if variant.billing_price_missing else "No" }}</dd>
         <dt>Code</dt><dd>{{ variant.coded_price or "" }}</dd>
-        {% if variant.extra_field_values %}
-          <dt>Extra Fields</dt><dd class="mono">{{ variant.extra_field_values }}</dd>
-        {% endif %}
+        {% for field_name, field_value in extra_field_values.items() %}
+          <dt>{{ field_name|replace("_", " ")|title }}</dt><dd>{{ field_value }}</dd>
+        {% endfor %}
       </dl>
     </div>
 

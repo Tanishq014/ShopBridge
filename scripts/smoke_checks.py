@@ -24,7 +24,7 @@ from app.routes import workflow  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
 from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: E402
 from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
-from app.services.settings_service import save_price_code_settings  # noqa: E402
+from app.services.settings_service import save_barcode_settings, save_price_code_settings  # noqa: E402
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -99,6 +99,11 @@ def main() -> None:
     init_db()
     workflow.template_path_exists = lambda template: True
     workflow.process_print_job = fake_print_success
+    save_barcode_settings(
+        generation_mode="template_length_safe_alphanumeric",
+        default_length=7,
+        allowed_chars=DEFAULT_BARCODE_ALLOWED_CHARS,
+    )
     save_price_code_settings(
         digit_to_code={
             "0": "Z",
@@ -156,6 +161,19 @@ def main() -> None:
         print_item(
             db,
             template,
+            existing_variant_id="",
+            item_display_name="Toy Car",
+            mrp="100",
+            coded_price="AA",
+            size="S",
+        )
+        db.refresh(first)
+        assert_true(first.barcode == first_barcode, "exact duplicate did not reuse existing barcode")
+        assert_true(db.query(LabelVariant).filter_by(item_display_name="Toy Car").count() == 1, "exact duplicate created a second item")
+
+        print_item(
+            db,
+            template,
             existing_variant_id=str(first.id),
             item_display_name="Toy Car",
             mrp="100",
@@ -202,6 +220,22 @@ def main() -> None:
         db.commit()
         db.refresh(priority_template)
         db.refresh(fallback_template)
+
+        no_sample_template = TemplateMaster(
+            template_id="SMOKE_NO_SAMPLE",
+            template_name="Smoke No Sample",
+            category="toys",
+            bartender_file_path=str(TMP_DIR / "no_sample.btw"),
+            required_fields="item_display_name,coded_price,barcode",
+            active_status=True,
+        )
+        db.add(no_sample_template)
+        db.commit()
+        db.refresh(no_sample_template)
+
+        print_item(db, no_sample_template, item_display_name="No Sample", coded_price="DDD", mrp="", size="")
+        no_sample_item = db.query(LabelVariant).filter_by(item_display_name="No Sample").one()
+        assert_true(len(no_sample_item.barcode) == 7, "missing sample barcode did not use default length 7")
 
         print_item(db, priority_template, item_display_name="Priority Code", coded_price="DDD", article_no="FFF", mrp="", size="")
         priority_item = db.query(LabelVariant).filter_by(item_display_name="Priority Code").one()

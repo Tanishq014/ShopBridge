@@ -172,11 +172,21 @@ def _variant_payload(variant: LabelVariant) -> dict[str, object]:
         "search": " | ".join(
             part
             for part in [
+                variant.barcode,
                 variant.item_display_name,
                 variant.brand,
+                category,
                 variant.article_no,
+                variant.batch_no,
                 variant.size,
-                variant.barcode,
+                _money(variant.mrp),
+                _money(variant.selling_price),
+                variant.coded_price,
+                *[
+                    value
+                    for value in _parse_extra_field_values(variant.extra_field_values).values()
+                    if value
+                ],
             ]
             if part
         ),
@@ -1131,6 +1141,7 @@ def item_detail(variant_id: int, request: Request, db: Session = Depends(get_db)
             "jobs": jobs,
             "category": variant.family.category or "clothes",
             "template_id": _variant_template_id(variant) or "",
+            "extra_field_values": _parse_extra_field_values(variant.extra_field_values),
         },
     )
 
@@ -1253,8 +1264,8 @@ def update_bartender_settings(
     mode: str = Form("activex"),
     show_bartender_window: bool = Form(False),
     barcode_generation_mode: str = Form("template_length_safe_alphanumeric"),
-    default_barcode_length: int = Form(6),
-    barcode_allowed_chars: str = Form("23456789BFGJKLMNQRUVWXY"),
+    default_barcode_length: int = Form(7),
+    barcode_allowed_chars: str = Form("23456789BFGJKLMQRUVWXY"),
     mrp_rounding: int = Form(5),
     allow_price_code_extraction: bool = Form(False),
     digit_0_code: str = Form(""),

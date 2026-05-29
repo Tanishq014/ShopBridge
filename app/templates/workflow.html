@@ -1438,7 +1438,21 @@
     }
 
     function variantLabel(variant) {
-      return [variant.item_display_name, variant.brand, variant.article_no, variant.size, variant.barcode]
+      const extras = variant.extra_field_values ? Object.values(variant.extra_field_values) : [];
+      return [
+        variant.search,
+        variant.barcode,
+        variant.item_display_name,
+        variant.brand,
+        variant.category,
+        variant.article_no,
+        variant.batch_no,
+        variant.size,
+        variant.mrp,
+        variant.selling_price,
+        variant.coded_price,
+        ...extras
+      ]
         .filter(Boolean)
         .join(" | ");
     }
@@ -1477,7 +1491,8 @@
         const title = document.createElement("strong");
         title.textContent = variant.item_display_name || variant.family_name || "Unnamed item";
         const meta = document.createElement("span");
-        meta.textContent = [variant.brand || variant.family_name, variant.article_no, variant.size, variant.barcode]
+        const extras = variant.extra_field_values ? Object.values(variant.extra_field_values).filter(Boolean).slice(0, 2) : [];
+        meta.textContent = [variant.brand || variant.family_name, variant.category, variant.article_no, variant.batch_no, variant.size, variant.mrp, variant.selling_price, variant.coded_price, variant.barcode, ...extras]
           .filter(Boolean)
           .join(" / ");
 

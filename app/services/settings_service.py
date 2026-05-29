@@ -11,11 +11,15 @@ SHOW_BARTENDER_WINDOW_KEY = "show_bartender_window"
 VALID_BARTENDER_MODES = {"activex", "csv"}
 BARCODE_MODE_KEY = "barcode_mode"
 BARCODE_LENGTH_KEY = "barcode_length"
+BARCODE_DEFAULTS_VERSION_KEY = "barcode_defaults_version"
 BARCODE_GENERATION_MODE_KEY = "barcode_generation_mode"
 DEFAULT_BARCODE_LENGTH_KEY = "default_barcode_length"
 BARCODE_ALLOWED_CHARS_KEY = "barcode_allowed_chars"
 BARCODE_GENERATION_MODE = "template_length_safe_alphanumeric"
-DEFAULT_BARCODE_ALLOWED_CHARS = "23456789BFGJKLMNQRUVWXY"
+DEFAULT_BARCODE_LENGTH = 7
+DEFAULT_BARCODE_ALLOWED_CHARS = "23456789BFGJKLMQRUVWXY"
+LEGACY_BARCODE_ALLOWED_CHARS = "23456789BFGJKLMNQRUVWXY"
+BARCODE_DEFAULTS_VERSION = "2"
 VALID_BARCODE_MODES = {BARCODE_GENERATION_MODE}
 MRP_ROUNDING_KEY = "mrp_rounding"
 DEFAULT_MRP_ROUNDING = 5
@@ -125,11 +129,20 @@ def ensure_default_settings() -> None:
     if SHOW_BARTENDER_WINDOW_KEY not in settings:
         settings[SHOW_BARTENDER_WINDOW_KEY] = _bool_text(SHOW_BARTENDER_WINDOW)
         changed = True
+    if settings.get(BARCODE_DEFAULTS_VERSION_KEY) != BARCODE_DEFAULTS_VERSION:
+        if settings.get(DEFAULT_BARCODE_LENGTH_KEY, settings.get(BARCODE_LENGTH_KEY, "")) == "6":
+            settings[DEFAULT_BARCODE_LENGTH_KEY] = str(DEFAULT_BARCODE_LENGTH)
+            changed = True
+        if settings.get(BARCODE_ALLOWED_CHARS_KEY, "") == LEGACY_BARCODE_ALLOWED_CHARS:
+            settings[BARCODE_ALLOWED_CHARS_KEY] = DEFAULT_BARCODE_ALLOWED_CHARS
+            changed = True
+        settings[BARCODE_DEFAULTS_VERSION_KEY] = BARCODE_DEFAULTS_VERSION
+        changed = True
     if BARCODE_GENERATION_MODE_KEY not in settings:
         settings[BARCODE_GENERATION_MODE_KEY] = settings.get(BARCODE_MODE_KEY, BARCODE_GENERATION_MODE)
         changed = True
     if DEFAULT_BARCODE_LENGTH_KEY not in settings:
-        settings[DEFAULT_BARCODE_LENGTH_KEY] = settings.get(BARCODE_LENGTH_KEY, "6")
+        settings[DEFAULT_BARCODE_LENGTH_KEY] = settings.get(BARCODE_LENGTH_KEY, str(DEFAULT_BARCODE_LENGTH))
         changed = True
     if BARCODE_ALLOWED_CHARS_KEY not in settings:
         settings[BARCODE_ALLOWED_CHARS_KEY] = DEFAULT_BARCODE_ALLOWED_CHARS
@@ -183,9 +196,9 @@ def save_bartender_settings(
 
 def _barcode_length(value: str | None) -> int:
     try:
-        length = int(value or 6)
+        length = int(value or DEFAULT_BARCODE_LENGTH)
     except (TypeError, ValueError):
-        length = 6
+        length = DEFAULT_BARCODE_LENGTH
     return min(8, max(5, length))
 
 

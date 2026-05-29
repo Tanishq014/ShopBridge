@@ -42,8 +42,8 @@ data\shopbridge.db
 - New Stock remembers the last selected category, template, and entry fields in the browser.
 - Printing opens a copy picker by default. `Ctrl+P` opens the same picker, and `Print Current Qty` keeps the old direct flow.
 - Generated barcode mode is set in Settings as `template_length_safe_alphanumeric`.
-- Generated barcode length comes from the selected template's extracted sample barcode when available; otherwise it uses the default length setting.
-- Generated barcodes use only `23456789BFGJKLMNQRUVWXY`, uppercase, and avoid consecutive numbers.
+- Generated barcode length comes from the selected template's extracted sample barcode when available; otherwise it uses the default length setting, which starts at 7.
+- Generated barcodes use only `23456789BFGJKLMQRUVWXY`, uppercase, and avoid consecutive numbers.
 - Existing company barcodes can be entered or scanned manually from the advanced barcode field.
 - Billing Item and Selling Price are saved on the label record even when BarTender does not print them.
 
