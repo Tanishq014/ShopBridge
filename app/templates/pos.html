@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}POS Shadow Mode - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header compact-header">
+    <div>
+      <h1>POS Shadow Mode - No Tally Sync</h1>
+      <p>Phone scans update this laptop cart. Prices come only from saved barcode records.</p>
+    </div>
+    <div class="form-actions">
+      <a class="button primary" href="/scanner">Open Phone Scanner</a>
+      <button class="button" type="button" id="refreshCartButton">Refresh</button>
+      <button class="button" type="button" id="clearCartButton">Clear Cart</button>
+    </div>
+  </section>
+
+  <section class="status-strip pos-summary">
+    <div class="status-tile">
+      <span>Items</span>
+      <strong id="cartCount">0</strong>
+    </div>
+    <div class="status-tile ok">
+      <span>Total</span>
+      <strong id="cartTotal">Rs. 0.00</strong>
+    </div>
+    <div class="status-tile warn">
+      <span>Mode</span>
+      <strong>Shadow</strong>
+    </div>
+    <div class="status-tile">
+      <span>Sync</span>
+      <strong>Off</strong>
+    </div>
+  </section>
+
+  <section class="table-wrap pos-cart-panel">
+    <table class="pos-table">
+      <thead>
+        <tr>
+          <th>Item Name</th>
+          <th>Barcode</th>
+          <th>MRP</th>
+          <th>Selling Price</th>
+          <th>Qty</th>
+          <th>Amount</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="cartRows">
+        <tr>
+          <td colspan="7" class="empty">Cart is empty.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="workflow-state compact-message" id="cartStatus">Waiting for scans.</div>
+
+  <script>
+    const cartRows = document.getElementById("cartRows");
+    const cartCount = document.getElementById("cartCount");
+    const cartTotal = document.getElementById("cartTotal");
+    const cartStatus = document.getElementById("cartStatus");
+    const refreshCartButton = document.getElementById("refreshCartButton");
+    const clearCartButton = document.getElementById("clearCartButton");
+
+    function money(value) {
+      return value ? `Rs. ${value}` : "";
+    }
+
+    function actionButton(label, endpoint, itemId) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button small";
+      button.textContent = label;
+      button.addEventListener("click", async () => {
+        await postCartAction(`/pos/cart/items/${itemId}/${endpoint}`);
+      });
+      return button;
+    }
+
+    function renderCart(cart) {
+      cartCount.textContent = cart.count || 0;
+      cartTotal.textContent = money(cart.total || "0.00");
+      cartRows.innerHTML = "";
+
+      if (!cart.items || cart.items.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 7;
+        cell.className = "empty";
+        cell.textContent = "Cart is empty.";
+        row.appendChild(cell);
+        cartRows.appendChild(row);
+        return;
+      }
+
+      cart.items.forEach(item => {
+        const row = document.createElement("tr");
+        if (item.missing_price) {
+          row.className = "warn-row";
+        }
+
+        const name = document.createElement("td");
+        const nameStrong = document.createElement("strong");
+        nameStrong.textContent = item.item_name || "";
+        const nameMeta = document.createElement("span");
+        nameMeta.className = "muted-text";
+        nameMeta.textContent = item.category || "";
+        name.append(nameStrong, document.createElement("br"), nameMeta);
+        const barcode = document.createElement("td");
+        barcode.className = "mono";
+        barcode.textContent = item.barcode || "";
+        const mrp = document.createElement("td");
+        mrp.textContent = money(item.mrp);
+        const selling = document.createElement("td");
+        selling.textContent = item.missing_price ? "Missing" : money(item.selling_price);
+        const qty = document.createElement("td");
+        qty.textContent = item.qty;
+        const amount = document.createElement("td");
+        amount.textContent = item.missing_price ? "" : money(item.amount);
+        const actions = document.createElement("td");
+        actions.className = "row-actions";
+        actions.appendChild(actionButton("+", "increase", item.id));
+        actions.appendChild(actionButton("-", "decrease", item.id));
+        actions.appendChild(actionButton("Remove", "remove", item.id));
+
+        row.append(name, barcode, mrp, selling, qty, amount, actions);
+        cartRows.appendChild(row);
+      });
+    }
+
+    async function loadCart(silent = false) {
+      try {
+        const response = await fetch("/pos/cart", {cache: "no-store"});
+        if (!response.ok) {
+          throw new Error("Could not load cart.");
+        }
+        const cart = await response.json();
+        renderCart(cart);
+        if (!silent) {
+          cartStatus.textContent = "Cart refreshed.";
+        }
+      } catch (error) {
+        cartStatus.textContent = error.message || "Could not load cart.";
+      }
+    }
+
+    async function postCartAction(url) {
+      try {
+        const response = await fetch(url, {method: "POST"});
+        const cart = await response.json();
+        if (!response.ok) {
+          throw new Error(cart.message || "Cart action failed.");
+        }
+        renderCart(cart);
+        cartStatus.textContent = "Cart updated.";
+      } catch (error) {
+        cartStatus.textContent = error.message || "Cart action failed.";
+      }
+    }
+
+    refreshCartButton.addEventListener("click", () => loadCart(false));
+    clearCartButton.addEventListener("click", async () => {
+      await postCartAction("/pos/cart/clear");
+    });
+
+    loadCart(false);
+    window.setInterval(() => loadCart(true), 1000);
+  </script>
+{% endblock %}

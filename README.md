@@ -104,6 +104,32 @@ The legacy `bartend.exe` command path is kept for debug helpers and can be confi
 $env:SHOPBRIDGE_BARTEND_EXE_PATH="C:\Program Files (x86)\Seagull\BarTender Suite\bartend.exe"
 ```
 
+## POS Shadow Mode
+
+POS Shadow Mode uses the phone as a scanner and the laptop as a live cart. It does not create a final invoice, print a thermal bill, or sync anything to Tally.
+
+Run ShopBridge on the laptop LAN address:
+
+```powershell
+uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+Open the laptop cart:
+
+```text
+http://127.0.0.1:8001/pos
+```
+
+Open the phone scanner on the same Wi-Fi:
+
+```text
+http://<laptop-ip>:8001/scanner
+```
+
+The scanner uses saved barcode records only. It looks up the scanned barcode in ShopBridge and adds the saved item price to the active cart. It does not decode coded price text while scanning.
+
+Phone camera scanning depends on browser support and security rules. If the browser will not allow camera access over the local network address, use the manual barcode input fallback on `/scanner`.
+
 ## Tally ODBC
 
 The Tally page can:

@@ -1021,6 +1021,121 @@ tbody tr:last-child td {
   margin-top: 14px;
 }
 
+.pos-summary .status-tile strong {
+  font-size: 24px;
+}
+
+.pos-cart-panel {
+  margin-bottom: 14px;
+}
+
+.pos-table th:nth-child(5),
+.pos-table td:nth-child(5),
+.pos-table th:nth-child(6),
+.pos-table td:nth-child(6) {
+  text-align: right;
+}
+
+.pos-table .row-actions {
+  justify-content: flex-end;
+}
+
+.warn-row td {
+  background: #fffaf0;
+}
+
+.scanner-shell {
+  display: grid;
+  justify-items: center;
+}
+
+.scanner-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+  padding: 18px;
+  width: 100%;
+}
+
+.scanner-card h1 {
+  font-size: 26px;
+}
+
+.scanner-card p {
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.scanner-status {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+}
+
+.scanner-status strong {
+  font-size: 22px;
+}
+
+.scanner-status.ready {
+  background: #eef4ff;
+  border-color: #b8d9ff;
+}
+
+.scanner-status.working {
+  background: #f8fafc;
+  border-color: #c8d0dc;
+}
+
+.scanner-status.ok {
+  background: #e7f6ed;
+  border-color: #bde5ca;
+}
+
+.scanner-status.warn {
+  background: #fff8e8;
+  border-color: #f0c36a;
+}
+
+.scanner-status.error {
+  background: #fff0ee;
+  border-color: #f4b8b1;
+}
+
+.scanner-video-wrap {
+  background: #111827;
+  border-radius: 8px;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.scanner-video-wrap video {
+  display: block;
+  min-height: 260px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.scanner-manual {
+  display: grid;
+  gap: 10px;
+}
+
+.scanner-manual input {
+  font-size: 20px;
+  min-height: 52px;
+}
+
+.scanner-manual button,
+.scanner-card > .button {
+  min-height: 48px;
+  width: 100%;
+}
+
 @media (max-width: 900px) {
   .topbar,
   .page-header,
@@ -1050,5 +1165,15 @@ tbody tr:last-child td {
 
   .page {
     padding: 16px;
+  }
+
+  .pos-table {
+    min-width: 760px;
+  }
+
+  .scanner-card {
+    border-radius: 0;
+    border-width: 0;
+    min-height: calc(100vh - 32px);
   }
 }

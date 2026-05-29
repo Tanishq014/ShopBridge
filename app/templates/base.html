@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#1f6feb">
     <title>{% block title %}ShopBridge{% endblock %}</title>
+    <link rel="manifest" href="{{ url_for('static', path='/manifest.json') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
   </head>
   <body>
@@ -12,10 +14,11 @@
       <nav class="nav">
         {% set path = request.url.path %}
         <a class="{{ 'active' if path.startswith('/new-stock') else '' }}" href="/new-stock">New Stock / Print Labels</a>
-        <a class="{{ 'active' if path.startswith('/scan') else '' }}" href="/scan">Scan / Lookup</a>
+        <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS Shadow</a>
+        <a class="{{ 'active' if path == '/scan' else '' }}" href="/scan">Scan / Lookup</a>
         <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
         <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
-        <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/templates') or path.startswith('/families') or path.startswith('/variants') or path.startswith('/print-jobs') else '' }}" href="/settings">Settings</a>
+        <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/families') or path.startswith('/print-jobs') or path.startswith('/tally') else '' }}" href="/settings">Settings</a>
       </nav>
     </header>
     <main class="page">

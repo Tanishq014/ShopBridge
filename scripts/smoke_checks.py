@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 import sys
@@ -19,8 +20,8 @@ os.environ["SHOPBRIDGE_PRINT_JOBS_DIR"] = str(TMP_DIR / "print_jobs")
 os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 
 from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import LabelVariant, PrintJob, TemplateMaster  # noqa: E402
-from app.routes import workflow  # noqa: E402
+from app.models import LabelVariant, PosCartItem, PrintJob, TemplateMaster  # noqa: E402
+from app.routes import pos, workflow  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
 from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: E402
 from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
@@ -60,6 +61,14 @@ class DummyRequest:
         if name == "static":
             return "/static/app.css"
         return "#"
+
+
+class DummyJsonRequest:
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def json(self):
+        return self.payload
 
 
 def print_item(db, template, **overrides):
@@ -345,6 +354,32 @@ def main() -> None:
         db.refresh(failed_variant)
         assert_true(retry_job.variant_id == failed_variant.id, "retry job linked to wrong item")
         assert_true(failed_variant.barcode == failed_barcode, "retry changed the barcode")
+
+        add_response = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
+        assert_true(add_response["ok"], "POS scan did not add saved barcode")
+        add_again = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
+        assert_true(add_again["cart"]["count"] >= 2, "POS scan did not increment quantity")
+
+        no_price_variant = LabelVariant(
+            barcode="NOPRICE",
+            family_id=first.family_id,
+            item_display_name="No Price Item",
+            template_id=template.id,
+            status="active",
+        )
+        db.add(no_price_variant)
+        db.commit()
+        missing_response = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": "NOPRICE"}), db))
+        assert_true(missing_response.status_code == 409, "POS scan did not block missing selling price")
+        confirmed_response = asyncio.run(
+            pos.pos_scan(DummyJsonRequest({"barcode": "NOPRICE", "allow_missing_price": True}), db)
+        )
+        assert_true(confirmed_response["ok"], "POS scan did not allow confirmed missing price item")
+
+        cart_before_clear = pos.pos_cart(db)
+        assert_true(cart_before_clear["count"] >= 3, "POS cart did not keep scanned items")
+        pos.clear_pos_cart(db)
+        assert_true(db.query(PosCartItem).count() == 0, "POS cart clear did not remove items")
 
         print("Smoke checks passed")
     finally:

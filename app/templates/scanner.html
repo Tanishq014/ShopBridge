@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}ShopBridge Scanner{% endblock %}
+{% block content %}
+  <section class="scanner-shell">
+    <div class="scanner-card">
+      <div>
+        <h1>ShopBridge Scanner</h1>
+        <p>POS Shadow Mode - No Tally Sync</p>
+      </div>
+
+      <div class="scanner-status ready" id="scanStatus">
+        <strong>Ready to scan</strong>
+        <span id="scanDetail">Camera scanner will start if this phone supports it.</span>
+      </div>
+
+      <div class="scanner-video-wrap" id="videoWrap">
+        <video id="scannerVideo" autoplay muted playsinline></video>
+      </div>
+
+      <form class="scanner-manual" id="manualScanForm">
+        <label>
+          Manual barcode
+          <input id="manualBarcodeInput" autocomplete="off" inputmode="text" autofocus placeholder="Scan or type barcode">
+        </label>
+        <button class="button primary" type="submit">Add to Cart</button>
+      </form>
+
+      <button class="button" type="button" id="confirmMissingPriceButton" hidden>Add without selling price</button>
+      <a class="button" href="/pos">Open Laptop Cart</a>
+    </div>
+  </section>
+
+  <script>
+    const scanStatus = document.getElementById("scanStatus");
+    const scanDetail = document.getElementById("scanDetail");
+    const scannerVideo = document.getElementById("scannerVideo");
+    const videoWrap = document.getElementById("videoWrap");
+    const manualScanForm = document.getElementById("manualScanForm");
+    const manualBarcodeInput = document.getElementById("manualBarcodeInput");
+    const confirmMissingPriceButton = document.getElementById("confirmMissingPriceButton");
+
+    let detector = null;
+    let stream = null;
+    let scanning = false;
+    let lastBarcode = "";
+    let lastScanAt = 0;
+    let pendingMissingBarcode = "";
+    let wakeLock = null;
+
+    function setStatus(kind, title, detail) {
+      scanStatus.className = `scanner-status ${kind}`;
+      scanStatus.querySelector("strong").textContent = title;
+      scanDetail.textContent = detail || "";
+    }
+
+    function successSignal() {
+      if (navigator.vibrate) {
+        navigator.vibrate(80);
+      }
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.frequency.value = 880;
+        gain.gain.value = 0.08;
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start();
+        window.setTimeout(() => {
+          oscillator.stop();
+          context.close();
+        }, 100);
+      } catch (error) {
+        // Beep is optional.
+      }
+    }
+
+    function shouldDebounce(barcode) {
+      const now = Date.now();
+      if (barcode === lastBarcode && now - lastScanAt < 1500) {
+        return true;
+      }
+      lastBarcode = barcode;
+      lastScanAt = now;
+      return false;
+    }
+
+    async function sendBarcode(barcode, allowMissingPrice = false) {
+      const cleanBarcode = String(barcode || "").trim();
+      if (!cleanBarcode || shouldDebounce(cleanBarcode)) {
+        return;
+      }
+      confirmMissingPriceButton.hidden = true;
+      pendingMissingBarcode = "";
+      setStatus("working", `Scanned: ${cleanBarcode}`, "Checking saved barcode record.");
+      try {
+        const response = await fetch("/pos/scan", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({barcode: cleanBarcode, allow_missing_price: allowMissingPrice})
+        });
+        const payload = await response.json();
+        if (response.ok && payload.ok) {
+          successSignal();
+          setStatus("ok", "Added to cart", `${payload.item.item_name} - ${payload.item.barcode}`);
+          manualBarcodeInput.value = "";
+          manualBarcodeInput.focus();
+          return;
+        }
+        if (payload.status === "missing_price") {
+          pendingMissingBarcode = cleanBarcode;
+          confirmMissingPriceButton.hidden = false;
+          setStatus("warn", "Selling price missing", payload.message || "Confirm before adding.");
+          return;
+        }
+        setStatus("error", payload.status === "not_found" ? "Not found" : "Scan failed", payload.message || "Barcode not found.");
+      } catch (error) {
+        setStatus("error", "Scanner offline", error.message || "Could not reach laptop cart.");
+      } finally {
+        scanning = false;
+      }
+    }
+
+    async function scanLoop() {
+      if (!detector || !stream) {
+        return;
+      }
+      if (!scanning && scannerVideo.readyState >= 2) {
+        scanning = true;
+        try {
+          const barcodes = await detector.detect(scannerVideo);
+          if (barcodes && barcodes.length) {
+            await sendBarcode(barcodes[0].rawValue || "");
+          } else {
+            scanning = false;
+          }
+        } catch (error) {
+          scanning = false;
+        }
+      }
+      window.setTimeout(scanLoop, 250);
+    }
+
+    async function startCameraScanner() {
+      if (!("BarcodeDetector" in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        videoWrap.hidden = true;
+        setStatus("ready", "Ready to scan", "Camera scanner is unavailable here. Use manual barcode input.");
+        return;
+      }
+      try {
+        detector = new BarcodeDetector({formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"]});
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {facingMode: "environment"},
+          audio: false
+        });
+        scannerVideo.srcObject = stream;
+        setStatus("ready", "Ready to scan", "Camera is open. Keep scanning labels.");
+        scanLoop();
+      } catch (error) {
+        videoWrap.hidden = true;
+        setStatus("ready", "Ready to scan", "Camera could not start. Use manual barcode input.");
+      }
+    }
+
+    async function requestWakeLock() {
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLock = await navigator.wakeLock.request("screen");
+        }
+      } catch (error) {
+        wakeLock = null;
+      }
+    }
+
+    manualScanForm.addEventListener("submit", event => {
+      event.preventDefault();
+      sendBarcode(manualBarcodeInput.value);
+    });
+    confirmMissingPriceButton.addEventListener("click", () => {
+      if (pendingMissingBarcode) {
+        const barcode = pendingMissingBarcode;
+        pendingMissingBarcode = "";
+        lastBarcode = "";
+        sendBarcode(barcode, true);
+      }
+    });
+
+    requestWakeLock();
+    startCameraScanner();
+  </script>
+{% endblock %}

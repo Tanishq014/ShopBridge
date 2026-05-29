@@ -97,3 +97,29 @@ class PrintJob(Base):
 
     variant = relationship("LabelVariant", back_populates="print_jobs")
     template = relationship("TemplateMaster", foreign_keys=[template_id])
+
+
+class PosCart(Base):
+    __tablename__ = "pos_carts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    status = Column(String(40), nullable=False, default="active", index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = relationship("PosCartItem", back_populates="cart", cascade="all, delete-orphan")
+
+
+class PosCartItem(Base):
+    __tablename__ = "pos_cart_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cart_id = Column(Integer, ForeignKey("pos_carts.id"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("label_variants.id"), nullable=False, index=True)
+    qty = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(10, 2), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    cart = relationship("PosCart", back_populates="items")
+    variant = relationship("LabelVariant", foreign_keys=[variant_id])
