@@ -213,7 +213,7 @@ def main() -> None:
             template_name="Smoke Priority",
             category="toys",
             bartender_file_path=str(TMP_DIR / "priority.btw"),
-            required_fields="item_display_name,coded_price,article,barcode",
+            required_fields="item_display_name,coded_price,barcode",
             barcode_sample_value="13HPX",
             active_status=True,
         )
@@ -247,24 +247,14 @@ def main() -> None:
         no_sample_item = db.query(LabelVariant).filter_by(item_display_name="No Sample").one()
         assert_true(len(no_sample_item.barcode) == 7, "missing sample barcode did not use default length 7")
 
-        print_item(db, priority_template, item_display_name="Priority Code", coded_price="DDD", article_no="FFF", mrp="", size="")
+        print_item(db, priority_template, item_display_name="Priority Code", coded_price="DDD", mrp="", size="")
         priority_item = db.query(LabelVariant).filter_by(item_display_name="Priority Code").one()
         assert_true(str(priority_item.selling_price) in {"222.00", "222"}, "code/coded_price field did not take priority")
 
-        print_item(db, priority_template, item_display_name="Fallback Article", coded_price="XX", article_no="DDD", mrp="", size="")
-        article_item = db.query(LabelVariant).filter_by(item_display_name="Fallback Article").one()
-        assert_true(str(article_item.selling_price) in {"222.00", "222"}, "article fallback did not decode when priority failed")
-
-        print_item(db, fallback_template, item_display_name="Fallback Batch", article_no="XX", batch_no="FFF", mrp="", size="")
-        batch_item = db.query(LabelVariant).filter_by(item_display_name="Fallback Batch").one()
-        assert_true(str(batch_item.selling_price) in {"555.00", "555"}, "batch fallback did not decode")
-
         missing_price_response = print_item(
             db,
-            fallback_template,
+            priority_template,
             item_display_name="Missing Price",
-            article_no="XX",
-            batch_no="YY",
             coded_price="",
             mrp="",
             size="",
@@ -273,11 +263,9 @@ def main() -> None:
 
         multiple_price_response = print_item(
             db,
-            fallback_template,
+            priority_template,
             item_display_name="Multiple Codes",
-            article_no="DDD",
-            batch_no="FFF",
-            coded_price="",
+            coded_price="DDD/FFF",
             mrp="",
             size="",
         )
@@ -285,40 +273,34 @@ def main() -> None:
 
         print_item(
             db,
-            fallback_template,
+            priority_template,
             item_display_name="Manual Selling",
-            article_no="FFF",
-            batch_no="XX",
-            coded_price="",
+            coded_price="XX",
             selling_price="222",
             mrp="",
             size="",
         )
         manual_item = db.query(LabelVariant).filter_by(item_display_name="Manual Selling").one()
-        assert_true(manual_item.coded_price == "DDD", "manual selling price did not generate coded price")
+        assert_true(manual_item.coded_price == "XX", "manual selling price did not preserve raw code")
         billing_item = lookup_saved_price_by_barcode(db, manual_item.barcode)
         assert_true(str(billing_item.selling_price) in {"222.00", "222"}, "billing lookup did not use saved selling price")
 
         print_item(
             db,
-            fallback_template,
+            priority_template,
             item_display_name="Default Code",
-            article_no="FFF",
-            batch_no="XX",
             coded_price="ZZZ",
             selling_price="222",
             mrp="",
             size="",
         )
         default_code_item = db.query(LabelVariant).filter_by(item_display_name="Default Code").one()
-        assert_true(default_code_item.coded_price == "DDD", "default code was not replaced by selling price")
+        assert_true(default_code_item.coded_price == "ZZZ", "manual selling price should not overwrite raw code")
 
         print_item(
             db,
-            fallback_template,
+            priority_template,
             item_display_name="Manual Code Override",
-            article_no="FFF",
-            batch_no="XX",
             coded_price="GIB",
             coded_price_manual_override=True,
             selling_price="222",

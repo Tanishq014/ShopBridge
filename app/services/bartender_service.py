@@ -36,6 +36,7 @@ CSV_FIELDS = [
     "mrp",
     "selling_price",
     "coded_price",
+    "code",
     "billing_price_missing",
     "family_name",
     "tally_stock_item_name",
@@ -93,6 +94,7 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
+        "code": variant.coded_price or "",
         "billing_price_missing": "true" if variant.billing_price_missing else "false",
         "family_name": family.family_name,
         "tally_stock_item_name": family.tally_stock_item_name or "",
@@ -135,6 +137,7 @@ def _named_substring_values(job: PrintJob) -> dict[str, str]:
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
+        "code": variant.coded_price or "",
         "billing_price_missing": "true" if variant.billing_price_missing else "false",
     }
     field_values.update(_extra_field_values(variant.extra_field_values))

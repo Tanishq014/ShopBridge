@@ -905,14 +905,12 @@ def print_new_stock(
             extra_values[field_name] = field_value
     price_code_settings = get_price_code_settings()
     raw_coded_price = coded_price.strip()
-    if selling is not None:
-        generated_coded = generate_coded_price(selling, price_code_settings)
-        if raw_coded_price and coded_price_manual_override:
-            coded = raw_coded_price
-        else:
-            coded = generated_coded or raw_coded_price or value_or_preserved("coded_price", coded_price)
+    if raw_coded_price:
+        coded = raw_coded_price
+    elif selling is not None:
+        coded = generate_coded_price(selling, price_code_settings) or ""
     else:
-        coded = raw_coded_price or value_or_preserved("coded_price", coded_price)
+        coded = value_or_preserved("coded_price", coded_price)
 
     field_values = {
         "brand": brand_value,
@@ -944,7 +942,7 @@ def print_new_stock(
             selected_candidate = price_code_candidates[0]
             selling = selected_candidate.selling_price
             coded = selected_candidate.code
-        elif not print_without_billing_price:
+        elif price_code_candidates:
             options = "; ".join(candidate["label"] for candidate in map(_candidate_payload, price_code_candidates))
             return templates.TemplateResponse(
                 request,
@@ -952,18 +950,18 @@ def print_new_stock(
                 _workflow_context(
                     request,
                     db,
-                    error="Multiple price codes found. Choose one or enter Selling Price manually. " + options,
+                    error="Multiple codes found. Choose one or enter Selling Price manually. " + options,
                 ),
                 status_code=400,
             )
-    elif selling is None and not print_without_billing_price:
+    elif selling is None:
         return templates.TemplateResponse(
             request,
             "workflow.html",
             _workflow_context(
                 request,
                 db,
-                error="Enter Selling Price, detect a valid price code, or choose Print without billing price in Advanced barcode.",
+                error="Code cannot be decoded. Enter selling price manually.",
             ),
             status_code=400,
         )

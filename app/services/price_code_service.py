@@ -9,25 +9,6 @@ from app.services.settings_service import PriceCodeSettings, get_price_code_sett
 
 
 PRIORITY_PRICE_CODE_FIELDS = {"coded_price"}
-FALLBACK_PRICE_CODE_FIELDS = {
-    "article",
-    "article_no",
-    "batch_no",
-    "model_no",
-    "model",
-    "item_code",
-}
-STANDARD_NON_PRICE_CODE_FIELDS = {
-    "brand",
-    "item_display_name",
-    "design",
-    "family_name",
-    "size",
-    "expiry",
-    "mrp",
-    "selling_price",
-    "barcode",
-}
 
 
 @dataclass(frozen=True)
@@ -180,27 +161,7 @@ def extract_price_code_candidates(
         )
     if priority_fields and priority_candidates:
         return _dedupe_candidates(priority_candidates), True
-
-    fallback_fields = [
-        field_name
-        for field_name in normalized_template_fields
-        if field_name not in PRIORITY_PRICE_CODE_FIELDS
-        and (
-            field_name in FALLBACK_PRICE_CODE_FIELDS
-            or field_name not in STANDARD_NON_PRICE_CODE_FIELDS
-        )
-    ]
-    fallback_candidates: list[PriceCodeCandidate] = []
-    for field_name in fallback_fields:
-        fallback_candidates.extend(
-            extract_candidates_from_field(
-                field_name,
-                normalized_values.get(field_name, ""),
-                clean_settings,
-                priority=False,
-            )
-        )
-    return _dedupe_candidates(fallback_candidates), False
+    return [], False
 
 
 def _dedupe_candidates(candidates: list[PriceCodeCandidate]) -> list[PriceCodeCandidate]:
