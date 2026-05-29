@@ -495,6 +495,16 @@
       fields.mrp.select();
     }
 
+    function encodeSellingPrice(value) {
+      const settings = priceCodeSettings.digit_to_code || {};
+      const digits = String(Math.max(0, Math.round(Number(value || 0)))).split("");
+      if (!digits.length) {
+        return "";
+      }
+      const encoded = digits.map(digit => settings[digit] || "").join("");
+      return encoded && encoded.length === digits.join("").length ? encoded : "";
+    }
+
     function escapeRegExp(value) {
       return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
@@ -618,6 +628,15 @@
         return;
       }
       if (String(fields.selling.value || "").trim()) {
+        const encoded = encodeSellingPrice(fields.selling.value);
+        if (encoded) {
+          fields.coded.value = encoded;
+          priceCodeDetectionMessage.textContent = `Code auto-filled from Selling Price: ${fields.coded.value}`;
+          priceCodeDetectionMessage.hidden = false;
+        } else {
+          priceCodeDetectionMessage.textContent = "Selling Price is set, but the current code mapping cannot encode it. Enter Code manually or update Settings.";
+          priceCodeDetectionMessage.hidden = false;
+        }
         priceCodeChoiceBox.hidden = true;
         return;
       }

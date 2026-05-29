@@ -898,7 +898,8 @@ def print_new_stock(
     for field_name, field_value in source_extra_values.items():
         if field_name not in extra_values and source_variant and not field_is_required(field_name):
             extra_values[field_name] = field_value
-    coded = coded_price.strip() or value_or_preserved("coded_price", coded_price)
+    price_code_settings = get_price_code_settings()
+    coded = generate_coded_price(selling, price_code_settings) if selling is not None else (coded_price.strip() or value_or_preserved("coded_price", coded_price))
 
     field_values = {
         "brand": brand_value,
@@ -916,7 +917,6 @@ def print_new_stock(
     }
     field_values.update(extra_values)
 
-    price_code_settings = get_price_code_settings()
     price_code_candidates, _priority_code_found = extract_price_code_candidates(
         field_values,
         required_fields,
