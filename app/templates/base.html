@@ -13,8 +13,7 @@
         {% set path = request.url.path %}
         <a class="{{ 'active' if path.startswith('/new-stock') else '' }}" href="/new-stock">New Stock / Print Labels</a>
         <a class="{{ 'active' if path.startswith('/scan') else '' }}" href="/scan">Scan / Lookup</a>
-        <a class="{{ 'active' if path.startswith('/recent-prints') else '' }}" href="/recent-prints">Recent Prints</a>
-        <a class="{{ 'active' if path.startswith('/reports') else '' }}" href="/reports">Reports</a>
+        <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
         <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
         <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/templates') or path.startswith('/families') or path.startswith('/variants') or path.startswith('/print-jobs') else '' }}" href="/settings">Settings</a>
       </nav>
