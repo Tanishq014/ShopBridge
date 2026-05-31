@@ -751,6 +751,7 @@ def preview_template_image(
     expiry: str = Form(""),
     mrp: str = Form(""),
     selling_price: str = Form(""),
+    margin_percent: str = Form(""),
     coded_price: str = Form(""),
     extra_field_values: str = Form(""),
     db: Session = Depends(get_db),
@@ -823,6 +824,7 @@ def print_new_stock(
     expiry: str = Form(""),
     mrp: str = Form(""),
     selling_price: str = Form(""),
+    margin_percent: str = Form(""),
     coded_price: str = Form(""),
     coded_price_manual_override: bool = Form(False),
     extra_field_values: str = Form(""),
@@ -974,7 +976,7 @@ def print_new_stock(
             _workflow_context(
                 request,
                 db,
-                error="Code cannot be decoded. Enter selling price manually.",
+                error="Code cannot be decoded. Please enter a valid Code.",
             ),
             status_code=400,
         )

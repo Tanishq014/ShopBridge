@@ -227,6 +227,10 @@ h3 {
   grid-template-columns: minmax(240px, 1.45fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(190px, auto);
 }
 
+.form-grid.pricing-grid.with-margin {
+  grid-template-columns: minmax(240px, 1.45fr) minmax(120px, 1fr) minmax(100px, 1fr) minmax(120px, 1fr);
+}
+
 .form-grid.pricing-details-grid {
   align-items: end;
   grid-template-columns: minmax(180px, 1.1fr) minmax(110px, 1fr) auto;
