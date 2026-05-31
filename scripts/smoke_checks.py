@@ -21,11 +21,13 @@ os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import LabelVariant, PosCartItem, PrintJob, TemplateMaster  # noqa: E402
-from app.routes import pos, workflow  # noqa: E402
+from app.routes import pos, templates as template_routes, workflow  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
 from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: E402
+from app.services.price_code_service import extract_candidates_from_field, generate_coded_price  # noqa: E402
 from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
 from app.services.settings_service import save_barcode_settings, save_price_code_settings  # noqa: E402
+from app.services.template_folder_service import template_file_changed_since_extract  # noqa: E402
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -132,6 +134,58 @@ def main() -> None:
 
     db = SessionLocal()
     try:
+        workflow_markup = (ROOT / "app" / "templates" / "workflow.html").read_text(encoding="utf-8")
+        settings_markup = (ROOT / "app" / "templates" / "settings.html").read_text(encoding="utf-8")
+        pos_markup = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
+        assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
+        assert_true("printQuantityInput" in workflow_markup and "printFromInlineQuantity" in workflow_markup, "inline print quantity flow missing")
+        assert_true("Printing..." in workflow_markup and "printSubmissionPending" in workflow_markup, "print double-submit loading guard missing")
+        assert_true("event.key === \"Enter\"" in workflow_markup and "printFromInlineQuantity();" in workflow_markup, "Enter on print quantity does not trigger print")
+        assert_true("scanner_qr_url" in pos_markup and "scanner_url" in settings_markup, "scanner QR URL is not rendered")
+
+        alias_settings = save_price_code_settings(
+            digit_to_code={
+                "0": "Z",
+                "1": "A",
+                "2": "D,d",
+                "3": "C",
+                "4": "E",
+                "5": "F,V",
+                "6": "G",
+                "7": "J",
+                "8": "K",
+                "9": "L",
+            },
+            allow_extraction=True,
+        )
+        alias_candidates = extract_candidates_from_field("coded_price", "xDv", alias_settings, priority=True)
+        assert_true(alias_candidates and str(alias_candidates[0].selling_price) in {"25", "25.00"}, "comma-separated aliases did not decode")
+        assert_true(generate_coded_price("25", alias_settings) == "DF", "code generation did not use first alias")
+        try:
+            save_price_code_settings(
+                digit_to_code={"0": "Z", "1": "A", "2": "D", "3": "D"},
+                allow_extraction=True,
+            )
+            raise AssertionError("duplicate price-code alias was not rejected")
+        except ValueError:
+            pass
+
+        save_price_code_settings(
+            digit_to_code={
+                "0": "Z",
+                "1": "A",
+                "2": "D",
+                "3": "C",
+                "4": "E",
+                "5": "F",
+                "6": "G",
+                "7": "J",
+                "8": "K",
+                "9": "L",
+            },
+            allow_extraction=True,
+        )
+
         template = TemplateMaster(
             template_id="SMOKE_TOY",
             template_name="Smoke Toy",
@@ -144,6 +198,33 @@ def main() -> None:
         db.add(template)
         db.commit()
         db.refresh(template)
+
+        template_file = TMP_DIR / "changed_template.btw"
+        template_file.write_text("old", encoding="utf-8")
+        changed_template = TemplateMaster(
+            template_id="SMOKE_CHANGED",
+            template_name="Smoke Changed",
+            bartender_file_path=str(template_file),
+            required_fields="item_display_name,barcode",
+            fields_extracted_file_mtime="1.000000",
+            active_status=True,
+        )
+        db.add(changed_template)
+        db.commit()
+        db.refresh(changed_template)
+        assert_true(template_file_changed_since_extract(changed_template), "template modified timestamp warning did not trigger")
+
+        missing_template = TemplateMaster(
+            template_id="SMOKE_MISSING_OPEN",
+            template_name="Smoke Missing Open",
+            bartender_file_path=str(TMP_DIR / "missing-open.btw"),
+            active_status=True,
+        )
+        db.add(missing_template)
+        db.commit()
+        db.refresh(missing_template)
+        open_missing = template_routes.open_template_file(missing_template.id, db=db)
+        assert_true(open_missing.status_code == 303, "open template missing file did not redirect cleanly")
 
         print_item(db, template)
         first = db.query(LabelVariant).filter_by(item_display_name="Toy Car").one()

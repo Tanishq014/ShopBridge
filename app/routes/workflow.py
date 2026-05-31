@@ -44,7 +44,13 @@ from app.services.settings_service import (
     save_price_code_settings,
     save_pricing_settings,
 )
-from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
+from app.services.network_service import qr_url_for_scanner, scanner_url
+from app.services.template_folder_service import (
+    scan_bartender_template_folder,
+    template_file_changed_since_extract,
+    template_file_mtime,
+    template_path_exists,
+)
 from app.services.template_preview_service import (
     cached_template_preview_path,
     cached_template_preview_url,
@@ -222,6 +228,7 @@ def _template_payload(template: TemplateMaster) -> dict[str, object]:
         "required_fields": parse_required_fields(template.required_fields),
         "field_defaults": field_defaults,
         "path_exists": template_path_exists(template),
+        "file_changed": template_file_changed_since_extract(template),
         "cached_preview_url": cached_template_preview_url(template),
         "recent": False,
     }
@@ -641,6 +648,7 @@ def new_stock(
     extract_error: str | None = None,
     preview_warning: str | None = None,
     print_error: str | None = None,
+    open_error: str | None = None,
     load_variant_id: int | None = None,
     duplicate_variant_id: int | None = None,
     barcode: str = "",
@@ -667,7 +675,7 @@ def new_stock(
             db,
             message=message,
             warning=preview_warning,
-            error=print_error or extract_error,
+            error=print_error or extract_error or open_error,
             selected_template_id=template_id,
             selected_category=category,
             initial_variant_id=duplicate_variant_id or load_variant_id,
@@ -704,6 +712,7 @@ def extract_workflow_template_fields(
     template.required_fields = format_required_fields(fields)
     template.default_field_values = format_field_defaults(default_values)
     template.barcode_sample_value = barcode_sample or None
+    template.fields_extracted_file_mtime = template_file_mtime(template)
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -908,7 +917,7 @@ def print_new_stock(
         if field_name not in extra_values and source_variant and not field_is_required(field_name):
             extra_values[field_name] = field_value
     price_code_settings = get_price_code_settings()
-    raw_coded_price = coded_price.strip()
+    raw_coded_price = coded_price.strip().upper()
     if raw_coded_price:
         coded = raw_coded_price
     elif selling is not None:
@@ -1218,6 +1227,7 @@ def reports(request: Request, db: Session = Depends(get_db)):
         "templates": db.scalar(select(func.count(TemplateMaster.id))) or 0,
         "print_jobs": db.scalar(select(func.count(PrintJob.id))) or 0,
     }
+    scanner, scanner_ip_detected = scanner_url(request.headers.get("host"))
     return templates.TemplateResponse(
         request,
         "reports.html",
@@ -1233,6 +1243,7 @@ def reports(request: Request, db: Session = Depends(get_db)):
 def settings(
     request: Request,
     settings_saved: int | None = None,
+    settings_error: str | None = None,
     db: Session = Depends(get_db),
 ):
     scan_bartender_template_folder(db)
@@ -1270,6 +1281,10 @@ def settings(
             "pricing_settings": get_pricing_settings(),
             "price_code_settings": get_price_code_settings(),
             "settings_saved": bool(settings_saved),
+            "settings_error": settings_error,
+            "scanner_url": scanner,
+            "scanner_qr_url": qr_url_for_scanner(scanner),
+            "scanner_ip_detected": scanner_ip_detected,
         },
     )
 
@@ -1295,6 +1310,24 @@ def update_bartender_settings(
     digit_9_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    try:
+        save_price_code_settings(
+            digit_to_code={
+                "0": digit_0_code,
+                "1": digit_1_code,
+                "2": digit_2_code,
+                "3": digit_3_code,
+                "4": digit_4_code,
+                "5": digit_5_code,
+                "6": digit_6_code,
+                "7": digit_7_code,
+                "8": digit_8_code,
+                "9": digit_9_code,
+            },
+            allow_extraction=allow_price_code_extraction,
+        )
+    except ValueError as exc:
+        return RedirectResponse(f"/settings?{urlencode({'settings_error': str(exc)})}", status_code=303)
     save_bartender_settings(
         mode=mode,
         show_bartender_window=show_bartender_window,
@@ -1305,19 +1338,4 @@ def update_bartender_settings(
         allowed_chars=barcode_allowed_chars,
     )
     save_pricing_settings(mrp_rounding=mrp_rounding)
-    save_price_code_settings(
-        digit_to_code={
-            "0": digit_0_code,
-            "1": digit_1_code,
-            "2": digit_2_code,
-            "3": digit_3_code,
-            "4": digit_4_code,
-            "5": digit_5_code,
-            "6": digit_6_code,
-            "7": digit_7_code,
-            "8": digit_8_code,
-            "9": digit_9_code,
-        },
-        allow_extraction=allow_price_code_extraction,
-    )
     return RedirectResponse("/settings?settings_saved=1", status_code=303)

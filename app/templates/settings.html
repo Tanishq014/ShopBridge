@@ -11,6 +11,9 @@
   {% if settings_saved %}
     <div class="notice">Settings saved.</div>
   {% endif %}
+  {% if settings_error %}
+    <div class="error">{{ settings_error }}</div>
+  {% endif %}
 
   <section class="setup-hero {{ 'ready' if ready_to_label else 'needs-work' }}">
     <div>
@@ -76,6 +79,17 @@
     </form>
   </section>
 
+  <section class="panel setup-panel scanner-link-panel">
+    <div>
+      <h2>Phone Scanner</h2>
+      <p class="mono">{{ scanner_url }}</p>
+      {% if not scanner_ip_detected %}
+        <p class="muted-text">LAN IP was not detected. Start with <span class="mono">uvicorn app.main:app --host 0.0.0.0 --port 8001</span>, then use the laptop IP from Windows Wi-Fi settings.</p>
+      {% endif %}
+    </div>
+    <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
+  </section>
+
   <section class="panel setup-panel">
     <div class="section-line">
       <h2>Price Code Settings</h2>
@@ -95,7 +109,7 @@
         {% for digit in range(10) %}
           <label>
             Digit {{ digit }}
-            <input name="digit_{{ digit }}_code" value="{{ price_code_settings.digit_to_code.get(digit|string, '') }}" maxlength="12">
+            <input class="price-code-setting-input" name="digit_{{ digit }}_code" value="{{ price_code_settings.digit_to_code.get(digit|string, '') }}" maxlength="32">
           </label>
         {% endfor %}
       </div>
@@ -107,6 +121,10 @@
         <label class="span-two">
           Test code extraction
           <input id="priceCodeTestInput" placeholder="Example: XXDDD">
+        </label>
+        <label>
+          Test selling price
+          <input id="priceCodeEncodeInput" inputmode="numeric" placeholder="222">
         </label>
         <div class="form-actions pricing-actions">
           <button class="button" type="button" id="priceCodeTestButton">Test</button>
@@ -173,14 +191,23 @@
   <script>
     const priceCodeForm = document.getElementById("priceCodeSettingsForm");
     const priceCodeTestInput = document.getElementById("priceCodeTestInput");
+    const priceCodeEncodeInput = document.getElementById("priceCodeEncodeInput");
     const priceCodeTestButton = document.getElementById("priceCodeTestButton");
     const priceCodeTestOutput = document.getElementById("priceCodeTestOutput");
+
+    function aliases(value) {
+      return (value || "")
+        .split(",")
+        .map(part => part.trim().toUpperCase())
+        .filter(Boolean)
+        .filter((value, index, rows) => rows.indexOf(value) === index);
+    }
 
     function currentDigitMap() {
       const map = {};
       for (let digit = 0; digit <= 9; digit += 1) {
         const input = priceCodeForm.querySelector(`[name="digit_${digit}_code"]`);
-        map[String(digit)] = (input ? input.value : "").trim().toUpperCase();
+        map[String(digit)] = aliases(input ? input.value : "").join(",");
       }
       return map;
     }
@@ -188,7 +215,9 @@
     function decodePriceCodeGroup(group, digitMap) {
       const reverse = {};
       Object.entries(digitMap).forEach(([digit, code]) => {
-        if (code) reverse[code] = digit;
+        aliases(code).forEach(alias => {
+          if (alias) reverse[alias] = digit;
+        });
       });
       const tokens = Object.keys(reverse).sort((left, right) => right.length - left.length);
       if (!tokens.length) return "";
@@ -211,28 +240,46 @@
 
     function testPriceCode() {
       const digitMap = currentDigitMap();
-      const letters = Array.from(new Set(Object.values(digitMap).join("").toUpperCase().split("").filter(Boolean))).join("");
+      const letters = Array.from(new Set(Object.values(digitMap).join("").toUpperCase().replaceAll(",", "").split("").filter(Boolean))).join("");
       const input = (priceCodeTestInput.value || "").toUpperCase();
-      if (!letters || !input) {
+      const priceInput = (priceCodeEncodeInput.value || "").trim();
+      if (!letters && !priceInput) {
         priceCodeTestOutput.textContent = "Enter the digit mapping and a test value first.";
         priceCodeTestOutput.hidden = false;
         return;
       }
-      const pattern = new RegExp(`[${letters.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}]+`, "g");
+      const output = [];
+      const pattern = letters ? new RegExp(`[${letters.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}]+`, "g") : null;
       const matches = [];
       let match;
-      while ((match = pattern.exec(input)) !== null) {
-        const digits = decodePriceCodeGroup(match[0], digitMap);
-        if (digits) {
-          matches.push(`${match[0]} -> ${digits}`);
+      if (pattern && input) {
+        while ((match = pattern.exec(input)) !== null) {
+          const digits = decodePriceCodeGroup(match[0], digitMap);
+          if (digits) {
+            matches.push(`${match[0]} -> ${digits}`);
+          }
         }
+        output.push(matches.length ? matches.join("; ") : "No valid price code found.");
       }
-      priceCodeTestOutput.textContent = matches.length ? matches.join("; ") : "No valid price code found.";
+      if (priceInput) {
+        const encoded = priceInput
+          .replace(/\D/g, "")
+          .split("")
+          .map(digit => aliases(digitMap[digit])[0] || "")
+          .join("");
+        output.push(encoded ? `${priceInput} -> ${encoded}` : "Could not encode selling price with current mapping.");
+      }
+      priceCodeTestOutput.textContent = output.join(" | ");
       priceCodeTestOutput.hidden = false;
     }
 
     if (priceCodeTestButton) {
       priceCodeTestButton.addEventListener("click", testPriceCode);
     }
+    document.querySelectorAll(".price-code-setting-input").forEach(input => {
+      input.addEventListener("blur", () => {
+        input.value = aliases(input.value).join(",");
+      });
+    });
   </script>
 {% endblock %}

@@ -51,10 +51,14 @@ def generate_coded_price(
 
     digit_to_code = _settings_or_default(settings).digit_to_code
     digits = str(int(amount))
-    if any(not digit_to_code.get(digit) for digit in digits):
+    first_alias_by_digit = {
+        digit: str(code or "").split(",", 1)[0].strip().upper()
+        for digit, code in digit_to_code.items()
+    }
+    if any(not first_alias_by_digit.get(digit) for digit in digits):
         return ""
     try:
-        return "".join(digit_to_code.get(digit, "") for digit in digits)
+        return "".join(first_alias_by_digit.get(digit, "") for digit in digits)
     except KeyError:
         return ""
     except TypeError:

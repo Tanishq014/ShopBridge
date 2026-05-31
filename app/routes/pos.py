@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
+from io import BytesIO
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from app.db import get_db
 from app.models import PosCart, PosCartItem
 from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
+from app.services.network_service import qr_url_for_scanner, scanner_url
 
 
 router = APIRouter(tags=["pos"])
@@ -114,10 +116,16 @@ def _json_error(message: str, *, status_code: int, status: str, **extra: object)
 
 @router.get("/pos", response_class=HTMLResponse)
 def pos_page(request: Request, db: Session = Depends(get_db)):
+    scanner, detected = scanner_url(request.headers.get("host"))
     return templates.TemplateResponse(
         request,
         "pos.html",
-        {"request": request},
+        {
+            "request": request,
+            "scanner_url": scanner,
+            "scanner_qr_url": qr_url_for_scanner(scanner),
+            "scanner_ip_detected": detected,
+        },
     )
 
 
@@ -128,6 +136,19 @@ def scanner_page(request: Request):
         "scanner.html",
         {"request": request},
     )
+
+
+@router.get("/scanner/qr.svg")
+def scanner_qr(url: str):
+    try:
+        import qrcode
+        import qrcode.image.svg
+    except Exception:
+        return Response("QR generator dependency is not installed. Run pip install -r requirements.txt.", status_code=503)
+    image = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathImage)
+    output = BytesIO()
+    image.save(output)
+    return Response(output.getvalue(), media_type="image/svg+xml")
 
 
 @router.get("/pos/cart")

@@ -63,6 +63,25 @@ def template_path_exists(template: TemplateMaster) -> bool:
     return Path(template.bartender_file_path).expanduser().is_file()
 
 
+def template_file_mtime(template: TemplateMaster) -> str | None:
+    if not template_path_exists(template):
+        return None
+    try:
+        return f"{Path(template.bartender_file_path).expanduser().stat().st_mtime:.6f}"
+    except OSError:
+        return None
+
+
+def template_file_changed_since_extract(template: TemplateMaster) -> bool:
+    current = template_file_mtime(template)
+    if not current or not template.fields_extracted_file_mtime:
+        return False
+    try:
+        return float(current) > float(template.fields_extracted_file_mtime) + 0.001
+    except (TypeError, ValueError):
+        return current != template.fields_extracted_file_mtime
+
+
 def _category_from_path(path: Path) -> str | None:
     try:
         relative = path.relative_to(BARTENDER_TEMPLATES_DIR)

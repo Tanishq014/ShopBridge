@@ -58,6 +58,9 @@
               <td>
                 <span class="badge {{ row_status[row.id].kind }}">{{ row_status[row.id].label }}</span>
                 <div class="muted-text">{{ row_status[row.id].detail }}</div>
+                {% if row_status[row.id].label == "changed" %}
+                  <div class="error compact-message">Template file changed. Re-extract fields.</div>
+                {% endif %}
                 {% if row_preview_urls.get(row.id) %}
                   <div class="muted-text">raw preview cached</div>
                 {% endif %}
@@ -86,7 +89,8 @@
               </td>
               <td class="row-actions">
                 {% if template_path_exists(row) %}
-                  <form method="post" action="/templates/{{ row.id }}/extract-fields"><button class="button small primary" type="submit">Extract Fields</button></form>
+                  <form class="extract-fields-form" method="post" action="/templates/{{ row.id }}/extract-fields"><button class="button small primary" type="submit">{{ "Refresh Fields" if row_status[row.id].label == "changed" else "Extract Fields" }}</button></form>
+                  <form method="post" action="/templates/{{ row.id }}/open"><button class="button small" type="submit">Open Template</button></form>
                 {% endif %}
                 <a class="button small" href="/templates?edit_id={{ row.id }}">Edit</a>
                 {% if row.active_status %}
@@ -137,7 +141,8 @@
           </select>
         </label>
         {% if editing %}
-          <button class="button" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/extract-fields" name="return_to" value="edit">Extract fields from selected file</button>
+          <button class="button" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/extract-fields" name="return_to" value="edit">Refresh Fields from Template</button>
+          <button class="button" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/open" name="return_to" value="templates">Open Template</button>
         {% endif %}
         <details class="advanced-box">
           <summary>Advanced details and manual fields</summary>
@@ -230,6 +235,14 @@
     });
     requiredFieldCheckboxes.forEach(input => {
       input.addEventListener("change", refreshDefaultFieldRows);
+    });
+    document.querySelectorAll(".extract-fields-form, form[action$='/extract-fields']").forEach(form => {
+      form.addEventListener("submit", () => {
+        form.querySelectorAll("button").forEach(button => {
+          button.disabled = true;
+          button.textContent = "Extracting fields...";
+        });
+      });
     });
     refreshDefaultFieldRows();
   </script>

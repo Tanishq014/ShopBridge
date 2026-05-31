@@ -29,6 +29,7 @@ class TemplateMaster(Base):
     required_fields = Column(Text, nullable=True)
     default_field_values = Column(Text, nullable=True)
     barcode_sample_value = Column(String(120), nullable=True)
+    fields_extracted_file_mtime = Column(String(80), nullable=True)
     active_status = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

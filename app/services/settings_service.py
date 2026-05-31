@@ -64,8 +64,7 @@ class PriceCodeSettings:
     def code_to_digit(self) -> dict[str, str]:
         reverse: dict[str, str] = {}
         for digit, code in self.digit_to_code.items():
-            clean_code = str(code or "").strip().upper()
-            if clean_code:
+            for clean_code in _price_code_aliases(code):
                 reverse[clean_code] = digit
         return reverse
 
@@ -74,10 +73,11 @@ class PriceCodeSettings:
         letters: list[str] = []
         seen: set[str] = set()
         for code in self.digit_to_code.values():
-            for char in str(code or "").strip().upper():
-                if char and char not in seen:
-                    letters.append(char)
-                    seen.add(char)
+            for alias in _price_code_aliases(code):
+                for char in alias:
+                    if char and char not in seen:
+                        letters.append(char)
+                        seen.add(char)
         return "".join(letters)
 
 
@@ -220,7 +220,18 @@ def _mrp_rounding(value: str | int | None) -> int:
     return rounding if rounding in VALID_MRP_ROUNDING else DEFAULT_MRP_ROUNDING
 
 
-def _price_code_digit_map(value: str | dict[str, str] | None) -> dict[str, str]:
+def _price_code_aliases(value: str | None) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for part in str(value or "").split(","):
+        clean = part.strip().upper()
+        if clean and clean not in seen:
+            aliases.append(clean)
+            seen.add(clean)
+    return aliases
+
+
+def _price_code_digit_map(value: str | dict[str, str] | None, *, reject_duplicates: bool = False) -> dict[str, str]:
     if isinstance(value, dict):
         raw_map = value
     else:
@@ -232,15 +243,20 @@ def _price_code_digit_map(value: str | dict[str, str] | None) -> dict[str, str]:
         raw_map = {}
 
     digit_map: dict[str, str] = {}
-    used_codes: set[str] = set()
+    used_codes: dict[str, str] = {}
     for digit in range(10):
         key = str(digit)
-        clean_code = str(raw_map.get(key, "") or "").strip().upper()
-        if clean_code and clean_code not in used_codes:
-            digit_map[key] = clean_code
-            used_codes.add(clean_code)
-        else:
-            digit_map[key] = ""
+        aliases = _price_code_aliases(str(raw_map.get(key, "") or ""))
+        clean_aliases: list[str] = []
+        for alias in aliases:
+            previous_digit = used_codes.get(alias)
+            if previous_digit is not None and previous_digit != key:
+                if reject_duplicates:
+                    raise ValueError(f"Price code alias '{alias}' is assigned to both digit {previous_digit} and digit {key}.")
+                continue
+            used_codes[alias] = key
+            clean_aliases.append(alias)
+        digit_map[key] = ",".join(clean_aliases)
     return digit_map
 
 
@@ -303,7 +319,7 @@ def save_price_code_settings(
     allow_extraction: bool,
 ) -> PriceCodeSettings:
     settings = _read_settings()
-    clean_map = _price_code_digit_map(digit_to_code)
+    clean_map = _price_code_digit_map(digit_to_code, reject_duplicates=True)
     settings[PRICE_CODE_DIGIT_MAP_KEY] = json.dumps(clean_map, ensure_ascii=True, sort_keys=True)
     settings[ALLOW_PRICE_CODE_EXTRACTION_KEY] = _bool_text(allow_extraction)
     _write_settings(settings)

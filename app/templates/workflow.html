@@ -55,6 +55,10 @@
               {% endfor %}
             </select>
           </label>
+          <div class="form-actions template-action-row">
+            <button class="button" type="button" id="openTemplateButton" disabled>Open Template</button>
+            <button class="button" type="submit" form="extractTemplateForm" id="refreshTemplateFieldsButton" disabled>Refresh Fields from Template</button>
+          </div>
           <label class="span-two">
             Search existing item
             <div class="combo" id="variantCombo">
@@ -79,7 +83,13 @@
       <div class="workflow-state warn-state" id="unmappedTemplateState" hidden>
         <strong>Fields have not been extracted for this template.</strong>
         <span>Extract fields once, then the correct item fields will appear here.</span>
-        <button class="button" type="submit" form="extractTemplateForm" id="extractTemplateFieldsButton">Extract fields from this template</button>
+        <button class="button" type="submit" form="extractTemplateForm" id="extractTemplateFieldsButton">Refresh Fields from Template</button>
+      </div>
+
+      <div class="workflow-state warn-state" id="changedTemplateState" hidden>
+        <strong>Template file changed. Re-extract fields.</strong>
+        <span>The .btw file is newer than the saved field map.</span>
+        <button class="button" type="submit" form="extractTemplateForm">Refresh Fields from Template</button>
       </div>
 
       <div class="workflow-section" id="itemSection" hidden>
@@ -109,17 +119,17 @@
           </label>
           <label id="mrpField" data-field="mrp">
             MRP
-            <input name="mrp" id="mrpInput" type="number" min="0" step="0.01">
+            <input name="mrp" id="mrpInput" inputmode="decimal">
           </label>
         </div>
         <div class="form-grid pricing-details-grid" id="pricingDetailsRow">
           <label id="sellingField" data-field="selling_price">
             Selling price
-            <input name="selling_price" id="sellingInput" type="number" min="0" step="0.01">
+            <input name="selling_price" id="sellingInput" inputmode="decimal">
           </label>
           <label>
             Margin %
-            <input name="margin_percent" id="marginInput" type="number" min="0" max="99.99" step="0.01">
+            <input name="margin_percent" id="marginInput" inputmode="decimal">
           </label>
           <div class="form-actions pricing-actions">
             <button class="button" type="button" id="calculateMrpButton">Calculate MRP</button>
@@ -156,7 +166,7 @@
         <div class="form-grid three" id="customFieldsGrid" hidden></div>
 
         <details class="advanced-box" id="barcodeAdvanced">
-          <summary>Advanced barcode <span class="mono" id="barcodeSummary">auto</span></summary>
+          <summary tabindex="-1">Advanced barcode <span class="mono" id="barcodeSummary">auto</span></summary>
           <div class="form-grid three">
             <label id="barcodeField" data-field="barcode">
               Barcode
@@ -194,7 +204,11 @@
           </div>
         </details>
 
-        <div class="quick-row">
+        <div class="quick-row print-inline-row">
+          <label>
+            Print Quantity
+            <input id="printQuantityInput" inputmode="numeric" value="1">
+          </label>
           <button class="button primary print-button" type="button" id="printButton" disabled>Print Labels</button>
         </div>
       </div>
@@ -202,6 +216,10 @@
     <form id="extractTemplateForm" method="post" action="/new-stock/extract-fields" hidden>
       <input type="hidden" name="template_id" id="extractTemplateId" value="">
       <input type="hidden" name="category" id="extractCategory" value="{{ selected_category }}">
+    </form>
+    <form id="openTemplateForm" method="post" hidden>
+      <input type="hidden" name="return_to" value="new-stock">
+      <input type="hidden" name="category" id="openTemplateCategory" value="{{ selected_category }}">
     </form>
 
     <aside class="workflow-side">
@@ -275,28 +293,6 @@
     </aside>
   </section>
 
-  <div class="print-sheet" id="printSheet" hidden>
-    <div class="print-sheet-backdrop" id="printSheetBackdrop"></div>
-    <section class="print-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="printSheetTitle">
-      <div class="section-line">
-        <h2 id="printSheetTitle">Print Labels</h2>
-        <button class="button small" type="button" id="closePrintSheetButton">Close</button>
-      </div>
-      <label>
-        Number of labels
-        <input id="printCopiesInput" type="number" min="1" inputmode="numeric">
-      </label>
-      <div class="copy-blocks">
-        {% for copies in [1, 2, 3, 4, 5, 6, 8, 10, 12, 24] %}
-          <button type="button" data-copy-count="{{ copies }}">{{ copies }}</button>
-        {% endfor %}
-      </div>
-      <div class="form-actions">
-        <button class="button primary" type="button" id="confirmPrintButton">Print</button>
-      </div>
-    </section>
-  </div>
-
   <script>
     const variants = {{ variants_json|tojson }};
     const templatesData = {{ templates_json|tojson }};
@@ -345,18 +341,19 @@
     const manualBarcodeOverride = document.getElementById("manualBarcodeOverride");
     const regenerateBarcodeButton = document.getElementById("regenerateBarcodeButton");
     const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
+    const refreshTemplateFieldsButton = document.getElementById("refreshTemplateFieldsButton");
+    const openTemplateButton = document.getElementById("openTemplateButton");
+    const openTemplateForm = document.getElementById("openTemplateForm");
+    const openTemplateCategory = document.getElementById("openTemplateCategory");
     const extractTemplateId = document.getElementById("extractTemplateId");
     const extractCategory = document.getElementById("extractCategory");
     const itemSection = document.getElementById("itemSection");
     const selectTemplateState = document.getElementById("selectTemplateState");
     const missingTemplateState = document.getElementById("missingTemplateState");
     const unmappedTemplateState = document.getElementById("unmappedTemplateState");
+    const changedTemplateState = document.getElementById("changedTemplateState");
     const printButton = document.getElementById("printButton");
-    const printSheet = document.getElementById("printSheet");
-    const printSheetBackdrop = document.getElementById("printSheetBackdrop");
-    const printCopiesInput = document.getElementById("printCopiesInput");
-    const closePrintSheetButton = document.getElementById("closePrintSheetButton");
-    const confirmPrintButton = document.getElementById("confirmPrintButton");
+    const printQuantityInput = document.getElementById("printQuantityInput");
     const actualPreviewButton = document.getElementById("actualPreviewButton");
     const actualPreviewBlock = document.getElementById("actualPreviewBlock");
     const actualPreviewImage = document.getElementById("actualPreviewImage");
@@ -542,8 +539,8 @@
       if (!digits.length) {
         return "";
       }
-      const encoded = digits.map(digit => settings[digit] || "").join("");
-      return encoded && encoded.length === digits.join("").length ? encoded : "";
+      const encoded = digits.map(digit => String(settings[digit] || "").split(",", 1)[0].trim().toUpperCase()).join("");
+      return encoded && digits.every(digit => String(settings[digit] || "").split(",", 1)[0].trim()) ? encoded : "";
     }
 
     function escapeRegExp(value) {
@@ -608,7 +605,7 @@
 
     function currentPriceCodeFieldValues() {
       return {
-        coded_price: fields.coded.value
+        coded_price: fields.coded.value.toUpperCase()
       };
     }
 
@@ -759,20 +756,17 @@
 
     function setPrintControlsDisabled(disabled) {
       printButton.disabled = disabled;
-      confirmPrintButton.disabled = disabled;
-      closePrintSheetButton.disabled = disabled;
-      printCopiesInput.disabled = disabled;
-      document.querySelectorAll("[data-copy-count]").forEach(button => {
-        button.disabled = disabled;
-      });
+      printQuantityInput.disabled = disabled;
+      printButton.textContent = disabled ? "Printing..." : "Print Labels";
     }
 
     function submitPrint(copyCount) {
       if (printSubmissionPending) {
         return;
       }
-      const cleanCopies = Math.max(1, Number.parseInt(copyCount || fields.copies.value || "1", 10) || 1);
+      const cleanCopies = Math.max(1, Number.parseInt(copyCount || printQuantityInput.value || fields.copies.value || "1", 10) || 1);
       fields.copies.value = cleanCopies;
+      printQuantityInput.value = cleanCopies;
       syncExtraFieldValues();
       refreshPriceCodeDetection();
       saveWorkflowState();
@@ -789,7 +783,7 @@
       }
     }
 
-    function openPrintSheet() {
+    function printFromInlineQuantity() {
       if (printSubmissionPending) {
         return;
       }
@@ -805,21 +799,14 @@
         }
         return;
       }
-      printCopiesInput.value = fields.copies.value || "1";
-      printSheet.hidden = false;
-      window.setTimeout(() => {
-        printCopiesInput.focus();
-        printCopiesInput.select();
-      }, 0);
-    }
-
-    function closePrintSheet() {
-      printSheet.hidden = true;
+      submitPrint(printQuantityInput.value);
     }
 
     function visibleEntryFields() {
+      if (itemSection.hidden) {
+        return [categorySelect, templateSelect, variantSearch].filter(field => field && !field.disabled && field.offsetParent !== null);
+      }
       return [
-        variantSearch,
         familyName,
         fields.brand,
         fields.item,
@@ -827,12 +814,13 @@
         fields.size,
         fields.batch,
         fields.expiry,
+        ...Object.values(customInputByField),
         fields.mrp,
         fields.selling,
         fields.margin,
         fields.coded,
-        ...Object.values(customInputByField),
-        fields.copies
+        printQuantityInput,
+        printButton,
       ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
     }
 
@@ -845,7 +833,9 @@
       const next = entries[index + direction];
       if (next) {
         next.focus();
-        next.select();
+        if (typeof next.select === "function") {
+          next.select();
+        }
       }
     }
 
@@ -866,7 +856,7 @@
     }
 
     function handleEntryArrowNavigation(event) {
-      if (!printSheet.hidden || event.ctrlKey || event.altKey || event.metaKey) {
+      if (event.ctrlKey || event.altKey || event.metaKey) {
         return;
       }
       const target = event.target;
@@ -886,6 +876,25 @@
         event.preventDefault();
         moveEntryFocus(target, -1);
       }
+    }
+
+    function focusFirstTemplateField() {
+      const target = visibleEntryFields().find(field => field !== variantSearch && field !== familyName && field !== printQuantityInput && field !== printButton);
+      if (target) {
+        window.setTimeout(() => {
+          target.focus();
+          if (typeof target.select === "function") {
+            target.select();
+          }
+        }, 0);
+      }
+    }
+
+    function focusBillingItem() {
+      window.setTimeout(() => {
+        familyName.focus();
+        familyName.select();
+      }, 0);
     }
 
     function visibleTemplateOptions() {
@@ -1282,6 +1291,7 @@
       selectTemplateState.hidden = hasTemplate;
       missingTemplateState.hidden = !hasTemplate || pathReady;
       unmappedTemplateState.hidden = !hasTemplate || !pathReady || mapped;
+      changedTemplateState.hidden = !readyForEntry || !template.file_changed;
       itemSection.hidden = !readyForEntry;
       familyName.required = readyForEntry;
       setupPill.textContent = readyForEntry ? "Ready for item entry" : hasTemplate ? "Template setup needed" : "Choose template first";
@@ -1305,8 +1315,11 @@
       });
       applyCustomTemplateFields(readyForEntry, required);
       extractTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
+      refreshTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
+      openTemplateButton.disabled = !hasTemplate || !pathReady;
       extractTemplateId.value = templateSelect.value;
       extractCategory.value = categorySelect.value;
+      openTemplateCategory.value = categorySelect.value;
       applyTemplateDefaults(readyForEntry);
       refreshPriceCodeDetection();
       updatePreview();
@@ -1465,6 +1478,8 @@
         showPricingFieldsValue.value = pricingFieldsPreferenceVisible ? "1" : "0";
       }
       applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
+      fields.copies.value = saved.copies || "1";
+      printQuantityInput.value = fields.copies.value;
 
       if (initialVariantId || initialBarcode) {
         return false;
@@ -1494,6 +1509,7 @@
       fields.margin.value = saved.margin_percent || "";
       fields.coded.value = saved.coded_price || "";
       fields.copies.value = saved.copies || "1";
+      printQuantityInput.value = fields.copies.value;
       return true;
     }
 
@@ -1582,6 +1598,7 @@
       const extras = variant.extra_field_values ? Object.values(variant.extra_field_values) : [];
       return [
         variant.search,
+        variant.family_name,
         variant.barcode,
         variant.item_display_name,
         variant.brand,
@@ -1596,6 +1613,49 @@
       ]
         .filter(Boolean)
         .join(" | ");
+    }
+
+    function refreshBillingItemOptions() {
+      const datalist = byId("familyOptions");
+      const seen = new Set(Array.from(datalist.options).map(option => option.value.toLowerCase()));
+      variants.forEach(variant => {
+        [
+          variant.family_name,
+          variant.item_display_name,
+          variant.barcode,
+          variant.brand,
+          variant.article_no,
+          variant.batch_no
+        ].filter(Boolean).forEach(value => {
+          const cleanValue = String(value || "").trim();
+          const key = cleanValue.toLowerCase();
+          if (!cleanValue || seen.has(key)) return;
+          const option = document.createElement("option");
+          option.value = cleanValue;
+          datalist.appendChild(option);
+          seen.add(key);
+        });
+      });
+    }
+
+    function topBillingSuggestion() {
+      const query = familyName.value.trim().toLowerCase();
+      if (!query) return null;
+      const scored = variants
+        .map(variant => {
+          const haystack = variantLabel(variant).toLowerCase();
+          const family = String(variant.family_name || "").toLowerCase();
+          const item = String(variant.item_display_name || "").toLowerCase();
+          const barcode = String(variant.barcode || "").toLowerCase();
+          let score = 0;
+          if (family === query || item === query || barcode === query) score += 100;
+          if (family.startsWith(query) || item.startsWith(query)) score += 50;
+          if (haystack.includes(query)) score += 10;
+          return {variant, score};
+        })
+        .filter(row => row.score > 0)
+        .sort((left, right) => right.score - left.score);
+      return scored.length ? scored[0].variant : null;
     }
 
     function filteredVariants() {
@@ -1694,6 +1754,7 @@
       }
       updatePreview();
       saveWorkflowState();
+      focusFirstTemplateField();
     }
 
     function updatePreview() {
@@ -1768,6 +1829,17 @@
       saveWorkflowState();
     });
     familyName.addEventListener("input", saveWorkflowState);
+    familyName.addEventListener("keydown", event => {
+      if (event.key !== "Enter") {
+        return;
+      }
+      const suggestion = topBillingSuggestion();
+      if (!suggestion) {
+        return;
+      }
+      event.preventDefault();
+      populateVariant(suggestion, false);
+    });
 
     categorySelect.addEventListener("change", () => {
       clearActualPreview();
@@ -1779,6 +1851,24 @@
       clearActualPreview();
       applyTemplateFields();
       saveWorkflowState();
+    });
+
+    openTemplateButton.addEventListener("click", () => {
+      const template = selectedTemplate();
+      if (!template || openTemplateButton.disabled) {
+        return;
+      }
+      openTemplateForm.action = `/templates/${template.id}/open`;
+      openTemplateForm.submit();
+    });
+
+    document.querySelectorAll("form[action$='extract-fields']").forEach(extractForm => {
+      extractForm.addEventListener("submit", () => {
+        document.querySelectorAll("#extractTemplateFieldsButton, #refreshTemplateFieldsButton, form[action$='extract-fields'] button").forEach(button => {
+          button.disabled = true;
+          button.textContent = "Extracting fields...";
+        });
+      });
     });
 
     Object.values(fields).forEach(field => {
@@ -1804,6 +1894,7 @@
     });
 
     fields.coded.addEventListener("input", () => {
+      fields.coded.value = fields.coded.value.toUpperCase();
       setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
       clearActualPreview();
       showPricingMessage("");
@@ -1813,6 +1904,7 @@
       saveWorkflowState();
     });
     fields.coded.addEventListener("change", () => {
+      fields.coded.value = fields.coded.value.toUpperCase();
       setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
       clearActualPreview();
       showPricingMessage("");
@@ -1905,46 +1997,58 @@
     form.addEventListener("submit", event => {
       if (!allowFormSubmit) {
         event.preventDefault();
-        openPrintSheet();
+        printFromInlineQuantity();
         return;
       }
       allowFormSubmit = false;
+    });
+    form.addEventListener("keydown", event => {
+      if (event.key !== "Tab") {
+        return;
+      }
+      const entries = visibleEntryFields();
+      const active = document.activeElement;
+      const index = entries.indexOf(active);
+      if (index === -1) {
+        return;
+      }
+      event.preventDefault();
+      const nextIndex = event.shiftKey
+        ? (index - 1 + entries.length) % entries.length
+        : (index + 1) % entries.length;
+      const next = entries[nextIndex];
+      next.focus();
+      if (typeof next.select === "function") {
+        next.select();
+      }
     });
 
     printButton.addEventListener("click", () => {
       if (!["new_barcode", "update_existing"].includes(workflowMode.value)) {
         setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
       }
-      openPrintSheet();
+      printFromInlineQuantity();
     });
 
-    confirmPrintButton.addEventListener("click", () => {
-      submitPrint(printCopiesInput.value);
+    printQuantityInput.addEventListener("input", () => {
+      printQuantityInput.value = printQuantityInput.value.replace(/\D/g, "");
+      fields.copies.value = printQuantityInput.value || "1";
+      saveWorkflowState();
     });
-
-    closePrintSheetButton.addEventListener("click", closePrintSheet);
-    printSheetBackdrop.addEventListener("click", closePrintSheet);
-    printCopiesInput.addEventListener("keydown", event => {
+    printQuantityInput.addEventListener("keydown", event => {
       if (printSubmissionPending) {
         event.preventDefault();
         return;
       }
       if (event.key === "Enter") {
         event.preventDefault();
-        submitPrint(printCopiesInput.value);
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        closePrintSheet();
+        printFromInlineQuantity();
       }
-    });
-    document.querySelectorAll("[data-copy-count]").forEach(button => {
-      button.addEventListener("click", () => {
-        submitPrint(button.dataset.copyCount);
-      });
     });
 
     document.addEventListener("keydown", event => {
       if (printSubmissionPending) {
+        event.preventDefault();
         return;
       }
       if (event.key === "Control" && !event.repeat) {
@@ -1952,15 +2056,18 @@
         if (window.__shopbridgeLastCtrlAt && now - window.__shopbridgeLastCtrlAt <= 550) {
           event.preventDefault();
           window.__shopbridgeLastCtrlAt = 0;
-          openPrintSheet();
+          printFromInlineQuantity();
           return;
         }
         window.__shopbridgeLastCtrlAt = now;
         return;
       }
-      if (event.ctrlKey && event.key.toLowerCase() === "p") {
+      if (event.ctrlKey && event.key === "Enter") {
         event.preventDefault();
-        openPrintSheet();
+        printFromInlineQuantity();
+      } else if (event.ctrlKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        printFromInlineQuantity();
       }
     });
 
@@ -1983,6 +2090,7 @@
     });
 
     const restoredWorkflowState = restoreWorkflowState();
+    refreshBillingItemOptions();
     setPricingFieldsPreference(pricingFieldsPreferenceVisible, false);
     applyCategory(templateSelect.value);
     if (restoredWorkflowState) {
@@ -2011,6 +2119,9 @@
       }
       refreshBarcodeControls();
       updatePreview();
+    }
+    if (new URLSearchParams(window.location.search).has("printed") || (!initialVariantId && !initialBarcode)) {
+      focusBillingItem();
     }
     window.addEventListener("beforeunload", saveWorkflowState);
   </script>

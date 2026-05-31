@@ -1,5 +1,8 @@
 from urllib.parse import urlencode
 
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -27,6 +30,8 @@ from app.services.field_config import (
 from app.services.template_folder_service import (
     folder_template_options,
     scan_bartender_template_folder,
+    template_file_changed_since_extract,
+    template_file_mtime,
     template_path_exists,
 )
 from app.services.settings_service import get_bartender_settings
@@ -133,6 +138,8 @@ def _template_status(template: TemplateMaster) -> dict[str, str]:
         return {"kind": "warn", "label": "missing file", "detail": "Fix the .btw path on this PC."}
     if not has_fields:
         return {"kind": "warn", "label": "needs fields", "detail": "Extract fields before using it."}
+    if template_file_changed_since_extract(template):
+        return {"kind": "warn", "label": "changed", "detail": "Template file changed. Re-extract fields."}
     return {"kind": "ok", "label": "ready", "detail": "Usable in New Stock."}
 
 
@@ -147,6 +154,13 @@ def _refresh_cached_preview_error(template: TemplateMaster) -> str | None:
     except Exception as exc:
         return f"Template fields were saved. Raw preview was not cached: {exc}"
     return None
+
+
+def _path_mtime(value: str) -> str | None:
+    try:
+        return f"{Path(value).expanduser().stat().st_mtime:.6f}"
+    except OSError:
+        return None
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -263,6 +277,7 @@ def create_template(
         bartender_file_path=final_bartender_file_path,
         printer_name=printer_name.strip() or None,
         required_fields=required_fields.strip() or None,
+        fields_extracted_file_mtime=_path_mtime(final_bartender_file_path) if required_fields.strip() else None,
         default_field_values=_submitted_field_defaults(
             active_fields=required_field_list,
             default_brand=default_brand,
@@ -332,6 +347,7 @@ def extract_template_fields(
     template.required_fields = format_required_fields(fields)
     template.default_field_values = format_field_defaults(default_values) or None
     template.barcode_sample_value = barcode_sample or None
+    template.fields_extracted_file_mtime = template_file_mtime(template)
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -383,6 +399,36 @@ def debug_template_preview(template_pk: int, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/{template_pk}/open")
+def open_template_file(
+    template_pk: int,
+    return_to: str = Form("templates"),
+    category: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    template = db.get(TemplateMaster, template_pk)
+    target = "/templates"
+    if return_to == "new-stock" and template:
+        target = f"/new-stock?{urlencode({'template_id': template.id, 'category': category or template.category or 'clothes'})}"
+    if not template:
+        return RedirectResponse(f"{target}?{urlencode({'extract_error': 'Template was not found.'})}", status_code=303)
+    if not template_path_exists(template):
+        message = "Template file path is missing or invalid."
+        if return_to == "new-stock":
+            return RedirectResponse(f"{target}&{urlencode({'open_error': message})}", status_code=303)
+        return RedirectResponse(f"/templates?{urlencode({'extract_error': message})}", status_code=303)
+    try:
+        os.startfile(str(Path(template.bartender_file_path).expanduser()))  # type: ignore[attr-defined]
+    except Exception as exc:
+        message = f"Could not open template: {exc}"
+        if return_to == "new-stock":
+            return RedirectResponse(f"{target}&{urlencode({'open_error': message})}", status_code=303)
+        return RedirectResponse(f"/templates?{urlencode({'extract_error': message})}", status_code=303)
+    if return_to == "new-stock":
+        return RedirectResponse(target, status_code=303)
+    return RedirectResponse("/templates", status_code=303)
+
+
 @router.post("/{template_pk}")
 def update_template(
     template_pk: int,
@@ -432,6 +478,7 @@ def update_template(
     required_fields = merge_required_fields(required_field_names, raw_required_fields)
     required_field_list = parse_required_fields(required_fields)
     template.required_fields = required_fields or None
+    template.fields_extracted_file_mtime = template_file_mtime(template) if required_fields else None
     template.default_field_values = _submitted_field_defaults(
         active_fields=required_field_list,
         default_brand=default_brand,
