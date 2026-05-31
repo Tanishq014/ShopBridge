@@ -808,6 +808,8 @@
       }
       return [
         familyName,
+        fields.coded,
+        fields.mrp,
         fields.brand,
         fields.item,
         fields.article,
@@ -815,10 +817,8 @@
         fields.batch,
         fields.expiry,
         ...Object.values(customInputByField),
-        fields.mrp,
         fields.selling,
         fields.margin,
-        fields.coded,
         printQuantityInput,
         printButton,
       ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
@@ -2030,6 +2030,7 @@
       printFromInlineQuantity();
     });
 
+    printQuantityInput.addEventListener("click", () => printQuantityInput.select());
     printQuantityInput.addEventListener("input", () => {
       printQuantityInput.value = printQuantityInput.value.replace(/\D/g, "");
       fields.copies.value = printQuantityInput.value || "1";
