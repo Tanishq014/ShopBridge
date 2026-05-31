@@ -119,7 +119,12 @@
           </label>
           <label id="marginField" data-field="margin_percent" hidden>
             Margin %
-            <input name="margin_percent" id="marginInput" inputmode="decimal">
+            <div class="code-entry-row">
+              <input name="margin_percent" id="marginInput" inputmode="decimal">
+              <div class="price-code-inline-panel" id="marginInlinePanel" style="max-width: max-content" hidden>
+                <span class="field-hint-inline price-code-inline ok" id="marginInlineMessage" style="color: var(--primary)"></span>
+              </div>
+            </div>
           </label>
           <label id="mrpField" data-field="mrp">
             MRP
@@ -327,6 +332,8 @@
     const printWithoutBillingPrice = document.getElementById("printWithoutBillingPrice");
     const showPricingFieldsToggle = document.getElementById("showPricingFieldsToggle");
     const marginField = document.getElementById("marginField");
+    const marginInlinePanel = document.getElementById("marginInlinePanel");
+    const marginInlineMessage = document.getElementById("marginInlineMessage");
     const customFieldsGrid = document.getElementById("customFieldsGrid");
     const barcodeSummary = document.getElementById("barcodeSummary");
     const manualBarcodeOverride = document.getElementById("manualBarcodeOverride");
@@ -1924,6 +1931,31 @@
     });
 
     actualPreviewButton.addEventListener("click", generateActualPreview);
+    
+    fields.margin.addEventListener("input", () => {
+      const marginRaw = String(fields.margin.value || "").trim();
+      const marginPercent = Number(marginRaw);
+      
+      if (marginRaw && Number.isFinite(marginPercent) && marginPercent >= 0 && marginPercent < 100) {
+        const candidates = currentPriceCodeCandidates();
+        const selectedKey = String(selectedPriceCodeKey.value || "").trim();
+        const selectedCandidate = selectedKey
+          ? candidates.find(candidate => (candidate.key || candidateKey(candidate)) === selectedKey)
+          : (candidates.length > 0 ? candidates[0] : null);
+          
+        const sellingPrice = selectedCandidate ? Number(selectedCandidate.selling_price) : 0;
+        
+        if (sellingPrice && Number.isFinite(sellingPrice) && sellingPrice > 0) {
+          const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
+          // Show the unrounded, actual value to 2 decimal places as preview
+          marginInlineMessage.textContent = `Rs. ${calculatedMrp.toFixed(2)}`;
+          marginInlinePanel.hidden = false;
+          return;
+        }
+      }
+      marginInlinePanel.hidden = true;
+    });
+
     fields.margin.addEventListener("keydown", event => {
       if (event.key === "Enter") {
         event.preventDefault();
