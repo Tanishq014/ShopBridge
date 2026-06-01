@@ -1,73 +1,55 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
-from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
-from app.services.barcode_service import assign_barcode, barcode_exists, generate_configured_barcode, normalize_barcode
+from app.models import LabelVariant, PrintJob, TemplateMaster
+from app.services.barcode_service import generate_configured_barcode
 from app.services.bartender_activex_service import (
     BarTenderActiveXError,
     export_print_preview_to_image,
-    extract_named_substring_values,
 )
-from app.services.bartender_service import process_print_job
-from app.services.field_config import (
-    SUPPORTED_FIELDS,
-    field_label,
-    format_field_defaults,
-    format_required_fields,
-    parse_required_fields,
-)
-from app.services.price_code_service import (
-    extract_price_code_candidates,
-    generate_coded_price,
-)
+from app.services.field_config import parse_required_fields
 from app.services.settings_service import (
-    get_barcode_settings,
     get_bartender_settings,
-    get_price_code_settings,
-    get_pricing_settings,
     save_barcode_settings,
     save_bartender_settings,
     save_price_code_settings,
     save_pricing_settings,
 )
-from app.services.network_service import qr_url_for_scanner, scanner_url
-from app.services.template_folder_service import (
-    scan_bartender_template_folder,
-    template_file_mtime,
-    template_path_exists,
-)
-from app.services.template_preview_service import (
-    cached_template_preview_path,
-    refresh_cached_template_preview,
-)
+from app.services.template_folder_service import template_path_exists
+from app.services.template_preview_service import cached_template_preview_path
 from app.services.template_filters import register_template_filters
 from app.services.workflow.context_service import workflow_context
-from app.services.workflow.form_state_service import (
-    format_extra_field_values as _format_extra_field_values,
-    parse_extra_field_values as _parse_extra_field_values,
-    variant_template_id as _variant_template_id,
+from app.services.workflow.form_state_service import variant_template_id as _variant_template_id
+from app.services.workflow.preview_service import (
+    form_field_values as _form_field_values,
+    refresh_cached_preview_error as _refresh_cached_preview_error,
 )
-from app.services.workflow.pricing_workflow_service import (
-    candidate_payload as _candidate_payload,
-    find_candidate_by_key as _find_candidate_by_key,
-    money as _money,
+from app.services.workflow.page_context_service import (
+    item_detail_context,
+    recent_prints_context,
+    reports_context,
+    settings_context,
 )
+from app.services.workflow.print_orchestration_service import (
+    PrintNewStockInput,
+    WorkflowPrintError,
+    process_new_stock_print,
+)
+from app.services.workflow.print_service import (
+    create_print_job as _create_print_job,
+    new_stock_print_redirect_url,
+)
+from app.services.workflow.template_field_service import extract_and_save_template_fields
 from app.services.workflow.validation_service import (
-    decimal_or_none as _decimal_or_none,
     int_or_none as _int_or_none,
-    label_details_changed as _label_details_changed,
-    same_money as _same_money,
-    same_text as _same_text,
 )
 
 
@@ -82,236 +64,8 @@ CATEGORY_CHOICES = [
 ]
 
 
-def _find_or_create_family(
-    db: Session,
-    category: str,
-    family_id: int | None,
-    family_name: str,
-    item_display_name: str,
-) -> ProductFamily:
-    final_name = (family_name or item_display_name).strip()
-    if family_id:
-        family = db.get(ProductFamily, family_id)
-        if family:
-            if final_name and family.family_name.strip().lower() != final_name.lower():
-                family_id = None
-            else:
-                if category and family.category != category:
-                    family.category = category
-                    db.add(family)
-                return family
-
-    if not final_name:
-        final_name = item_display_name.strip()
-
-    family = db.scalar(
-        select(ProductFamily).where(func.lower(ProductFamily.family_name) == final_name.lower())
-    )
-    if family:
-        if category and family.category != category:
-            family.category = category
-            family.active_status = True
-            db.add(family)
-        return family
-
-    family = ProductFamily(
-        family_name=final_name,
-        tally_stock_item_name=None,
-        category=category,
-        default_tax_rate=0,
-        default_unit="PCS",
-        active_status=True,
-    )
-    db.add(family)
-    db.flush()
-    return family
-
-
-def _find_exact_variant(
-    db: Session,
-    *,
-    category: str,
-    template: TemplateMaster,
-    required_fields: list[str],
-    family_name: str,
-    item_display_name: str,
-    brand: str,
-    article_no: str,
-    size: str,
-    batch_no: str,
-    expiry: str,
-    extra_field_values: dict[str, str],
-    mrp: Decimal | None,
-    selling_price: Decimal | None,
-    coded_price: str,
-) -> LabelVariant | None:
-    query = (
-        select(LabelVariant)
-        .join(ProductFamily)
-        .where(LabelVariant.status == "active")
-        .where(func.lower(LabelVariant.item_display_name) == item_display_name.strip().lower())
-        .where(ProductFamily.category == category)
-        .where(LabelVariant.template_id == template.id)
-    )
-    candidates = db.execute(query).scalars().all()
-    required = set(required_fields)
-
-    for candidate in candidates:
-        if mrp is not None and not _same_money(candidate.mrp, mrp):
-            continue
-        if selling_price is not None:
-            if not _same_money(candidate.selling_price, selling_price):
-                continue
-        elif candidate.selling_price is not None:
-            continue
-        if coded_price.strip():
-            if not _same_text(candidate.coded_price, coded_price):
-                continue
-        elif candidate.coded_price:
-            continue
-        if family_name.strip() and not _same_text(candidate.family.family_name, family_name):
-            continue
-        if "brand" in required and brand.strip() and not _same_text(candidate.brand, brand):
-            continue
-        if ("article" in required or "article_no" in required) and article_no.strip() and not _same_text(candidate.article_no, article_no):
-            continue
-        if "size" in required and size.strip() and not _same_text(candidate.size, size):
-            continue
-        if "batch_no" in required and batch_no.strip() and not _same_text(candidate.batch_no, batch_no):
-            continue
-        if "expiry" in required and expiry.strip() and not _same_text(candidate.expiry, expiry):
-            continue
-        candidate_extras = _parse_extra_field_values(candidate.extra_field_values)
-        extra_mismatch = False
-        for field_name, field_value in extra_field_values.items():
-            if field_name in required and field_value.strip() and not _same_text(candidate_extras.get(field_name), field_value):
-                extra_mismatch = True
-                break
-        if extra_mismatch:
-            continue
-        return candidate
-    return None
-
-
-def _create_print_job(
-    db: Session,
-    variant: LabelVariant,
-    template: TemplateMaster,
-    copies: int,
-) -> PrintJob:
-    if not variant.id:
-        raise ValueError("Cannot print before the item is saved.")
-    if not (variant.barcode or "").strip():
-        raise ValueError("Cannot print an item without a barcode.")
-    if not template or not template.id:
-        raise ValueError("Cannot print without a saved template.")
-    if not parse_required_fields(template.required_fields):
-        raise ValueError("Cannot print before extracting template fields.")
-
-    job = PrintJob(
-        variant_id=variant.id,
-        template_id=template.id,
-        copies=max(1, copies),
-        status="pending",
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-    settings = get_bartender_settings()
-    try:
-        process_print_job(
-            db,
-            job,
-            mode=settings.mode,
-            show_bartender_window=settings.show_bartender_window,
-        )
-    except Exception as exc:
-        job.status = "failed"
-        job.error_message = f"Print failed before completion: {exc}"[:1800]
-        db.add(job)
-        db.commit()
-    db.refresh(job)
-    return job
-
-
 def _print_redirect(job: PrintJob, template: TemplateMaster, category: str = "clothes") -> RedirectResponse:
-    query: dict[str, object] = {
-        "printed": job.id,
-        "template_id": template.id,
-        "category": category,
-        "load_variant_id": job.variant_id,
-    }
-    if job.status == "failed" and job.error_message:
-        query["print_error"] = job.error_message
-    return RedirectResponse(f"/new-stock?{urlencode(query)}", status_code=303)
-
-
-def _refresh_cached_preview_error(template: TemplateMaster) -> str | None:
-    try:
-        refresh_cached_template_preview(
-            template,
-            visible=get_bartender_settings().show_bartender_window,
-        )
-    except BarTenderActiveXError as exc:
-        return f"Fields were extracted. Raw preview was not cached: {exc}"
-    except Exception as exc:
-        return f"Fields were extracted. Raw preview was not cached: {exc}"
-    return None
-
-
-def _form_field_values(
-    db: Session,
-    template: TemplateMaster,
-    *,
-    barcode: str,
-    brand: str,
-    item_display_name: str,
-    family_name: str,
-    article_no: str,
-    size: str,
-    batch_no: str,
-    expiry: str,
-    mrp: str,
-    selling_price: str,
-    coded_price: str,
-    extra_field_values: str = "",
-) -> dict[str, str]:
-    selling = _decimal_or_none(selling_price)
-    mrp_value = _decimal_or_none(mrp)
-    extras = _parse_extra_field_values(extra_field_values)
-    barcode_value = barcode.strip()
-    required_fields = parse_required_fields(template.required_fields)
-    if not barcode_value and "barcode" in required_fields:
-        try:
-            barcode_value = generate_configured_barcode(db, template=template)
-        except ValueError:
-            barcode_value = "manual"
-
-    article_value = article_no.strip()
-    item_name_value = item_display_name.strip() or family_name.strip()
-    final_family_name = family_name.strip() or item_name_value
-    price_code_settings = get_price_code_settings()
-    coded = coded_price.strip() or generate_coded_price(selling, price_code_settings) or ""
-    standard_values = {
-        "barcode": barcode_value,
-        "brand": brand.strip(),
-        "item_display_name": item_name_value,
-        "design": item_name_value,
-        "family_name": final_family_name,
-        "article": article_value,
-        "article_no": article_value,
-        "size": size.strip(),
-        "batch_no": batch_no.strip(),
-        "expiry": expiry.strip(),
-        "mrp": _money(mrp_value),
-        "selling_price": _money(selling),
-        "coded_price": coded,
-    }
-    standard_values.update(extras)
-    return {
-        field_name: standard_values.get(field_name, "")
-        for field_name in required_fields
-    }
+    return RedirectResponse(new_stock_print_redirect_url(job, template, category), status_code=303)
 
 
 def _workflow_context(
@@ -404,24 +158,13 @@ def extract_workflow_template_fields(
         )
 
     try:
-        field_defaults = extract_named_substring_values(template.bartender_file_path)
+        extracted = extract_and_save_template_fields(db, template)
     except BarTenderActiveXError as exc:
         return RedirectResponse(
             f"/new-stock?{urlencode({'template_id': template.id, 'category': category, 'extract_error': str(exc)})}",
             status_code=303,
         )
 
-    fields = list(field_defaults)
-    barcode_sample = field_defaults.get("barcode", "").strip()
-    default_values = {field: value for field, value in field_defaults.items() if field != "barcode"}
-    template.required_fields = format_required_fields(fields)
-    template.default_field_values = format_field_defaults(default_values)
-    template.barcode_sample_value = barcode_sample or None
-    template.fields_extracted_file_mtime = template_file_mtime(template)
-    db.add(template)
-    db.commit()
-    db.refresh(template)
-    extracted = ", ".join(fields)
     query = {"template_id": template.id, "category": category, "extracted": extracted}
     preview_error = _refresh_cached_preview_error(template)
     if preview_error:
@@ -558,237 +301,38 @@ def print_new_stock(
             status_code=status_code,
         )
 
-    template = db.get(TemplateMaster, template_id)
-    if not template or not template.active_status:
-        return workflow_error_response("Select an active template.")
-    if not template_path_exists(template):
-        return workflow_error_response("Selected template file is missing on this PC. Fix it in Settings -> Templates.")
-    if not parse_required_fields(template.required_fields):
-        return workflow_error_response("Extract fields for the selected template before printing.")
-
-    source_variant = db.get(LabelVariant, _int_or_none(existing_variant_id)) if existing_variant_id else None
-    if workflow_mode == "quick_reprint":
-        if not source_variant:
-            return workflow_error_response("Select an existing item before quick reprint.")
-        job = _create_print_job(db, source_variant, template, copies)
-        return _print_redirect(job, template, category)
-
-    required_fields = parse_required_fields(template.required_fields)
-    required_field_set = set(required_fields)
-
-    def field_is_required(field_name: str) -> bool:
-        if field_name == "article_no":
-            return "article_no" in required_field_set or "article" in required_field_set
-        if field_name == "item_display_name":
-            return "item_display_name" in required_field_set or "design" in required_field_set
-        return field_name in required_field_set
-
-    def value_or_preserved(field_name: str, raw_value: str, attr_name: str | None = None) -> str:
-        clean_value = (raw_value or "").strip()
-        if clean_value:
-            return clean_value
-        if source_variant and not field_is_required(field_name):
-            stored_value = getattr(source_variant, attr_name or field_name, None)
-            return "" if stored_value is None else str(stored_value)
-        return ""
-
-    final_category = category.strip().lower()
-    final_family_name = family_name.strip() or item_display_name.strip()
-    if not final_family_name:
-        return workflow_error_response("Enter an item name.")
-
-    brand_value = value_or_preserved("brand", brand)
-    item_name_value = (
-        item_display_name.strip()
-        or value_or_preserved("item_display_name", "", "item_display_name")
-        or final_family_name
-    )
-    article_value = value_or_preserved("article_no", article_no)
-    size_value = value_or_preserved("size", size)
-    batch_value = value_or_preserved("batch_no", batch_no)
-    expiry_value = value_or_preserved("expiry", expiry)
-    mrp_value = _decimal_or_none(value_or_preserved("mrp", mrp))
-    selling = _decimal_or_none(value_or_preserved("selling_price", selling_price))
-    extra_values = _parse_extra_field_values(extra_field_values)
-    source_extra_values = _parse_extra_field_values(source_variant.extra_field_values if source_variant else None)
-    for field_name, field_value in source_extra_values.items():
-        if field_name not in extra_values and source_variant and not field_is_required(field_name):
-            extra_values[field_name] = field_value
-    price_code_settings = get_price_code_settings()
-    raw_coded_price = coded_price.strip().upper()
-    if raw_coded_price:
-        coded = raw_coded_price
-    elif selling is not None:
-        coded = generate_coded_price(selling, price_code_settings) or ""
-    else:
-        coded = value_or_preserved("coded_price", coded_price)
-
-    field_values = {
-        "brand": brand_value,
-        "item_display_name": item_name_value,
-        "design": item_name_value,
-        "family_name": final_family_name,
-        "article": article_value,
-        "article_no": article_value,
-        "size": size_value,
-        "batch_no": batch_value,
-        "expiry": expiry_value,
-        "mrp": _money(mrp_value),
-        "selling_price": _money(selling),
-        "coded_price": coded,
-    }
-    field_values.update(extra_values)
-
-    price_code_candidates, _priority_code_found = extract_price_code_candidates(
-        field_values,
-        required_fields,
-        price_code_settings,
-    )
-    selected_candidate = _find_candidate_by_key(price_code_candidates, selected_price_code_key.strip())
-    if selected_candidate:
-        selling = selected_candidate.selling_price
-        coded = selected_candidate.code
-    elif selling is None and price_code_candidates:
-        if len(price_code_candidates) == 1:
-            selected_candidate = price_code_candidates[0]
-            selling = selected_candidate.selling_price
-            coded = selected_candidate.code
-        elif price_code_candidates:
-            options = "; ".join(candidate["label"] for candidate in map(_candidate_payload, price_code_candidates))
-            return workflow_error_response("Multiple codes found. Choose one or enter Selling Price manually. " + options)
-    elif selling is None:
-        return workflow_error_response("Code cannot be decoded. Please enter a valid Code.")
-
-    billing_price_missing = selling is None and print_without_billing_price
-    if selling is not None and not coded:
-        coded = generate_coded_price(selling, price_code_settings) or ""
-    field_values["selling_price"] = _money(selling)
-    field_values["coded_price"] = coded
-    missing_fields = [
-        field_label(field_name)
-        for field_name in required_fields
-        if field_name != "barcode" and not str(field_values.get(field_name, "")).strip()
-    ]
-    if missing_fields:
-        return workflow_error_response("Required for selected template: " + ", ".join(missing_fields))
-
-    exact_variant = None
-    if not force_new_barcode:
-        exact_variant = _find_exact_variant(
-            db,
-            category=final_category,
-            template=template,
-            required_fields=required_fields,
-            family_name=final_family_name,
-            item_display_name=item_name_value,
-            brand=brand_value,
-            article_no=article_value,
-            size=size_value,
-            batch_no=batch_value,
-            expiry=expiry_value,
-            extra_field_values=extra_values,
-            mrp=mrp_value,
-            selling_price=selling,
-            coded_price=coded,
-        )
-        if exact_variant:
-            source_variant = exact_variant
-            workflow_mode = "print"
-
-    family = _find_or_create_family(
-        db=db,
-        category=final_category,
-        family_id=_int_or_none(family_id),
-        family_name=final_family_name,
-        item_display_name=item_name_value,
-    )
-
-    details_changed = _label_details_changed(
-        source_variant,
-        category=final_category,
-        family_name=final_family_name,
-        template=template,
-        brand=brand_value,
-        item_display_name=item_name_value,
-        article_no=article_value,
-        size=size_value,
-        batch_no=batch_value,
-        expiry=expiry_value,
-        extra_field_values=extra_values,
-        mrp=mrp_value,
-        selling_price=selling,
-        coded_price=coded,
-    )
-    explicit_new_barcode = force_new_barcode or workflow_mode == "duplicate"
-    create_new_barcode = (
-        source_variant is None
-        or explicit_new_barcode
-        or (details_changed and workflow_mode != "update_existing")
-    )
-    update_existing = source_variant is not None and not create_new_barcode
-
-    if update_existing:
-        variant = source_variant
-        requested_barcode = barcode.strip()
-        if manual_barcode_override and requested_barcode and requested_barcode != variant.barcode:
-            try:
-                variant.barcode = assign_barcode(
-                    db,
-                    requested_barcode,
-                    exclude_variant_id=variant.id,
-                    template=template,
-                )
-            except ValueError as exc:
-                return workflow_error_response(str(exc))
-    else:
-        requested_barcode = barcode
-        if (
-            source_variant
-            and details_changed
-            and not manual_barcode_override
-            and normalize_barcode(requested_barcode) == normalize_barcode(source_variant.barcode)
-        ):
-            requested_barcode = ""
-        if (
-            not manual_barcode_override
-            and requested_barcode.strip()
-            and barcode_exists(db, normalize_barcode(requested_barcode))
-        ):
-            requested_barcode = ""
-        try:
-            final_barcode = assign_barcode(db, requested_barcode, template=template)
-        except ValueError as exc:
-            return workflow_error_response(str(exc))
-        variant = LabelVariant(
-            barcode=final_barcode,
-            family_id=family.id,
-            item_display_name=item_name_value,
-        )
-
-    variant.family_id = family.id
-    variant.brand = brand_value or None
-    variant.item_display_name = item_name_value
-    variant.article_no = article_value or None
-    variant.size = size_value or None
-    variant.batch_no = batch_value or None
-    variant.expiry = expiry_value or None
-    variant.mrp = mrp_value
-    variant.selling_price = selling
-    variant.coded_price = coded or None
-    variant.billing_price_missing = billing_price_missing
-    variant.extra_field_values = _format_extra_field_values(extra_values)
-    variant.template_id = template.id
-    variant.status = "active"
-    db.add(variant)
-    db.commit()
-    db.refresh(variant)
-
     try:
-        job = _create_print_job(db, variant, template, copies)
-    except Exception as exc:
-        return workflow_error_response(f"Variant saved, but print job failed: {exc}", status_code=500)
+        result = process_new_stock_print(
+            db,
+            PrintNewStockInput(
+                workflow_mode=workflow_mode,
+                existing_variant_id=existing_variant_id,
+                family_id=family_id,
+                family_name=family_name,
+                category=category,
+                barcode=barcode,
+                brand=brand,
+                item_display_name=item_display_name,
+                article_no=article_no,
+                size=size,
+                batch_no=batch_no,
+                expiry=expiry,
+                mrp=mrp,
+                selling_price=selling_price,
+                coded_price=coded_price,
+                extra_field_values=extra_field_values,
+                selected_price_code_key=selected_price_code_key,
+                print_without_billing_price=print_without_billing_price,
+                force_new_barcode=force_new_barcode,
+                template_id=template_id,
+                copies=copies,
+                manual_barcode_override=manual_barcode_override,
+            ),
+        )
+    except WorkflowPrintError as exc:
+        return workflow_error_response(exc.message, status_code=exc.status_code)
 
-    return _print_redirect(job, template, category)
+    return _print_redirect(result.job, result.template, result.category)
 
 
 @router.post("/new-stock/quick-reprint")
@@ -818,22 +362,10 @@ def item_detail(variant_id: int, request: Request, db: Session = Depends(get_db)
     variant = db.get(LabelVariant, variant_id)
     if not variant:
         return RedirectResponse("/new-stock", status_code=303)
-    jobs = db.execute(
-        select(PrintJob)
-        .where(PrintJob.variant_id == variant.id)
-        .order_by(PrintJob.created_at.desc(), PrintJob.id.desc())
-    ).scalars().all()
     return templates.TemplateResponse(
         request,
         "item_detail.html",
-        {
-            "request": request,
-            "variant": variant,
-            "jobs": jobs,
-            "category": variant.family.category or "clothes",
-            "template_id": _variant_template_id(variant) or "",
-            "extra_field_values": _parse_extra_field_values(variant.extra_field_values),
-        },
+        item_detail_context(request, db, variant),
     )
 
 
@@ -856,16 +388,10 @@ def item_reprint(
 
 @router.get("/recent-prints", response_class=HTMLResponse)
 def recent_prints(request: Request, db: Session = Depends(get_db)):
-    jobs = db.execute(
-        select(PrintJob).order_by(PrintJob.created_at.desc(), PrintJob.id.desc()).limit(80)
-    ).scalars().all()
     return templates.TemplateResponse(
         request,
         "recent_prints.html",
-        {
-            "request": request,
-            "jobs": jobs,
-        },
+        recent_prints_context(request, db),
     )
 
 
@@ -880,29 +406,10 @@ def reprint_job(job_id: int, db: Session = Depends(get_db)):
 
 @router.get("/reports", response_class=HTMLResponse)
 def reports(request: Request, db: Session = Depends(get_db)):
-    category_rows = db.execute(
-        select(ProductFamily.category, func.count(ProductFamily.id))
-        .group_by(ProductFamily.category)
-        .order_by(ProductFamily.category)
-    ).all()
-    stats = {
-        "families": db.scalar(select(func.count(ProductFamily.id))) or 0,
-        "active_variants": db.scalar(
-            select(func.count(LabelVariant.id)).where(LabelVariant.status == "active")
-        )
-        or 0,
-        "templates": db.scalar(select(func.count(TemplateMaster.id))) or 0,
-        "print_jobs": db.scalar(select(func.count(PrintJob.id))) or 0,
-    }
-    scanner, scanner_ip_detected = scanner_url(request.headers.get("host"))
     return templates.TemplateResponse(
         request,
         "reports.html",
-        {
-            "request": request,
-            "stats": stats,
-            "category_rows": category_rows,
-        },
+        reports_context(request, db),
     )
 
 
@@ -913,47 +420,15 @@ def settings(
     settings_error: str | None = None,
     db: Session = Depends(get_db),
 ):
-    scanner, scanner_ip_detected = scanner_url(request.headers.get("host"))
-    scan_bartender_template_folder(db)
-    template_rows = db.execute(select(TemplateMaster).order_by(TemplateMaster.template_name)).scalars().all()
-    active_templates = [template for template in template_rows if template.active_status]
-    ready_templates = [
-        template
-        for template in active_templates
-        if template_path_exists(template) and parse_required_fields(template.required_fields)
-    ]
-    missing_templates = [template for template in active_templates if not template_path_exists(template)]
-    unmapped_templates = [
-        template
-        for template in active_templates
-        if template_path_exists(template) and not parse_required_fields(template.required_fields)
-    ]
-    stats = {
-        "templates_total": len(template_rows),
-        "templates_ready": len(ready_templates),
-        "templates_missing": len(missing_templates),
-        "templates_unmapped": len(unmapped_templates),
-        "families": db.scalar(select(func.count(ProductFamily.id))) or 0,
-        "variants": db.scalar(select(func.count(LabelVariant.id)).where(LabelVariant.status == "active")) or 0,
-        "print_jobs": db.scalar(select(func.count(PrintJob.id))) or 0,
-    }
     return templates.TemplateResponse(
         request,
         "settings.html",
-        {
-            "request": request,
-            "stats": stats,
-            "ready_to_label": bool(ready_templates),
-            "bartender_settings": get_bartender_settings(),
-            "barcode_settings": get_barcode_settings(),
-            "pricing_settings": get_pricing_settings(),
-            "price_code_settings": get_price_code_settings(),
-            "settings_saved": bool(settings_saved),
-            "settings_error": settings_error,
-            "scanner_url": scanner,
-            "scanner_qr_url": qr_url_for_scanner(scanner),
-            "scanner_ip_detected": scanner_ip_detected,
-        },
+        settings_context(
+            request,
+            db,
+            settings_saved=settings_saved,
+            settings_error=settings_error,
+        ),
     )
 
 

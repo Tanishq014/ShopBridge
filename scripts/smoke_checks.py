@@ -23,6 +23,7 @@ os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import LabelVariant, PosCartItem, PrintJob, TemplateMaster  # noqa: E402
 from app.routes import pos, templates as template_routes, workflow  # noqa: E402
+from app.services.workflow import print_orchestration_service, print_service  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
 from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: E402
 from app.services.price_code_service import extract_candidates_from_field, generate_coded_price  # noqa: E402
@@ -116,6 +117,8 @@ def main() -> None:
     init_db()
     workflow.template_path_exists = lambda template: True
     workflow.process_print_job = fake_print_success
+    print_orchestration_service.template_path_exists = lambda template: True
+    print_service.process_print_job = fake_print_success
     save_barcode_settings(
         generation_mode="template_length_safe_alphanumeric",
         default_length=7,
@@ -466,6 +469,7 @@ def main() -> None:
             pass
 
         workflow.process_print_job = fake_print_fail
+        print_service.process_print_job = fake_print_fail
         print_item(
             db,
             template,
@@ -481,6 +485,7 @@ def main() -> None:
         assert_true(bool(failed_barcode), "failed print did not keep saved item barcode")
 
         workflow.process_print_job = fake_print_success
+        print_service.process_print_job = fake_print_success
         retry_job = workflow._create_print_job(db, failed_variant, template, 1)
         db.refresh(failed_variant)
         assert_true(retry_job.variant_id == failed_variant.id, "retry job linked to wrong item")
