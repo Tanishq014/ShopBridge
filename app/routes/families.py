@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from app.config import TEMPLATES_DIR
 from app.db import get_db
 from app.models import ProductFamily, TemplateMaster
+from app.services.template_filters import register_template_filters
 
 
 router = APIRouter(prefix="/families", tags=["families"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 
 
 def _decimal(value: str | None, default: Decimal = Decimal("0")) -> Decimal:

@@ -13,10 +13,11 @@ from app.db import get_db
 from app.models import PrintJob
 from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
+from app.services.template_filters import register_template_filters
 
 
 router = APIRouter(tags=["scan"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 
 
 @router.get("/scan", response_class=HTMLResponse)

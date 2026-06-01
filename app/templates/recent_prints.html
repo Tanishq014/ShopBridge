@@ -29,7 +29,7 @@
             <td>{{ job.template.template_name }}</td>
             <td>{{ job.copies }}</td>
             <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
-            <td>{{ job.created_at.strftime("%d-%m-%Y %H:%M") }}</td>
+            <td>{{ job.created_at|local_time }}</td>
             <td>
               <form method="post" action="/recent-prints/{{ job.id }}/reprint">
                 <button class="button small" type="submit">Reprint</button>

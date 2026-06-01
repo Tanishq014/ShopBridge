@@ -20,6 +20,7 @@
       <input type="hidden" name="extra_field_values" id="extraFieldValuesInput" value="{}">
       <input type="hidden" name="selected_price_code_key" id="selectedPriceCodeKey" value="">
       <input type="hidden" name="coded_price_manual_override" id="codedPriceManualOverride" value="false">
+      <input type="hidden" name="force_new_barcode" id="forceNewBarcode" value="false">
 
       <div class="workflow-section setup-section">
         <div class="section-line">
@@ -62,7 +63,7 @@
           <label class="span-two">
             Search existing item
             <div class="combo" id="variantCombo">
-              <input id="variantSearch" autocomplete="off" placeholder="Type to find an item; template will follow the selection" role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
+              <input id="variantSearch" autocomplete="off" placeholder="Type item name, barcode, brand, article..." role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
               <button class="combo-toggle" type="button" id="variantSearchToggle">Show</button>
               <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
             </div>
@@ -98,15 +99,14 @@
           <span class="mode-pill" id="modePill">New or selected item</span>
         </div>
         <div class="form-grid pricing-grid">
-          <label>
-            Billing Item <span class="field-hint-inline">(used later for billing/scanning)</span>
-            <input name="family_name" id="familyName" list="familyOptions">
-            <datalist id="familyOptions">
-              {% for family in families %}
-                <option value="{{ family.family_name }}"></option>
-              {% endfor %}
-            </datalist>
-          </label>
+          <div class="field-stack">
+            <label for="familyName">Billing Item <span class="field-hint-inline">(used later for billing/scanning)</span></label>
+            <div class="combo" id="billingItemCombo">
+              <input name="family_name" id="familyName" autocomplete="off" placeholder="Type to search saved items" role="combobox" aria-expanded="false" aria-controls="billingItemMenu">
+              <button class="combo-toggle" type="button" id="billingItemToggle">Show</button>
+              <div class="combo-menu" id="billingItemMenu" role="listbox" hidden></div>
+            </div>
+          </div>
           <label id="codedField" data-field="coded_price">
             Code
             <div class="code-entry-row">
@@ -261,7 +261,7 @@
             <div class="recent-row">
               <button class="plain-item load-variant" type="button" data-variant-id="{{ item.id }}">
                 <strong>{{ item.item_display_name }}</strong>
-                <span>{{ item.brand or item.family.family_name }}{% if item.article_no %} / {{ item.article_no }}{% endif %}{% if item.size %} / {{ item.size }}{% endif %}</span>
+                <span>{{ item.brand or item.family.family_name }}{% if item.article_no %} / {{ item.article_no }}{% endif %}{% if item.size %} / {{ item.size }}{% endif %} / {{ item.created_at|local_time }}</span>
               </button>
               <a class="button small" href="/items/{{ item.id }}">Open</a>
               <form method="post" action="/new-stock/quick-reprint">
@@ -292,6 +292,7 @@
 
   <script>
     const variants = {{ variants_json|tojson }};
+    const families = {{ families_json|default([], true)|tojson }};
     const templatesData = {{ templates_json|tojson }};
     const sizeValues = {{ size_values_json|tojson }};
     const categories = {{ categories|tojson }};
@@ -310,7 +311,11 @@
     const extraFieldValuesInput = document.getElementById("extraFieldValuesInput");
     const selectedPriceCodeKey = document.getElementById("selectedPriceCodeKey");
     const codedPriceManualOverride = document.getElementById("codedPriceManualOverride");
+    const forceNewBarcode = document.getElementById("forceNewBarcode");
     const familyName = document.getElementById("familyName");
+    const billingItemCombo = document.getElementById("billingItemCombo");
+    const billingItemToggle = document.getElementById("billingItemToggle");
+    const billingItemMenu = document.getElementById("billingItemMenu");
     const categorySelect = document.getElementById("categorySelect");
     const variantSearch = document.getElementById("variantSearch");
     const variantSearchToggle = document.getElementById("variantSearchToggle");
@@ -366,8 +371,18 @@
     let printSubmissionPending = false;
     let customInputByField = {};
     let pricingFieldsPreferenceVisible = true;
+    let variantMenuRows = [];
+    let variantMenuIndex = -1;
+    let billingMatches = [];
+    let billingActiveIndex = -1;
+    let billingMenuOpen = false;
+    let lastBillingInputValue = "";
+    let redirectBillingFocusUntil = 0;
+    let suppressVariantMenuUntil = 0;
     const storageKey = "shopbridge.newStockState.v3";
-
+    const pageParams = new URLSearchParams(window.location.search);
+    const hasPrintError = pageParams.has("print_error");
+    const focusDebugEnabled = pageParams.has("focus_debug") || localStorage.getItem("shopbridge.focusDebug") === "1";
     const fields = {
       barcode: document.getElementById("barcodeInput"),
       brand: document.getElementById("brandInput"),
@@ -434,6 +449,36 @@
       return document.getElementById(id);
     }
 
+    function elementName(element) {
+      if (!element) {
+        return "none";
+      }
+      if (element.id) {
+        return `#${element.id}`;
+      }
+      return element.tagName ? element.tagName.toLowerCase() : String(element);
+    }
+
+    function focusDebug(message, details = {}) {
+      if (!focusDebugEnabled) {
+        return;
+      }
+      const payload = {
+        active: elementName(document.activeElement),
+        ...details,
+      };
+      console.log("[ShopBridge focus]", message, payload);
+      let panel = document.getElementById("focusDebugPanel");
+      if (!panel) {
+        panel = document.createElement("pre");
+        panel.id = "focusDebugPanel";
+        panel.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:9999;max-width:520px;max-height:260px;overflow:auto;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:8px;font:12px/1.35 Consolas,monospace;white-space:pre-wrap;";
+        document.body.appendChild(panel);
+      }
+      const line = `${new Date().toLocaleTimeString()} ${message} ${JSON.stringify(payload)}`;
+      panel.textContent = `${panel.textContent}\n${line}`.trim().slice(-7000);
+    }
+
     function money(value) {
       const number = Number(value || 0);
       return number.toFixed(2);
@@ -441,6 +486,10 @@
 
     function normalizedText(value) {
       return String(value || "").trim().toLowerCase();
+    }
+
+    function sameText(left, right) {
+      return normalizedText(left) === normalizedText(right);
     }
 
     function moneyText(value) {
@@ -470,6 +519,14 @@
 
     function setCodedPriceManualOverride(enabled) {
       codedPriceManualOverride.value = enabled ? "true" : "false";
+    }
+
+    function setForceNewBarcode(enabled) {
+      forceNewBarcode.value = enabled ? "true" : "false";
+    }
+
+    function forceNewBarcodeEnabled() {
+      return forceNewBarcode.value === "true";
     }
 
     function applyPricingFieldsVisibility(visible) {
@@ -536,7 +593,7 @@
       }
       
       const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
-      fields.mrp.value = upperRound(calculatedMrp, 9).toFixed(2);
+      fields.mrp.value = upperRound(calculatedMrp, mrpRounding).toFixed(2);
       showPricingMessage("");
       clearActualPreview();
       updatePreview();
@@ -705,9 +762,9 @@
       if (String(fields.selling.value || "").trim()) {
         setPriceCodeInlineState(`Rs. ${moneyText(fields.selling.value)}`, "ok");
       } else if (String(fields.coded.value || "").trim()) {
-        setPriceCodeInlineState("Code cannot be decoded. Enter margin to calculate MRP.", "warn");
+        setPriceCodeInlineState("Code cannot be decoded. Fix Code to continue.", "warn");
       } else {
-        setPriceCodeInlineState("Code cannot be decoded. Enter margin to calculate MRP.", "warn");
+        setPriceCodeInlineState("Enter Code to continue.", "warn");
       }
       updatePriceCodeInlinePanelVisibility();
     }
@@ -802,16 +859,10 @@
       refreshPriceCodeDetection();
       if (!readyToPrint()) {
         if (!String(fields.selling.value || "").trim()) {
-          applyPricingFieldsVisibility(true);
-          setPriceCodeInlineState("Code cannot be decoded. Enter margin to calculate MRP.", "warn");
+          setPriceCodeInlineState("Code cannot be decoded. Fix Code to continue.", "warn");
           window.setTimeout(() => {
-            if (fields.margin && !fields.margin.hidden) {
-              fields.margin.focus();
-              fields.margin.select();
-            } else {
-              fields.coded.focus();
-              fields.coded.select();
-            }
+            fields.coded.focus();
+            fields.coded.select();
           }, 0);
         }
         return;
@@ -879,6 +930,9 @@
       if (!visibleEntryFields().includes(target)) {
         return;
       }
+      if ((target === familyName && billingItemCombo.classList.contains("open")) || (target === variantSearch && variantCombo.classList.contains("open"))) {
+        return;
+      }
       if (event.key === "ArrowDown") {
         event.preventDefault();
         moveEntryFocus(target, 1);
@@ -903,7 +957,48 @@
             target.select();
           }
         }, 0);
+        return target;
       }
+      return null;
+    }
+
+    function firstTemplateEntryField() {
+      return visibleEntryFields().find(field => field !== variantSearch && field !== familyName && field !== printQuantityInput && field !== printButton) || null;
+    }
+
+    function isFocusableEntryField(field) {
+      return Boolean(field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
+    }
+
+    function firstFieldAfterBillingItem() {
+      return [
+        fields.coded,
+        fields.margin,
+        fields.mrp,
+        fields.brand,
+        fields.item,
+        fields.article,
+        fields.size,
+        fields.batch,
+        fields.expiry,
+        ...Object.values(customInputByField),
+        printQuantityInput,
+      ].find(isFocusableEntryField) || templateSelect;
+    }
+
+    function preferredFieldAfterBillingItem() {
+      return isFocusableEntryField(fields.coded) ? fields.coded : firstFieldAfterBillingItem();
+    }
+
+    function focusFieldNow(field) {
+      if (!field) {
+        return false;
+      }
+      field.focus({preventScroll: true});
+      if (typeof field.select === "function") {
+        field.select();
+      }
+      return true;
     }
 
     function focusBillingItem() {
@@ -1204,10 +1299,25 @@
       matchSuggestion.hidden = true;
       priceDecisionWarning.hidden = true;
 
+      const match = exactMatch();
+      if (match && !forceNewBarcodeEnabled()) {
+        autoMatchVariantId = String(match.id);
+        existingVariantId.value = match.id;
+        familyId.value = match.family_id || "";
+        selectedVariantSnapshot = {...match};
+        setForceNewBarcode(false);
+        showExistingBarcodeState(match);
+        matchSuggestionText.textContent = `${match.item_display_name} / ${match.barcode}`;
+        matchSuggestion.hidden = false;
+        setMode("print", "Reusing existing barcode");
+        return;
+      }
+
       const selected = selectedVariant();
       if (selected && labelDetailsChangedFromVariant(selected)) {
         priceDecisionWarning.hidden = false;
         if (!["update_existing", "new_barcode"].includes(workflowMode.value)) {
+          setForceNewBarcode(false);
           setMode("new_barcode", "Creating new barcode for changed details");
           fields.barcode.value = "";
           manualBarcodeOverride.checked = false;
@@ -1220,6 +1330,7 @@
       }
 
       if (selected && String(selected.id) !== String(autoMatchVariantId)) {
+        setForceNewBarcode(false);
         if (!manualBarcodeOverride.checked) {
           showExistingBarcodeState(selected, false);
         } else {
@@ -1228,18 +1339,6 @@
         if (!["quick_reprint", "update_existing"].includes(workflowMode.value)) {
           setMode("print", "Updating selected item");
         }
-        return;
-      }
-
-      const match = exactMatch();
-      if (match && !["duplicate", "new_barcode"].includes(workflowMode.value)) {
-        autoMatchVariantId = String(match.id);
-        existingVariantId.value = match.id;
-        familyId.value = match.family_id || "";
-        showExistingBarcodeState(match);
-        matchSuggestionText.textContent = `${match.item_display_name} / ${match.barcode}`;
-        matchSuggestion.hidden = false;
-        setMode("print", "Reusing existing barcode");
         return;
       }
 
@@ -1452,6 +1551,7 @@
         manual_barcode_override: manualBarcodeOverride.checked,
         print_without_billing_price: printWithoutBillingPrice.checked,
         selected_price_code_key: selectedPriceCodeKey.value,
+        force_new_barcode: forceNewBarcode.value,
         brand: fields.brand.value,
         item_display_name: fields.item.value,
         article_no: fields.article.value,
@@ -1497,7 +1597,7 @@
       fields.copies.value = saved.copies || "1";
       printQuantityInput.value = fields.copies.value;
 
-      if (initialVariantId || initialBarcode) {
+      if ((initialVariantId && !hasPrintError) || initialBarcode) {
         return false;
       }
 
@@ -1511,6 +1611,7 @@
       manualBarcodeOverride.checked = Boolean(saved.manual_barcode_override);
       printWithoutBillingPrice.checked = Boolean(saved.print_without_billing_price);
       selectedPriceCodeKey.value = saved.selected_price_code_key || "";
+      forceNewBarcode.value = saved.force_new_barcode === "true" ? "true" : "false";
       extraFieldValuesInput.value = JSON.stringify(saved.extra_field_values || {});
       setCodedPriceManualOverride(Boolean(saved.coded_price_manual_override));
       fields.barcode.value = saved.barcode || "";
@@ -1611,12 +1712,10 @@
     }
 
     function variantLabel(variant) {
-      const extras = variant.extra_field_values ? Object.values(variant.extra_field_values) : [];
       return [
-        variant.search,
-        variant.family_name,
         variant.barcode,
         variant.item_display_name,
+        variant.family_name,
         variant.brand,
         variant.category,
         variant.article_no,
@@ -1625,79 +1724,161 @@
         variant.mrp,
         variant.selling_price,
         variant.coded_price,
-        ...extras
       ]
         .filter(Boolean)
         .join(" | ");
     }
 
-    function refreshBillingItemOptions() {
-      const datalist = byId("familyOptions");
-      const seen = new Set(Array.from(datalist.options).map(option => option.value.toLowerCase()));
-      variants.forEach(variant => {
-        [
-          variant.family_name,
-          variant.item_display_name,
-          variant.barcode,
-          variant.brand,
-          variant.article_no,
-          variant.batch_no
-        ].filter(Boolean).forEach(value => {
-          const cleanValue = String(value || "").trim();
-          const key = cleanValue.toLowerCase();
-          if (!cleanValue || seen.has(key)) return;
-          const option = document.createElement("option");
-          option.value = cleanValue;
-          datalist.appendChild(option);
-          seen.add(key);
-        });
+    function variantSearchText(variant) {
+      return [
+        variant.item_display_name,
+        variant.family_name,
+        variant.barcode,
+        variant.brand,
+        variant.category,
+        variant.article_no,
+        variant.batch_no,
+        variant.size,
+        variant.mrp,
+        variant.selling_price,
+        variant.coded_price,
+        variant.created_at,
+        variant.updated_at,
+        ...(variant.extra_field_values ? Object.values(variant.extra_field_values) : [])
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    function billingItemSearchKey(value) {
+      return normalizedText(value).replace(/\s+/g, "");
+    }
+
+    function comboButtons(menu) {
+      return Array.from(menu.querySelectorAll(".combo-option"));
+    }
+
+    function setComboActive(menu, index) {
+      const buttons = comboButtons(menu);
+      buttons.forEach((button, buttonIndex) => {
+        button.classList.toggle("active", buttonIndex === index);
       });
+      if (index >= 0 && buttons[index]) {
+        buttons[index].scrollIntoView({block: "nearest"});
+      }
     }
 
-    function topBillingSuggestion() {
-      const query = familyName.value.trim().toLowerCase();
-      if (!query) return null;
-      const scored = variants
-        .map(variant => {
-          const haystack = variantLabel(variant).toLowerCase();
-          const family = String(variant.family_name || "").toLowerCase();
-          const item = String(variant.item_display_name || "").toLowerCase();
-          const barcode = String(variant.barcode || "").toLowerCase();
-          let score = 0;
-          if (family === query || item === query || barcode === query) score += 100;
-          if (family.startsWith(query) || item.startsWith(query)) score += 50;
-          if (haystack.includes(query)) score += 10;
-          return {variant, score};
-        })
-        .filter(row => row.score > 0)
-        .sort((left, right) => right.score - left.score);
-      return scored.length ? scored[0].variant : null;
+    function moveComboIndex(currentIndex, rows, delta) {
+      if (!rows.length) {
+        return -1;
+      }
+      if (currentIndex < 0) {
+        return delta > 0 ? 0 : rows.length - 1;
+      }
+      return (currentIndex + delta + rows.length) % rows.length;
     }
 
-    function filteredVariants() {
-      const query = variantSearch.value.trim().toLowerCase();
-      const templateId = String(templateSelect.value || "").trim();
-      const rows = variants.filter(item => {
-        if (templateId && String(item.template_id || "") !== templateId) {
-          return false;
+    function scoreVariantMatch(variant, query) {
+      const cleanQuery = normalizedText(query);
+      if (!cleanQuery) {
+        return 0;
+      }
+      const tokens = cleanQuery.split(/\s+/).filter(Boolean);
+      if (!tokens.length) {
+        return 0;
+      }
+      const itemName = normalizedText(variant.item_display_name);
+      const family = normalizedText(variant.family_name);
+      const barcode = normalizedText(variant.barcode);
+      const brand = normalizedText(variant.brand);
+      const article = normalizedText(variant.article_no);
+      const batch = normalizedText(variant.batch_no);
+      const size = normalizedText(variant.size);
+      const category = normalizedText(variant.category);
+      const haystack = normalizedText(variantSearchText(variant));
+      for (const token of tokens) {
+        if (!haystack.includes(token)) {
+          return 0;
         }
-        return !query || variantLabel(item).toLowerCase().includes(query);
-      });
-      return rows
-        .slice(0, 30);
+      }
+      let score = 0;
+      if (itemName === cleanQuery) score += 200;
+      if (family === cleanQuery) score += 190;
+      if (barcode === cleanQuery) score += 180;
+      if (itemName.startsWith(cleanQuery)) score += 120;
+      if (family.startsWith(cleanQuery)) score += 115;
+      if (barcode.startsWith(cleanQuery)) score += 110;
+      if (brand.startsWith(cleanQuery)) score += 90;
+      if (article.startsWith(cleanQuery)) score += 80;
+      if (batch.startsWith(cleanQuery)) score += 75;
+      if (size.startsWith(cleanQuery)) score += 60;
+      if (category.startsWith(cleanQuery)) score += 40;
+      if (haystack.includes(cleanQuery)) score += 25;
+      score += Math.max(0, 30 - Math.abs(haystack.length - cleanQuery.length));
+      score += tokens.length * 5;
+      return score;
     }
 
-    function renderVariantMenu() {
-      const rows = filteredVariants();
-      variantSearchMenu.innerHTML = "";
+    function searchVariants(query, limit = 12) {
+      const cleanQuery = String(query || "").trim();
+      if (!cleanQuery) {
+        return [];
+      }
+      return variants
+        .map(variant => ({variant, score: scoreVariantMatch(variant, cleanQuery)}))
+        .filter(row => row.score > 0)
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          return String(left.variant.item_display_name || left.variant.family_name || left.variant.barcode || "")
+            .localeCompare(String(right.variant.item_display_name || right.variant.family_name || right.variant.barcode || ""));
+        })
+        .slice(0, limit)
+        .map(row => row.variant);
+    }
+
+    function searchFamilies(query, limit = 12) {
+      const cleanQuery = String(query || "").trim();
+      const cleanKey = billingItemSearchKey(cleanQuery);
+      return families
+        .map(family => {
+          const familyName = String(family.family_name || "").trim();
+          const familyKey = billingItemSearchKey(familyName);
+          if (!familyName) {
+            return null;
+          }
+          if (!cleanKey) {
+            return {family, score: 1};
+          }
+          let score = 0;
+          if (familyKey === cleanKey) score += 200;
+          if (familyKey.startsWith(cleanKey)) score += 140;
+          if (familyKey.includes(cleanKey)) score += 100;
+          if (normalizedText(familyName).includes(normalizedText(cleanQuery))) score += 60;
+          if (cleanKey.length < 2 && familyKey.startsWith(cleanKey)) score += 20;
+          return score > 0 ? {family, score} : null;
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          return String(left.family.family_name || "").localeCompare(String(right.family.family_name || ""));
+        })
+        .slice(0, limit)
+        .map(row => row.family);
+    }
+
+    function renderComboMenu(menu, input, rows, emptyMessage, onPick, metaBuilder = null) {
+      menu.innerHTML = "";
       if (!rows.length) {
         const empty = document.createElement("div");
         empty.className = "combo-empty";
-        empty.textContent = variants.length ? "No matching items" : "No existing items yet";
-        variantSearchMenu.appendChild(empty);
+        empty.textContent = emptyMessage;
+        menu.appendChild(empty);
         return;
       }
-
       rows.forEach(variant => {
         const button = document.createElement("button");
         button.type = "button";
@@ -1707,32 +1888,270 @@
 
         const title = document.createElement("strong");
         title.textContent = variant.item_display_name || variant.family_name || "Unnamed item";
-        const meta = document.createElement("span");
-        const extras = variant.extra_field_values ? Object.values(variant.extra_field_values).filter(Boolean).slice(0, 2) : [];
-        meta.textContent = [variant.brand || variant.family_name, variant.category, variant.article_no, variant.batch_no, variant.size, variant.mrp, variant.selling_price, variant.coded_price, variant.barcode, ...extras]
-          .filter(Boolean)
-          .join(" / ");
 
         button.appendChild(title);
-        button.appendChild(meta);
-        button.addEventListener("mousedown", event => {
+        const metaText = typeof metaBuilder === "function" ? metaBuilder(variant) : null;
+        if (metaText) {
+          const meta = document.createElement("span");
+          meta.textContent = metaText;
+          button.appendChild(meta);
+        }
+        let picked = false;
+        const pickOption = event => {
           event.preventDefault();
-          populateVariant(variant, false);
-          closeVariantMenu();
-        });
-        variantSearchMenu.appendChild(button);
+          event.stopPropagation();
+          if (picked) {
+            return;
+          }
+          picked = true;
+          onPick(variant);
+        };
+        button.addEventListener("pointerdown", pickOption);
+        button.addEventListener("mousedown", pickOption);
+        button.addEventListener("click", pickOption);
+        menu.appendChild(button);
       });
+      input.setAttribute("aria-expanded", "true");
+    }
+
+    function selectedBillingFamily() {
+      return familyId.value ? families.find(family => String(family.id) === String(familyId.value)) || null : null;
+    }
+
+    function renderBillingItemMenu(rows, emptyMessage) {
+      billingItemMenu.innerHTML = "";
+      billingItemMenu.style.display = "";
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "combo-empty";
+        empty.textContent = emptyMessage;
+        billingItemMenu.appendChild(empty);
+      } else {
+        rows.forEach((family, index) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "combo-option";
+          option.dataset.familyId = family.id || "";
+          option.setAttribute("role", "option");
+          option.setAttribute("aria-selected", index === billingActiveIndex ? "true" : "false");
+
+          const title = document.createElement("strong");
+          title.textContent = family.family_name || "Unnamed billing item";
+          option.appendChild(title);
+
+          let picked = false;
+          const select = event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            focusDebug("billing option click", {eventType: event.type, familyId: option.dataset.familyId});
+            if (picked) {
+              return;
+            }
+            picked = true;
+            const selected = families.find(item => String(item.id) === String(option.dataset.familyId));
+            if (selected) {
+              selectBillingItem(selected, true);
+              window.setTimeout(moveAfterBillingItem, 80);
+            }
+          };
+          option.addEventListener("pointerdown", event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          });
+          option.addEventListener("mousedown", event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          });
+          option.addEventListener("click", select);
+          billingItemMenu.appendChild(option);
+        });
+      }
+      billingMenuOpen = true;
+      billingItemMenu.hidden = false;
+      billingItemCombo.classList.add("open");
+      familyName.setAttribute("aria-expanded", "true");
+      setComboActive(billingItemMenu, billingActiveIndex);
+    }
+
+    function refreshBillingItemMenu(showAll = false) {
+      const query = String(familyName.value || "").trim();
+      if (!showAll && !query) {
+        closeBillingItemMenu();
+        return;
+      }
+      billingMatches = searchFamilies(query, 12);
+      billingActiveIndex = billingMatches.length ? 0 : -1;
+      renderBillingItemMenu(
+        billingMatches,
+        query ? "No matching billing items" : "No billing items yet"
+      );
+    }
+
+    function closeBillingItemMenu(forceBlur = false) {
+      billingMenuOpen = false;
+      billingItemCombo.classList.remove("open");
+      familyName.setAttribute("aria-expanded", "false");
+      billingMatches = [];
+      billingActiveIndex = -1;
+      billingItemMenu.innerHTML = "";
+      billingItemMenu.hidden = true;
+      billingItemMenu.style.display = "none";
+      if (forceBlur && document.activeElement === familyName) {
+        familyName.blur();
+      }
+    }
+
+    function topBillingSuggestion() {
+      return familyName.value.trim() ? searchFamilies(familyName.value, 1)[0] || null : null;
+    }
+
+    function moveAfterBillingItem() {
+      closeBillingItemMenu();
+      redirectBillingFocusUntil = Date.now() + 900;
+      let attempts = 0;
+      const focusNext = () => {
+        closeBillingItemMenu();
+        const target = preferredFieldAfterBillingItem();
+        focusDebug("billing focus attempt", {
+          attempt: attempts + 1,
+          target: elementName(target),
+          targetVisible: Boolean(target && target.offsetParent !== null),
+          targetDisabled: Boolean(target && target.disabled),
+          familyFocused: document.activeElement === familyName,
+        });
+        if (target && target !== familyName) {
+          familyName.blur();
+          focusFieldNow(target);
+          if (document.activeElement === familyName) {
+            const wasDisabled = familyName.disabled;
+            familyName.disabled = true;
+            focusDebug("billing focus fallback disable", {target: elementName(target)});
+            focusFieldNow(target);
+            window.setTimeout(() => {
+              familyName.disabled = wasDisabled;
+            }, 60);
+          }
+          closeBillingItemMenu();
+        }
+        attempts += 1;
+        if (attempts < 8) {
+          window.setTimeout(focusNext, 40);
+        }
+      };
+      window.setTimeout(focusNext, 0);
+      requestAnimationFrame(focusNext);
+      window.setTimeout(focusNext, 160);
+    }
+
+    function filteredVariants() {
+      return searchVariants(variantSearch.value, 12);
+    }
+
+    function renderVariantMenu() {
+      variantMenuRows = filteredVariants();
+      variantMenuIndex = variantMenuRows.length ? 0 : -1;
+      renderComboMenu(
+        variantSearchMenu,
+        variantSearch,
+        variantMenuRows,
+        variantSearch.value.trim() ? "No matching items" : "Type to search existing items",
+        variant => commitVariantSearchSelection(variant),
+        variant => [
+          variant.barcode,
+          variant.family_name,
+          variant.brand,
+          variant.category,
+          variant.article_no,
+          variant.batch_no,
+          variant.size,
+          variant.mrp,
+          variant.selling_price,
+          variant.coded_price,
+          variant.created_at,
+          variant.updated_at,
+          ...(variant.extra_field_values ? Object.values(variant.extra_field_values).filter(Boolean).slice(0, 2) : [])
+        ]
+          .filter(Boolean)
+          .join(" / ")
+      );
+      setComboActive(variantSearchMenu, variantMenuIndex);
     }
 
     function openVariantMenu() {
+      if (Date.now() < suppressVariantMenuUntil) {
+        return;
+      }
       renderVariantMenu();
-      variantCombo.classList.add("open");
-      variantSearch.setAttribute("aria-expanded", "true");
+      if (variantSearch.value.trim() || variantSearchMenu.querySelector(".combo-option")) {
+        variantCombo.classList.add("open");
+        variantSearch.setAttribute("aria-expanded", "true");
+      } else {
+        closeVariantMenu();
+      }
     }
 
     function closeVariantMenu() {
       variantCombo.classList.remove("open");
       variantSearch.setAttribute("aria-expanded", "false");
+      variantMenuIndex = -1;
+    }
+
+    function commitVariantSearchSelection(variant) {
+      if (!variant) {
+        closeVariantMenu();
+        return;
+      }
+      closeVariantMenu();
+      suppressVariantMenuUntil = Date.now() + 250;
+      populateVariant(variant, false);
+      window.setTimeout(() => variantSearch.blur(), 0);
+      window.setTimeout(closeVariantMenu, 0);
+      window.setTimeout(closeVariantMenu, 120);
+    }
+
+    function selectBillingItem(family, moveFocus = true) {
+      focusDebug("select billing item start", {family: family ? family.family_name : "", moveFocus});
+      closeBillingItemMenu();
+      if (!family) {
+        if (moveFocus) {
+          moveAfterBillingItem();
+        }
+        return;
+      }
+      familyId.value = family.id || "";
+      familyName.value = family.family_name || "";
+      lastBillingInputValue = familyName.value;
+      try {
+        if (family.category) {
+          categorySelect.value = family.category;
+          applyCategory(family.default_template_id || templateSelect.value || "");
+        }
+        if (family.default_template_id) {
+          templateSelect.value = String(family.default_template_id);
+          applyTemplateFields();
+        }
+      } catch (error) {
+        focusDebug("select billing item setup error", {
+          message: error && error.message ? error.message : String(error),
+          family: family.family_name || "",
+        });
+        console.error("ShopBridge billing item setup error", error);
+      }
+      saveWorkflowState();
+      focusDebug("select billing item saved", {family: family.family_name, moveFocus});
+      if (moveFocus) {
+        moveAfterBillingItem();
+      }
+    }
+
+    function handleBillingItemTyping() {
+      const selectedFamily = selectedBillingFamily();
+      if (!familyName.value.trim() || (selectedFamily && !sameText(selectedFamily.family_name, familyName.value))) {
+        familyId.value = "";
+      }
+      lastBillingInputValue = familyName.value;
+      refreshBillingItemMenu(false);
+      saveWorkflowState();
     }
 
     function populateVariant(variant, duplicate) {
@@ -1741,6 +2160,7 @@
       existingVariantId.value = duplicate ? "" : variant.id;
       autoMatchVariantId = "";
       selectedVariantSnapshot = duplicate ? null : {...variant};
+      setForceNewBarcode(Boolean(duplicate));
       manualBarcodeOverride.checked = false;
       familyId.value = variant.family_id || "";
       familyName.value = variant.family_name || "";
@@ -1759,7 +2179,7 @@
       printWithoutBillingPrice.checked = Boolean(variant.billing_price_missing);
       selectedPriceCodeKey.value = "";
       extraFieldValuesInput.value = JSON.stringify(variant.extra_field_values || {});
-      variantSearch.value = variant.search || "";
+      variantSearch.value = variantLabel(variant);
       applyCategory(variant.template_id || "");
       setCustomFieldValues(variant.extra_field_values || {});
       setMode(duplicate ? "new_barcode" : "print", duplicate ? "Creating new barcode from previous item" : "Updating selected item");
@@ -1813,16 +2233,36 @@
     variantSearch.addEventListener("input", openVariantMenu);
     variantSearch.addEventListener("input", saveWorkflowState);
     variantSearch.addEventListener("change", () => {
-      const value = variantSearch.value.trim().toLowerCase();
-      const variant = variants.find(item => variantLabel(item).toLowerCase() === value);
-      if (variant) {
-        populateVariant(variant, false);
-      }
+      const variant = filteredVariants()[0] || variants.find(item => sameText(variantLabel(item), variantSearch.value));
+      commitVariantSearchSelection(variant);
     });
     variantSearch.addEventListener("keydown", event => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
         closeVariantMenu();
+        return;
       }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!variantCombo.classList.contains("open")) {
+          openVariantMenu();
+        }
+        variantMenuIndex = moveComboIndex(variantMenuIndex, variantMenuRows, event.key === "ArrowDown" ? 1 : -1);
+        setComboActive(variantSearchMenu, variantMenuIndex);
+        return;
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const exact = variantMenuRows[variantMenuIndex >= 0 ? variantMenuIndex : 0] || filteredVariants()[0] || variants.find(item => sameText(variantLabel(item), variantSearch.value));
+        if (exact) {
+          commitVariantSearchSelection(exact);
+        }
+      }
+    });
+    variantSearch.addEventListener("blur", () => {
+      window.setTimeout(closeVariantMenu, 120);
     });
     variantSearchToggle.addEventListener("click", () => {
       if (variantCombo.classList.contains("open")) {
@@ -1836,25 +2276,96 @@
       if (!variantCombo.contains(event.target)) {
         closeVariantMenu();
       }
+      if (billingItemCombo && !billingItemCombo.contains(event.target)) {
+        closeBillingItemMenu();
+      }
     });
 
+    if (focusDebugEnabled) {
+      [familyName, fields.coded, fields.mrp, templateSelect].forEach(field => {
+        if (!field) {
+          return;
+        }
+        field.addEventListener("focus", event => focusDebug("focus event", {field: elementName(event.target)}));
+        field.addEventListener("blur", event => focusDebug("blur event", {field: elementName(event.target)}));
+      });
+    }
+
+    familyName.addEventListener("focus", () => {
+      if (Date.now() < redirectBillingFocusUntil) {
+        focusDebug("billing focus redirected");
+        window.setTimeout(() => {
+          const target = firstFieldAfterBillingItem();
+          if (target && target !== familyName) {
+            focusFieldNow(target);
+          }
+        }, 0);
+      }
+    });
+    familyName.addEventListener("input", handleBillingItemTyping);
+    familyName.addEventListener("keyup", event => {
+      if (["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab"].includes(event.key)) {
+        return;
+      }
+      if (familyName.value !== lastBillingInputValue) {
+        handleBillingItemTyping();
+      }
+    });
     familyName.addEventListener("change", () => {
       if (!familyName.value.trim()) {
         familyId.value = "";
       }
       saveWorkflowState();
     });
-    familyName.addEventListener("input", saveWorkflowState);
     familyName.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeBillingItemMenu();
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!billingMenuOpen) {
+          refreshBillingItemMenu(true);
+        }
+        billingActiveIndex = moveComboIndex(billingActiveIndex, billingMatches, event.key === "ArrowDown" ? 1 : -1);
+        setComboActive(billingItemMenu, billingActiveIndex);
+        return;
+      }
       if (event.key !== "Enter") {
         return;
       }
-      const suggestion = topBillingSuggestion();
-      if (!suggestion) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (billingMenuOpen && !billingMatches.length) {
+        closeBillingItemMenu();
+        moveAfterBillingItem();
         return;
       }
-      event.preventDefault();
-      populateVariant(suggestion, false);
+      const suggestion = billingMatches[billingActiveIndex >= 0 ? billingActiveIndex : 0] || topBillingSuggestion();
+      if (!suggestion) {
+        const selectedFamily = selectedBillingFamily();
+        if (selectedFamily && !sameText(selectedFamily.family_name, familyName.value)) {
+          familyId.value = "";
+        }
+        saveWorkflowState();
+        moveAfterBillingItem();
+        return;
+      }
+      selectBillingItem(suggestion, true);
+    });
+    familyName.addEventListener("blur", () => {
+      window.setTimeout(closeBillingItemMenu, 120);
+    });
+    billingItemToggle.addEventListener("click", () => {
+      if (billingMenuOpen) {
+        closeBillingItemMenu(true);
+      } else {
+        familyName.focus();
+        refreshBillingItemMenu(true);
+      }
     });
 
     categorySelect.addEventListener("change", () => {
@@ -1963,7 +2474,7 @@
       }
     });
 
-    Array.from(new Set([variantSearch, familyName, fields.margin, ...Object.values(inputByField)])).forEach(field => {
+    Array.from(new Set([variantSearch, fields.margin, ...Object.values(inputByField)])).forEach(field => {
       field.addEventListener("focus", () => field.select());
       field.addEventListener("click", () => field.select());
       field.addEventListener("keydown", handleEntryArrowNavigation);
@@ -1972,11 +2483,13 @@
     reuseMatchButton.addEventListener("click", () => {
       const match = selectedVariant();
       if (match) {
+        setForceNewBarcode(false);
         populateVariant(match, false);
       }
     });
 
     newBarcodeFromMatchButton.addEventListener("click", () => {
+      setForceNewBarcode(true);
       existingVariantId.value = "";
       autoMatchVariantId = "";
       selectedVariantSnapshot = null;
@@ -1990,6 +2503,7 @@
     });
 
     createNewPriceButton.addEventListener("click", () => {
+      setForceNewBarcode(true);
       fields.barcode.value = "";
       manualBarcodeOverride.checked = false;
       setMode("new_barcode", "Creating new barcode for changed details");
@@ -2001,6 +2515,7 @@
 
     updateExistingPriceButton.addEventListener("click", () => {
       const variant = selectedVariant();
+      setForceNewBarcode(false);
       showExistingBarcodeState(variant);
       setMode("update_existing", "Updating existing barcode");
       priceDecisionWarning.hidden = true;
@@ -2026,6 +2541,7 @@
     });
 
     regenerateBarcodeButton.addEventListener("click", () => {
+      setForceNewBarcode(true);
       fields.barcode.value = "";
       manualBarcodeOverride.checked = false;
       setMode("new_barcode", "Creating new barcode");
@@ -2131,7 +2647,6 @@
     });
 
     const restoredWorkflowState = restoreWorkflowState();
-    refreshBillingItemOptions();
     setPricingFieldsPreference(pricingFieldsPreferenceVisible, false);
     applyCategory(templateSelect.value);
     if (restoredWorkflowState) {
@@ -2142,10 +2657,26 @@
       }
       refreshPriceCodeDetection();
     }
-    if (initialVariantId) {
+    if (initialVariantId && !(hasPrintError && restoredWorkflowState)) {
       const initialVariant = variants.find(item => String(item.id) === String(initialVariantId));
       if (initialVariant) {
         populateVariant(initialVariant, initialDuplicate);
+      }
+    } else if (hasPrintError && restoredWorkflowState && initialVariantId) {
+      const failedPrintVariant = variants.find(item => String(item.id) === String(initialVariantId));
+      if (failedPrintVariant) {
+        selectedVariantSnapshot = {...failedPrintVariant};
+        existingVariantId.value = failedPrintVariant.id;
+        familyId.value = failedPrintVariant.family_id || familyId.value;
+        if (!manualBarcodeOverride.checked) {
+          fields.barcode.value = failedPrintVariant.barcode || fields.barcode.value;
+        }
+        if (!workflowMode.value || workflowMode.value === "new_barcode") {
+          setMode("print", "Retrying saved item");
+        }
+        refreshBarcodeControls();
+        updatePreview();
+        saveWorkflowState();
       }
     } else if (initialBarcode) {
       fields.barcode.value = initialBarcode;
@@ -2161,7 +2692,7 @@
       refreshBarcodeControls();
       updatePreview();
     }
-    if (new URLSearchParams(window.location.search).has("printed") || (!initialVariantId && !initialBarcode)) {
+    if (pageParams.has("printed") || (!initialVariantId && !initialBarcode)) {
       focusBillingItem();
     }
     window.addEventListener("beforeunload", saveWorkflowState);

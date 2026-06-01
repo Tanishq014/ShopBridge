@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DEFAULT_TALLY_DSN, TEMPLATES_DIR
 from app.db import get_db
+from app.services.template_filters import register_template_filters
 from app.services.tally_odbc_service import (
     import_stock_items_as_families,
     is_pyodbc_available,
@@ -14,7 +15,7 @@ from app.services.tally_odbc_service import (
 
 
 router = APIRouter(prefix="/tally", tags=["tally"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 
 
 @router.get("/", response_class=HTMLResponse)

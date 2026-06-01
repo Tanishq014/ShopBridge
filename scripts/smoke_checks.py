@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 import os
 from pathlib import Path
 import sys
@@ -90,13 +91,17 @@ def print_item(db, template, **overrides):
         "expiry": "",
         "mrp": "100",
         "selling_price": "",
+        "margin_percent": "",
         "coded_price": "AA",
         "extra_field_values": "",
         "selected_price_code_key": "",
         "print_without_billing_price": False,
+        "show_pricing_fields_visible": "1",
+        "force_new_barcode": False,
         "coded_price_manual_override": False,
         "template_id": template.id,
         "copies": 1,
+        "manual_barcode_override": False,
         "db": db,
     }
     data.update(overrides)
@@ -265,6 +270,36 @@ def main() -> None:
         print_item(
             db,
             template,
+            workflow_mode="new_barcode",
+            force_new_barcode=False,
+            existing_variant_id="",
+            item_display_name="Toy Car",
+            mrp="100",
+            coded_price="AA",
+            size="S",
+        )
+        db.refresh(first)
+        assert_true(first.barcode == first_barcode, "automatic new-barcode mode did not yield to exact match")
+        assert_true(db.query(LabelVariant).filter_by(item_display_name="Toy Car").count() == 1, "automatic new-barcode exact match duplicated item")
+
+        print_item(
+            db,
+            template,
+            workflow_mode="new_barcode",
+            force_new_barcode=True,
+            existing_variant_id="",
+            item_display_name="Toy Car",
+            mrp="100",
+            coded_price="AA",
+            size="S",
+        )
+        forced_variants = db.query(LabelVariant).filter_by(item_display_name="Toy Car").all()
+        assert_true(len(forced_variants) == 2, "explicit new barcode did not create a separate label record")
+        assert_true(any(item.barcode != first_barcode for item in forced_variants), "explicit new barcode reused old barcode")
+
+        print_item(
+            db,
+            template,
             existing_variant_id=str(first.id),
             item_display_name="Toy Car",
             mrp="100",
@@ -272,7 +307,7 @@ def main() -> None:
             size="M",
         )
         toy_car_variants = db.query(LabelVariant).filter_by(item_display_name="Toy Car").all()
-        assert_true(len(toy_car_variants) == 2, "changed existing item did not create a new label record")
+        assert_true(len(toy_car_variants) == 3, "changed existing item did not create a new label record")
         changed_detail_variant = [item for item in toy_car_variants if item.id != first.id][0]
         assert_true(changed_detail_variant.barcode != first_barcode, "changed existing item reused the old barcode")
 
@@ -287,7 +322,33 @@ def main() -> None:
             size="S",
         )
         selling_change_variants = db.query(LabelVariant).filter_by(item_display_name="Toy Car").all()
-        assert_true(len(selling_change_variants) == 3, "changed selling price did not create a new label record")
+        assert_true(len(selling_change_variants) == 4, "changed selling price did not create a new label record")
+
+        stale_response = print_item(
+            db,
+            template,
+            workflow_mode="new_barcode",
+            existing_variant_id="",
+            item_display_name="Toy Car",
+            barcode=first_barcode,
+            mrp="175",
+            coded_price="AA",
+            size="S",
+        )
+        assert_true(
+            getattr(stale_response, "status_code", None) == 303,
+            "stale duplicate barcode print did not redirect: "
+            + str(getattr(stale_response, "context", {}).get("error", "")),
+        )
+        stale_barcode_variant = (
+            db.query(LabelVariant)
+            .filter_by(item_display_name="Toy Car", mrp=Decimal("175"))
+            .one()
+        )
+        assert_true(
+            stale_barcode_variant.barcode != first_barcode,
+            "non-manual stale barcode was not replaced for new price",
+        )
 
         priority_template = TemplateMaster(
             template_id="SMOKE_PRIORITY",

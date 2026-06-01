@@ -23,6 +23,7 @@
           <th>MRP</th>
           <th>Selling</th>
           <th>Code</th>
+          <th>Created</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -43,6 +44,7 @@
               {% if variant.billing_price_missing %}<span class="badge warn">missing</span>{% endif %}
             </td>
             <td>{{ variant.coded_price or "" }}</td>
+            <td>{{ variant.created_at|local_time }}</td>
             <td><span class="badge {{ 'ok' if variant.status == 'active' else 'muted' }}">{{ variant.status }}</span></td>
             <td class="row-actions">
               <a class="button small" href="/variants/{{ variant.id }}/preview">Preview</a>
@@ -55,7 +57,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="12" class="empty">No label variants yet.</td></tr>
+          <tr><td colspan="13" class="empty">No label variants yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

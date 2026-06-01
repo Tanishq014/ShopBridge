@@ -355,6 +355,18 @@ label {
   gap: 5px;
 }
 
+.field-stack {
+  color: #344054;
+  display: grid;
+  font-weight: 600;
+  gap: 5px;
+}
+
+.field-stack > label {
+  display: block;
+  gap: 0;
+}
+
 .field-hint {
   color: var(--muted);
   font-size: 12px;
@@ -918,6 +930,10 @@ tbody tr:last-child td {
   display: block;
 }
 
+.combo-menu[hidden] {
+  display: none !important;
+}
+
 .combo-option {
   align-items: flex-start;
   background: #ffffff;
@@ -937,6 +953,10 @@ tbody tr:last-child td {
 .combo-option:hover,
 .combo-option:focus {
   background: #eef4ff;
+}
+
+.combo-option.active {
+  background: #dce9ff;
 }
 
 .combo-option strong {

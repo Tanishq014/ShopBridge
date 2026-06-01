@@ -17,10 +17,11 @@ from app.models import PosCart, PosCartItem
 from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
 from app.services.network_service import qr_url_for_scanner, scanner_url
+from app.services.template_filters import register_template_filters
 
 
 router = APIRouter(tags=["pos"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 logger = logging.getLogger(__name__)
 _pos_cart_heartbeat: dict[str, object] = {
     "signature": None,

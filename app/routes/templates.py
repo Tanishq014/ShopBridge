@@ -35,6 +35,7 @@ from app.services.template_folder_service import (
     template_path_exists,
 )
 from app.services.settings_service import get_bartender_settings
+from app.services.template_filters import register_template_filters
 from app.services.template_preview_service import (
     cached_template_preview_url,
     refresh_cached_template_preview,
@@ -42,7 +43,7 @@ from app.services.template_preview_service import (
 
 
 router = APIRouter(prefix="/templates", tags=["templates"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 CATEGORY_CHOICES = [
     {"value": "", "label": "All categories"},
     {"value": "clothes", "label": "Clothes"},

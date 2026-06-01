@@ -46,6 +46,7 @@
           <dt>MRP</dt><dd>{{ "%.2f"|format(variant.mrp) if variant.mrp is not none else "" }}</dd>
           <dt>Selling Price</dt><dd>{{ "%.2f"|format(variant.selling_price) if variant.selling_price is not none else "" }}</dd>
           <dt>Code</dt><dd>{{ variant.coded_price or "" }}</dd>
+          <dt>Created</dt><dd>{{ variant.created_at|local_time }}</dd>
         </dl>
         <div class="form-actions">
           <form method="post" action="/new-stock/quick-reprint">
@@ -77,7 +78,7 @@
                   <td>#{{ job.id }}</td>
                   <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
                   <td>{{ job.copies }}</td>
-                  <td>{{ job.created_at.strftime("%d-%m-%Y %H:%M") }}</td>
+                  <td>{{ job.created_at|local_time }}</td>
                 </tr>
               {% else %}
                 <tr><td colspan="4">No print jobs yet.</td></tr>

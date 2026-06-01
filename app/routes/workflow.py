@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
-from app.services.barcode_service import assign_barcode, generate_configured_barcode, normalize_barcode
+from app.services.barcode_service import assign_barcode, barcode_exists, generate_configured_barcode, normalize_barcode
 from app.services.bartender_activex_service import (
     BarTenderActiveXError,
     export_print_preview_to_image,
@@ -56,10 +56,12 @@ from app.services.template_preview_service import (
     cached_template_preview_url,
     refresh_cached_template_preview,
 )
+from app.services.template_filters import register_template_filters
+from app.services.time_service import format_local_datetime
 
 
 router = APIRouter(tags=["workflow"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 
 CATEGORY_CHOICES = [
     {"value": "clothes", "label": "Clothes"},
@@ -88,6 +90,10 @@ def _money(value: Decimal | None) -> str:
     if value is None:
         return ""
     return f"{value:.2f}"
+
+
+def _date_time(value) -> str:
+    return format_local_datetime(value)
 
 
 def _parse_extra_field_values(value: str | None) -> dict[str, str]:
@@ -157,13 +163,27 @@ def _active_families(db: Session) -> list[ProductFamily]:
     ).scalars().all()
 
 
-def _recent_variants(db: Session, limit: int = 80) -> list[LabelVariant]:
+def _family_payload(family: ProductFamily) -> dict[str, object]:
+    return {
+        "id": family.id,
+        "family_name": family.family_name,
+        "category": (family.category or "").strip().lower(),
+        "default_template_id": family.default_template_id or "",
+        "created_at": _date_time(family.created_at),
+        "updated_at": _date_time(family.updated_at),
+    }
+
+
+def _search_variants(db: Session) -> list[LabelVariant]:
     return db.execute(
         select(LabelVariant)
         .where(LabelVariant.status == "active")
         .order_by(LabelVariant.updated_at.desc(), LabelVariant.id.desc())
-        .limit(limit)
     ).scalars().all()
+
+
+def _recent_variants(db: Session, limit: int = 80) -> list[LabelVariant]:
+    return _search_variants(db)[:limit]
 
 
 def _variant_template_id(variant: LabelVariant) -> int | None:
@@ -213,6 +233,8 @@ def _variant_payload(variant: LabelVariant) -> dict[str, object]:
         "extra_field_values": _parse_extra_field_values(variant.extra_field_values),
         "template_id": _variant_template_id(variant) or "",
         "template_name": template.template_name if template else "",
+        "created_at": _date_time(variant.created_at),
+        "updated_at": _date_time(variant.updated_at),
     }
 
 
@@ -585,7 +607,8 @@ def _workflow_context(
     scan_bartender_template_folder(db)
     families = _active_families(db)
     template_rows = _active_templates(db)
-    variants = _recent_variants(db)
+    variants = _search_variants(db)
+    recent_variants = _recent_variants(db)
     recent_jobs = db.execute(
         select(PrintJob).order_by(PrintJob.created_at.desc(), PrintJob.id.desc()).limit(10)
     ).scalars().all()
@@ -604,10 +627,11 @@ def _workflow_context(
         "error": error,
         "categories": CATEGORY_CHOICES,
         "families": families,
+        "families_json": [_family_payload(family) for family in families],
         "template_rows": template_rows,
         "templates_json": template_payloads,
         "variants_json": [_variant_payload(variant) for variant in variants],
-        "recent_items": variants[:12],
+        "recent_items": recent_variants[:12],
         "recent_templates": recent_template_rows,
         "recent_jobs": recent_jobs,
         "size_values_json": _size_values(variants),
@@ -831,44 +855,40 @@ def print_new_stock(
     selected_price_code_key: str = Form(""),
     print_without_billing_price: bool = Form(False),
     show_pricing_fields_visible: str = Form("1"),
+    force_new_barcode: bool = Form(False),
     template_id: int = Form(...),
     copies: int = Form(1),
     manual_barcode_override: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     pricing_fields_visible = str(show_pricing_fields_visible).strip().lower() not in {"0", "false", "off", "no"}
+    def workflow_error_response(message: str, status_code: int = 400):
+        return templates.TemplateResponse(
+            request,
+            "workflow.html",
+            _workflow_context(
+                request,
+                db,
+                error=message,
+                pricing_fields_visible=pricing_fields_visible,
+                selected_template_id=template_id,
+                selected_category=category,
+            ),
+            status_code=status_code,
+        )
+
     template = db.get(TemplateMaster, template_id)
     if not template or not template.active_status:
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(request, db, error="Select an active template.", pricing_fields_visible=pricing_fields_visible),
-            status_code=400,
-        )
+        return workflow_error_response("Select an active template.")
     if not template_path_exists(template):
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(request, db, error="Selected template file is missing on this PC. Fix it in Settings -> Templates.", pricing_fields_visible=pricing_fields_visible),
-            status_code=400,
-        )
+        return workflow_error_response("Selected template file is missing on this PC. Fix it in Settings -> Templates.")
     if not parse_required_fields(template.required_fields):
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(request, db, error="Extract fields for the selected template before printing.", pricing_fields_visible=pricing_fields_visible),
-            status_code=400,
-        )
+        return workflow_error_response("Extract fields for the selected template before printing.")
 
     source_variant = db.get(LabelVariant, _int_or_none(existing_variant_id)) if existing_variant_id else None
     if workflow_mode == "quick_reprint":
         if not source_variant:
-            return templates.TemplateResponse(
-                request,
-                "workflow.html",
-                _workflow_context(request, db, error="Select an existing item before quick reprint.", pricing_fields_visible=pricing_fields_visible),
-                status_code=400,
-            )
+            return workflow_error_response("Select an existing item before quick reprint.")
         job = _create_print_job(db, source_variant, template, copies)
         return _print_redirect(job, template, category)
 
@@ -894,12 +914,7 @@ def print_new_stock(
     final_category = category.strip().lower()
     final_family_name = family_name.strip() or item_display_name.strip()
     if not final_family_name:
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(request, db, error="Enter an item name.", pricing_fields_visible=pricing_fields_visible),
-            status_code=400,
-        )
+        return workflow_error_response("Enter an item name.")
 
     brand_value = value_or_preserved("brand", brand)
     item_name_value = (
@@ -959,27 +974,9 @@ def print_new_stock(
             coded = selected_candidate.code
         elif price_code_candidates:
             options = "; ".join(candidate["label"] for candidate in map(_candidate_payload, price_code_candidates))
-            return templates.TemplateResponse(
-                request,
-                "workflow.html",
-                _workflow_context(
-                    request,
-                    db,
-                    error="Multiple codes found. Choose one or enter Selling Price manually. " + options,
-                ),
-                status_code=400,
-            )
+            return workflow_error_response("Multiple codes found. Choose one or enter Selling Price manually. " + options)
     elif selling is None:
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(
-                request,
-                db,
-                error="Code cannot be decoded. Please enter a valid Code.",
-            ),
-            status_code=400,
-        )
+        return workflow_error_response("Code cannot be decoded. Please enter a valid Code.")
 
     billing_price_missing = selling is None and print_without_billing_price
     if selling is not None and not coded:
@@ -992,19 +989,11 @@ def print_new_stock(
         if field_name != "barcode" and not str(field_values.get(field_name, "")).strip()
     ]
     if missing_fields:
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(
-                request,
-                db,
-                error="Required for selected template: " + ", ".join(missing_fields),
-            ),
-            status_code=400,
-        )
+        return workflow_error_response("Required for selected template: " + ", ".join(missing_fields))
 
-    if not source_variant and workflow_mode not in {"duplicate", "new_barcode"}:
-        source_variant = _find_exact_variant(
+    exact_variant = None
+    if not force_new_barcode:
+        exact_variant = _find_exact_variant(
             db,
             category=final_category,
             template=template,
@@ -1021,6 +1010,9 @@ def print_new_stock(
             selling_price=selling,
             coded_price=coded,
         )
+        if exact_variant:
+            source_variant = exact_variant
+            workflow_mode = "print"
 
     family = _find_or_create_family(
         db=db,
@@ -1046,9 +1038,10 @@ def print_new_stock(
         selling_price=selling,
         coded_price=coded,
     )
+    explicit_new_barcode = force_new_barcode or workflow_mode == "duplicate"
     create_new_barcode = (
         source_variant is None
-        or workflow_mode in {"duplicate", "new_barcode"}
+        or explicit_new_barcode
         or (details_changed and workflow_mode != "update_existing")
     )
     update_existing = source_variant is not None and not create_new_barcode
@@ -1065,12 +1058,7 @@ def print_new_stock(
                     template=template,
                 )
             except ValueError as exc:
-                return templates.TemplateResponse(
-                    request,
-                    "workflow.html",
-                    _workflow_context(request, db, error=str(exc), pricing_fields_visible=pricing_fields_visible),
-                    status_code=400,
-                )
+                return workflow_error_response(str(exc))
     else:
         requested_barcode = barcode
         if (
@@ -1080,15 +1068,16 @@ def print_new_stock(
             and normalize_barcode(requested_barcode) == normalize_barcode(source_variant.barcode)
         ):
             requested_barcode = ""
+        if (
+            not manual_barcode_override
+            and requested_barcode.strip()
+            and barcode_exists(db, normalize_barcode(requested_barcode))
+        ):
+            requested_barcode = ""
         try:
             final_barcode = assign_barcode(db, requested_barcode, template=template)
         except ValueError as exc:
-            return templates.TemplateResponse(
-                request,
-                "workflow.html",
-                _workflow_context(request, db, error=str(exc), pricing_fields_visible=pricing_fields_visible),
-                status_code=400,
-            )
+            return workflow_error_response(str(exc))
         variant = LabelVariant(
             barcode=final_barcode,
             family_id=family.id,
@@ -1116,12 +1105,7 @@ def print_new_stock(
     try:
         job = _create_print_job(db, variant, template, copies)
     except Exception as exc:
-        return templates.TemplateResponse(
-            request,
-            "workflow.html",
-            _workflow_context(request, db, error=f"Variant saved, but print job failed: {exc}", pricing_fields_visible=pricing_fields_visible),
-            status_code=500,
-        )
+        return workflow_error_response(f"Variant saved, but print job failed: {exc}", status_code=500)
 
     return _print_redirect(job, template, category)
 
@@ -1298,7 +1282,7 @@ def update_bartender_settings(
     barcode_generation_mode: str = Form("template_length_safe_alphanumeric"),
     default_barcode_length: int = Form(7),
     barcode_allowed_chars: str = Form("23456789BFGJKLMQRUVWXY"),
-    mrp_rounding: int = Form(5),
+    mrp_rounding: int = Form(9),
     allow_price_code_extraction: bool = Form(False),
     digit_0_code: str = Form(""),
     digit_1_code: str = Form(""),

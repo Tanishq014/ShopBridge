@@ -11,11 +11,12 @@ from app.db import get_db
 from app.models import LabelVariant, PrintJob, TemplateMaster
 from app.services.bartender_service import create_csv_print_job
 from app.services.field_config import parse_required_fields
+from app.services.template_filters import register_template_filters
 from app.services.template_folder_service import template_path_exists
 
 
 router = APIRouter(prefix="/print-jobs", tags=["print-jobs"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 
 
 def _choices(db: Session):

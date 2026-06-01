@@ -11,10 +11,11 @@ from app.db import get_db
 from app.models import LabelVariant, ProductFamily, TemplateMaster
 from app.services.barcode_service import assign_barcode
 from app.services.price_code_service import generate_coded_price
+from app.services.template_filters import register_template_filters
 
 
 router = APIRouter(prefix="/variants", tags=["variants"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 
 
 def _decimal_or_none(value: str | None) -> Decimal | None:
