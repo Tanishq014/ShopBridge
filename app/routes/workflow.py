@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -25,12 +24,9 @@ from app.services.field_config import (
     field_label,
     format_field_defaults,
     format_required_fields,
-    normalize_field_name,
-    parse_field_defaults,
     parse_required_fields,
 )
 from app.services.price_code_service import (
-    PriceCodeCandidate,
     extract_price_code_candidates,
     generate_coded_price,
 )
@@ -47,17 +43,35 @@ from app.services.settings_service import (
 from app.services.network_service import qr_url_for_scanner, scanner_url
 from app.services.template_folder_service import (
     scan_bartender_template_folder,
-    template_file_changed_since_extract,
     template_file_mtime,
     template_path_exists,
 )
 from app.services.template_preview_service import (
     cached_template_preview_path,
-    cached_template_preview_url,
     refresh_cached_template_preview,
 )
 from app.services.template_filters import register_template_filters
-from app.services.time_service import format_local_datetime
+from app.services.workflow.form_state_service import (
+    family_payload as _family_payload,
+    format_extra_field_values as _format_extra_field_values,
+    parse_extra_field_values as _parse_extra_field_values,
+    size_values as _size_values,
+    variant_payload as _variant_payload,
+    variant_template_id as _variant_template_id,
+)
+from app.services.workflow.pricing_workflow_service import (
+    candidate_payload as _candidate_payload,
+    find_candidate_by_key as _find_candidate_by_key,
+    money as _money,
+)
+from app.services.workflow.template_field_service import template_payload as _template_payload
+from app.services.workflow.validation_service import (
+    decimal_or_none as _decimal_or_none,
+    int_or_none as _int_or_none,
+    label_details_changed as _label_details_changed,
+    same_money as _same_money,
+    same_text as _same_text,
+)
 
 
 router = APIRouter(tags=["workflow"])
@@ -69,82 +83,6 @@ CATEGORY_CHOICES = [
     {"value": "gifts", "label": "Gifts"},
     {"value": "toys", "label": "Toys"},
 ]
-
-
-def _decimal_or_none(value: str | None) -> Decimal | None:
-    if value in (None, ""):
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def _int_or_none(value: str | None) -> int | None:
-    if value in (None, ""):
-        return None
-    return int(value)
-
-
-def _money(value: Decimal | None) -> str:
-    if value is None:
-        return ""
-    return f"{value:.2f}"
-
-
-def _date_time(value) -> str:
-    return format_local_datetime(value)
-
-
-def _parse_extra_field_values(value: str | None) -> dict[str, str]:
-    if not value:
-        return {}
-    try:
-        raw_values = json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    if not isinstance(raw_values, dict):
-        return {}
-
-    values: dict[str, str] = {}
-    for field_name, field_value in raw_values.items():
-        clean_name = normalize_field_name(str(field_name))
-        if not clean_name or field_value is None:
-            continue
-        values[clean_name] = str(field_value).strip()
-    return values
-
-
-def _format_extra_field_values(values: dict[str, str]) -> str | None:
-    clean_values = {
-        normalize_field_name(field_name): str(field_value).strip()
-        for field_name, field_value in values.items()
-        if normalize_field_name(field_name) and str(field_value).strip()
-    }
-    if not clean_values:
-        return None
-    return json.dumps(clean_values, ensure_ascii=True, sort_keys=True)
-
-
-def _candidate_payload(candidate: PriceCodeCandidate) -> dict[str, str]:
-    return {
-        "key": candidate.key,
-        "source_field": candidate.source_field,
-        "raw_value": candidate.raw_value,
-        "code": candidate.code,
-        "selling_price": candidate.selling_price_text,
-        "label": (
-            f"{field_label(candidate.source_field)}: {candidate.raw_value} "
-            f"-> {candidate.code} -> {candidate.selling_price_text}"
-        ),
-    }
-
-
-def _find_candidate_by_key(candidates: list[PriceCodeCandidate], key: str) -> PriceCodeCandidate | None:
-    for candidate in candidates:
-        if candidate.key == key:
-            return candidate
-    return None
 
 
 def _active_templates(db: Session) -> list[TemplateMaster]:
@@ -163,17 +101,6 @@ def _active_families(db: Session) -> list[ProductFamily]:
     ).scalars().all()
 
 
-def _family_payload(family: ProductFamily) -> dict[str, object]:
-    return {
-        "id": family.id,
-        "family_name": family.family_name,
-        "category": (family.category or "").strip().lower(),
-        "default_template_id": family.default_template_id or "",
-        "created_at": _date_time(family.created_at),
-        "updated_at": _date_time(family.updated_at),
-    }
-
-
 def _search_variants(db: Session) -> list[LabelVariant]:
     return db.execute(
         select(LabelVariant)
@@ -184,76 +111,6 @@ def _search_variants(db: Session) -> list[LabelVariant]:
 
 def _recent_variants(db: Session, limit: int = 80) -> list[LabelVariant]:
     return _search_variants(db)[:limit]
-
-
-def _variant_template_id(variant: LabelVariant) -> int | None:
-    return variant.template_id or variant.family.default_template_id
-
-
-def _variant_payload(variant: LabelVariant) -> dict[str, object]:
-    template = variant.template or variant.family.default_template
-    category = (variant.family.category or "").strip().lower()
-    return {
-        "id": variant.id,
-        "search": " | ".join(
-            part
-            for part in [
-                variant.barcode,
-                variant.item_display_name,
-                variant.brand,
-                category,
-                variant.article_no,
-                variant.batch_no,
-                variant.size,
-                _money(variant.mrp),
-                _money(variant.selling_price),
-                variant.coded_price,
-                *[
-                    value
-                    for value in _parse_extra_field_values(variant.extra_field_values).values()
-                    if value
-                ],
-            ]
-            if part
-        ),
-        "barcode": variant.barcode,
-        "family_id": variant.family_id,
-        "family_name": variant.family.family_name,
-        "category": category,
-        "brand": variant.brand or "",
-        "item_display_name": variant.item_display_name,
-        "article_no": variant.article_no or "",
-        "size": variant.size or "",
-        "batch_no": variant.batch_no or "",
-        "expiry": variant.expiry or "",
-        "mrp": _money(variant.mrp),
-        "selling_price": _money(variant.selling_price),
-        "coded_price": variant.coded_price or "",
-        "billing_price_missing": bool(variant.billing_price_missing),
-        "extra_field_values": _parse_extra_field_values(variant.extra_field_values),
-        "template_id": _variant_template_id(variant) or "",
-        "template_name": template.template_name if template else "",
-        "created_at": _date_time(variant.created_at),
-        "updated_at": _date_time(variant.updated_at),
-    }
-
-
-def _template_payload(template: TemplateMaster) -> dict[str, object]:
-    field_defaults = parse_field_defaults(template.default_field_values)
-    field_defaults.pop("barcode", None)
-    return {
-        "id": template.id,
-        "template_id": template.template_id,
-        "template_name": template.template_name,
-        "category": (template.category or "").strip().lower(),
-        "label_size": template.label_size or "",
-        "required_fields": parse_required_fields(template.required_fields),
-        "field_defaults": field_defaults,
-        "path_exists": template_path_exists(template),
-        "file_changed": template_file_changed_since_extract(template),
-        "cached_preview_url": cached_template_preview_url(template),
-        "recent": False,
-    }
 
 
 def _recent_templates(db: Session, template_rows: list[TemplateMaster]) -> list[TemplateMaster]:
@@ -276,15 +133,6 @@ def _recent_templates(db: Session, template_rows: list[TemplateMaster]) -> list[
         if len(recent) >= 6:
             break
     return recent
-
-
-def _size_values(variants: list[LabelVariant]) -> dict[str, list[str]]:
-    values: dict[str, set[str]] = {choice["value"]: set() for choice in CATEGORY_CHOICES}
-    for variant in variants:
-        category = (variant.family.category or "").strip().lower()
-        if category in values and variant.size:
-            values[category].add(variant.size)
-    return {category: sorted(sizes) for category, sizes in values.items()}
 
 
 def _find_or_create_family(
@@ -330,78 +178,6 @@ def _find_or_create_family(
     db.add(family)
     db.flush()
     return family
-
-
-def _same_text(left: str | None, right: str | None) -> bool:
-    return (left or "").strip().lower() == (right or "").strip().lower()
-
-
-def _same_money(left: Decimal | None, right: Decimal | None) -> bool:
-    if left is None and right is None:
-        return True
-    if left is None or right is None:
-        return False
-    return left.quantize(Decimal("0.01")) == right.quantize(Decimal("0.01"))
-
-
-def _price_changed(
-    variant: LabelVariant | None,
-    *,
-    mrp: Decimal | None,
-    selling_price: Decimal | None,
-    coded_price: str,
-) -> bool:
-    if not variant:
-        return False
-    return (
-        not _same_money(variant.mrp, mrp)
-        or not _same_money(variant.selling_price, selling_price)
-        or not _same_text(variant.coded_price, coded_price)
-    )
-
-
-def _label_details_changed(
-    variant: LabelVariant | None,
-    *,
-    category: str,
-    family_name: str,
-    template: TemplateMaster,
-    brand: str,
-    item_display_name: str,
-    article_no: str,
-    size: str,
-    batch_no: str,
-    expiry: str,
-    extra_field_values: dict[str, str],
-    mrp: Decimal | None,
-    selling_price: Decimal | None,
-    coded_price: str,
-) -> bool:
-    if not variant:
-        return False
-    family = variant.family
-    return (
-        not _same_text(family.category if family else "", category)
-        or not _same_text(family.family_name if family else "", family_name)
-        or _variant_template_id(variant) != template.id
-        or not _same_text(variant.brand, brand)
-        or not _same_text(variant.item_display_name, item_display_name)
-        or not _same_text(variant.article_no, article_no)
-        or not _same_text(variant.size, size)
-        or not _same_text(variant.batch_no, batch_no)
-        or not _same_text(variant.expiry, expiry)
-        or _parse_extra_field_values(variant.extra_field_values) != {
-            field_name: field_value
-            for field_name, field_value in extra_field_values.items()
-            if str(field_value).strip()
-        }
-        or _price_changed(
-            variant,
-            mrp=mrp,
-            selling_price=selling_price,
-            coded_price=coded_price,
-        )
-    )
 
 
 def _find_exact_variant(
@@ -634,7 +410,7 @@ def _workflow_context(
         "recent_items": recent_variants[:12],
         "recent_templates": recent_template_rows,
         "recent_jobs": recent_jobs,
-        "size_values_json": _size_values(variants),
+        "size_values_json": _size_values(variants, CATEGORY_CHOICES),
         "selected_template_id": selected_template_id,
         "selected_category": selected_category,
         "initial_variant_id": initial_variant_id,
