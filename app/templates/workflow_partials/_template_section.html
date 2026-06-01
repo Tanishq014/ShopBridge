@@ -1,0 +1,48 @@
+      <div class="workflow-section setup-section">
+        <div class="section-line">
+          <h2>Label Setup</h2>
+          <span class="mode-pill" id="setupPill">Choose template first</span>
+        </div>
+        <div class="form-actions pricing-toggle-row">
+          <label class="checkline">
+            <input type="checkbox" id="showPricingFieldsToggle" {% if pricing_fields_visible %}checked{% endif %}>
+            Show selling price / margin
+          </label>
+          <input type="hidden" name="show_pricing_fields_visible" id="showPricingFieldsValue" value="{{ '1' if pricing_fields_visible else '0' }}">
+        </div>
+        <div class="form-grid three">
+          <label>
+            Category
+            <select name="category" id="categorySelect" required>
+              {% for category in categories %}
+                <option value="{{ category.value }}" {% if selected_category == category.value %}selected{% endif %}>{{ category.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="span-two">
+            Template
+            <select name="template_id" id="templateSelect" required>
+              <option value="">Select template</option>
+              {% for template in template_rows %}
+                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" {% if selected_template_id == template.id %}selected{% endif %}>
+                  {{ template.template_name }} ({{ template.template_id }}){% if not template_path_exists(template) %} - missing .btw{% endif %}
+                </option>
+              {% else %}
+                <option value="">No template found</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-actions template-action-row">
+            <button class="button" type="button" id="openTemplateButton" disabled>Open Template</button>
+            <button class="button" type="submit" form="extractTemplateForm" id="refreshTemplateFieldsButton" disabled>Refresh Fields from Template</button>
+          </div>
+          <label class="span-two">
+            Search existing item
+            <div class="combo" id="variantCombo">
+              <input id="variantSearch" autocomplete="off" placeholder="Type item name, barcode, brand, article..." role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
+              <button class="combo-toggle" type="button" id="variantSearchToggle">Show</button>
+              <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
+            </div>
+          </label>
+        </div>
+      </div>

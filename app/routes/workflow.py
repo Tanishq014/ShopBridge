@@ -1232,6 +1232,7 @@ def settings(
     settings_error: str | None = None,
     db: Session = Depends(get_db),
 ):
+    scanner, scanner_ip_detected = scanner_url(request.headers.get("host"))
     scan_bartender_template_folder(db)
     template_rows = db.execute(select(TemplateMaster).order_by(TemplateMaster.template_name)).scalars().all()
     active_templates = [template for template in template_rows if template.active_status]

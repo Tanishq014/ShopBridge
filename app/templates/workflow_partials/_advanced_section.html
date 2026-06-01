@@ -1,0 +1,38 @@
+        <details class="advanced-box" id="barcodeAdvanced">
+          <summary tabindex="-1">Advanced barcode <span class="mono" id="barcodeSummary">auto</span></summary>
+          <div class="form-grid three">
+            <label id="barcodeField" data-field="barcode">
+              Barcode
+              <input name="barcode" id="barcodeInput" placeholder="Auto generated">
+            </label>
+            <label class="checkline">
+              <input type="checkbox" name="manual_barcode_override" value="true" id="manualBarcodeOverride">
+              Manual override
+            </label>
+            <label class="checkline">
+              <input type="checkbox" name="print_without_billing_price" value="true" id="printWithoutBillingPrice">
+              Print without billing price
+            </label>
+            <div class="form-actions">
+              <button class="button" type="button" id="regenerateBarcodeButton">Regenerate barcode</button>
+            </div>
+          </div>
+
+          <div class="workflow-state info-state compact-message" id="matchSuggestion" hidden>
+            <strong>Existing item found. Reuse barcode?</strong>
+            <span id="matchSuggestionText"></span>
+            <div class="form-actions">
+              <button class="button small primary" type="button" id="reuseMatchButton">Reuse barcode</button>
+              <button class="button small" type="button" id="newBarcodeFromMatchButton">Create new barcode</button>
+            </div>
+          </div>
+
+          <div class="workflow-state warn-state compact-message" id="priceDecisionWarning" hidden>
+            <strong>Label details changed.</strong>
+            <span>ShopBridge will create a new barcode by default so old labels keep scanning correctly.</span>
+            <div class="form-actions">
+              <button class="button small primary" type="button" id="createNewPriceButton">Create new barcode</button>
+              <button class="button small" type="button" id="updateExistingPriceButton">Update existing barcode</button>
+            </div>
+          </div>
+        </details>

@@ -1,0 +1,35 @@
+      <section class="panel">
+        <div class="section-line">
+          <h2>Recent Items</h2>
+        </div>
+        <div class="recent-list">
+          {% for item in recent_items %}
+            <div class="recent-row">
+              <button class="plain-item load-variant" type="button" data-variant-id="{{ item.id }}">
+                <strong>{{ item.item_display_name }}</strong>
+                <span>{{ item.brand or item.family.family_name }}{% if item.article_no %} / {{ item.article_no }}{% endif %}{% if item.size %} / {{ item.size }}{% endif %} / {{ item.created_at|local_time }}</span>
+              </button>
+              <a class="button small" href="/items/{{ item.id }}">Open</a>
+              <form method="post" action="/new-stock/quick-reprint">
+                <input type="hidden" name="variant_id" value="{{ item.id }}">
+                <input type="hidden" name="template_id" value="{{ item.template_id or item.family.default_template_id or '' }}">
+                <input type="hidden" name="copies" value="1">
+                <button class="button small" type="submit">Reprint</button>
+              </form>
+            </div>
+          {% else %}
+            <p class="empty">No recent items yet.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Recent Templates</h2>
+        <div class="tag-list template-tags">
+          {% for template in recent_templates %}
+            <button class="tag-button" type="button" data-template-id="{{ template.id }}">{{ template.template_name }}</button>
+          {% else %}
+            <span>No templates yet</span>
+          {% endfor %}
+        </div>
+      </section>

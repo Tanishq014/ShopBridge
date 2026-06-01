@@ -139,7 +139,14 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        workflow_markup = (ROOT / "app" / "templates" / "workflow.html").read_text(encoding="utf-8")
+        workflow_template_dir = ROOT / "app" / "templates"
+        workflow_markup = (workflow_template_dir / "workflow.html").read_text(encoding="utf-8")
+        workflow_partials_dir = workflow_template_dir / "workflow_partials"
+        if workflow_partials_dir.exists():
+            workflow_markup += "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in sorted(workflow_partials_dir.glob("*.html"))
+            )
         settings_markup = (ROOT / "app" / "templates" / "settings.html").read_text(encoding="utf-8")
         pos_markup = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")

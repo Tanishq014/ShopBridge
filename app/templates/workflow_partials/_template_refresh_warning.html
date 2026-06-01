@@ -1,0 +1,21 @@
+      <div class="workflow-state" id="selectTemplateState">
+        <strong>Select a template to start.</strong>
+        <span>ShopBridge will load only the fields required by that BarTender template.</span>
+      </div>
+
+      <div class="workflow-state warn-state" id="missingTemplateState" hidden>
+        <strong>This template file is missing on this PC.</strong>
+        <span>Fix the .btw path in Settings before extracting fields or printing.</span>
+      </div>
+
+      <div class="workflow-state warn-state" id="unmappedTemplateState" hidden>
+        <strong>Fields have not been extracted for this template.</strong>
+        <span>Extract fields once, then the correct item fields will appear here.</span>
+        <button class="button" type="submit" form="extractTemplateForm" id="extractTemplateFieldsButton">Refresh Fields from Template</button>
+      </div>
+
+      <div class="workflow-state warn-state" id="changedTemplateState" hidden>
+        <strong>Template file changed. Re-extract fields.</strong>
+        <span>The .btw file is newer than the saved field map.</span>
+        <button class="button" type="submit" form="extractTemplateForm">Refresh Fields from Template</button>
+      </div>

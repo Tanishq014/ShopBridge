@@ -1,0 +1,2407 @@
+  <script>
+    const variants = {{ variants_json|tojson }};
+    const families = {{ families_json|default([], true)|tojson }};
+    const templatesData = {{ templates_json|tojson }};
+    const sizeValues = {{ size_values_json|tojson }};
+    const categories = {{ categories|tojson }};
+    const initialVariantId = "{{ initial_variant_id or '' }}";
+    const initialDuplicate = {{ 'true' if initial_duplicate else 'false' }};
+    const initialBarcode = "{{ initial_barcode or '' }}";
+    const mrpRounding = Number({{ pricing_settings.mrp_rounding|tojson }});
+    const priceCodeSettings = {{ price_code_settings_json|tojson }};
+
+    const form = document.getElementById("stockForm");
+    const workflowMode = document.getElementById("workflowMode");
+    const modePill = document.getElementById("modePill");
+    const setupPill = document.getElementById("setupPill");
+    const existingVariantId = document.getElementById("existingVariantId");
+    const familyId = document.getElementById("familyId");
+    const extraFieldValuesInput = document.getElementById("extraFieldValuesInput");
+    const selectedPriceCodeKey = document.getElementById("selectedPriceCodeKey");
+    const codedPriceManualOverride = document.getElementById("codedPriceManualOverride");
+    const forceNewBarcode = document.getElementById("forceNewBarcode");
+    const familyName = document.getElementById("familyName");
+    const billingItemCombo = document.getElementById("billingItemCombo");
+    const billingItemToggle = document.getElementById("billingItemToggle");
+    const billingItemMenu = document.getElementById("billingItemMenu");
+    const categorySelect = document.getElementById("categorySelect");
+    const variantSearch = document.getElementById("variantSearch");
+    const variantSearchToggle = document.getElementById("variantSearchToggle");
+    const variantSearchMenu = document.getElementById("variantSearchMenu");
+    const variantCombo = document.getElementById("variantCombo");
+    const templateSelect = document.getElementById("templateSelect");
+    const templateBadge = document.getElementById("templateBadge");
+    const matchSuggestion = document.getElementById("matchSuggestion");
+    const matchSuggestionText = document.getElementById("matchSuggestionText");
+    const reuseMatchButton = document.getElementById("reuseMatchButton");
+    const newBarcodeFromMatchButton = document.getElementById("newBarcodeFromMatchButton");
+    const priceDecisionWarning = document.getElementById("priceDecisionWarning");
+    const createNewPriceButton = document.getElementById("createNewPriceButton");
+    const updateExistingPriceButton = document.getElementById("updateExistingPriceButton");
+    const pricingCalcMessage = document.getElementById("pricingCalcMessage");
+    const priceCodeInlinePanel = document.getElementById("priceCodeInlinePanel");
+    const priceCodeInlineMessage = document.getElementById("priceCodeInlineMessage");
+    const priceCodeInlineChoices = document.getElementById("priceCodeInlineChoices");
+    const printWithoutBillingPrice = document.getElementById("printWithoutBillingPrice");
+    const showPricingFieldsToggle = document.getElementById("showPricingFieldsToggle");
+    const marginField = document.getElementById("marginField");
+    const marginInlinePanel = document.getElementById("marginInlinePanel");
+    const marginInlineMessage = document.getElementById("marginInlineMessage");
+    const customFieldsGrid = document.getElementById("customFieldsGrid");
+    const barcodeSummary = document.getElementById("barcodeSummary");
+    const manualBarcodeOverride = document.getElementById("manualBarcodeOverride");
+    const regenerateBarcodeButton = document.getElementById("regenerateBarcodeButton");
+    const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
+    const refreshTemplateFieldsButton = document.getElementById("refreshTemplateFieldsButton");
+    const openTemplateButton = document.getElementById("openTemplateButton");
+    const openTemplateForm = document.getElementById("openTemplateForm");
+    const openTemplateCategory = document.getElementById("openTemplateCategory");
+    const extractTemplateId = document.getElementById("extractTemplateId");
+    const extractCategory = document.getElementById("extractCategory");
+    const itemSection = document.getElementById("itemSection");
+    const selectTemplateState = document.getElementById("selectTemplateState");
+    const missingTemplateState = document.getElementById("missingTemplateState");
+    const unmappedTemplateState = document.getElementById("unmappedTemplateState");
+    const changedTemplateState = document.getElementById("changedTemplateState");
+    const printButton = document.getElementById("printButton");
+    const printQuantityInput = document.getElementById("printQuantityInput");
+    const actualPreviewButton = document.getElementById("actualPreviewButton");
+    const actualPreviewBlock = document.getElementById("actualPreviewBlock");
+    const actualPreviewImage = document.getElementById("actualPreviewImage");
+    const actualPreviewError = document.getElementById("actualPreviewError");
+    const simulatedPreview = document.getElementById("simulatedPreview");
+    const showPricingFieldsValue = document.getElementById("showPricingFieldsValue");
+    let actualPreviewUrl = "";
+    let selectedVariantSnapshot = null;
+    let autoMatchVariantId = "";
+    let barcodeGenerationPending = false;
+    let allowFormSubmit = false;
+    let printSubmissionPending = false;
+    let customInputByField = {};
+    let pricingFieldsPreferenceVisible = true;
+    let variantMenuRows = [];
+    let variantMenuIndex = -1;
+    let billingMatches = [];
+    let billingActiveIndex = -1;
+    let billingMenuOpen = false;
+    let lastBillingInputValue = "";
+    let redirectBillingFocusUntil = 0;
+    let suppressVariantMenuUntil = 0;
+    const storageKey = "shopbridge.newStockState.v3";
+    const pageParams = new URLSearchParams(window.location.search);
+    const hasPrintError = pageParams.has("print_error");
+    const focusDebugEnabled = pageParams.has("focus_debug") || localStorage.getItem("shopbridge.focusDebug") === "1";
+    const fields = {
+      barcode: document.getElementById("barcodeInput"),
+      brand: document.getElementById("brandInput"),
+      item: document.getElementById("itemNameInput"),
+      article: document.getElementById("articleInput"),
+      size: document.getElementById("sizeInput"),
+      batch: document.getElementById("batchInput"),
+      expiry: document.getElementById("expiryInput"),
+      mrp: document.getElementById("mrpInput"),
+      selling: document.getElementById("sellingInput"),
+      margin: document.getElementById("marginInput"),
+      coded: document.getElementById("codedInput"),
+      copies: document.getElementById("copiesInput")
+    };
+
+    const categorySettings = {
+      clothes: { article: "Article No", size: "Size", batch: "Batch No" },
+      cosmetics: { article: "Shade / Article", size: "Pack Size", batch: "Batch No" },
+      gifts: { article: "Article / Model", size: "Size", batch: "Batch No" },
+      toys: { article: "Article / Model", size: "Size / Age", batch: "Batch No" }
+    };
+
+    const dynamicFields = [
+      "brand",
+      "item_display_name",
+      "design",
+      "article_no",
+      "size",
+      "batch_no",
+      "expiry",
+      "mrp",
+      "selling_price",
+      "coded_price",
+      "barcode"
+    ];
+    const inputByField = {
+      brand: fields.brand,
+      item_display_name: fields.item,
+      design: fields.item,
+      article_no: fields.article,
+      size: fields.size,
+      batch_no: fields.batch,
+      expiry: fields.expiry,
+      mrp: fields.mrp,
+      selling_price: fields.selling,
+      coded_price: fields.coded,
+      barcode: fields.barcode
+    };
+    const containerByField = {
+      brand: byId("brandField"),
+      item_display_name: byId("itemNameField"),
+      design: byId("itemNameField"),
+      article_no: byId("articleField"),
+      size: byId("sizeField"),
+      batch_no: byId("batchField"),
+      expiry: byId("expiryField"),
+      mrp: byId("mrpField"),
+      selling_price: byId("sellingField"),
+      coded_price: byId("codedField"),
+      barcode: byId("barcodeField")
+    };
+
+    function byId(id) {
+      return document.getElementById(id);
+    }
+
+    function elementName(element) {
+      if (!element) {
+        return "none";
+      }
+      if (element.id) {
+        return `#${element.id}`;
+      }
+      return element.tagName ? element.tagName.toLowerCase() : String(element);
+    }
+
+    function focusDebug(message, details = {}) {
+      if (!focusDebugEnabled) {
+        return;
+      }
+      const payload = {
+        active: elementName(document.activeElement),
+        ...details,
+      };
+      console.log("[ShopBridge focus]", message, payload);
+      let panel = document.getElementById("focusDebugPanel");
+      if (!panel) {
+        panel = document.createElement("pre");
+        panel.id = "focusDebugPanel";
+        panel.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:9999;max-width:520px;max-height:260px;overflow:auto;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:6px;padding:8px;font:12px/1.35 Consolas,monospace;white-space:pre-wrap;";
+        document.body.appendChild(panel);
+      }
+      const line = `${new Date().toLocaleTimeString()} ${message} ${JSON.stringify(payload)}`;
+      panel.textContent = `${panel.textContent}\n${line}`.trim().slice(-7000);
+    }
+
+    function money(value) {
+      const number = Number(value || 0);
+      return number.toFixed(2);
+    }
+
+    function normalizedText(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function sameText(left, right) {
+      return normalizedText(left) === normalizedText(right);
+    }
+
+    function moneyText(value) {
+      const clean = String(value || "").trim();
+      if (!clean) return "";
+      const number = Number(clean);
+      return Number.isFinite(number) ? number.toFixed(2) : clean;
+    }
+
+    function upperRound(value, rounding) {
+      if (!Number.isFinite(value)) {
+        return value;
+      }
+      if (rounding === 9) {
+        const integerValue = Math.ceil(value);
+        const remainder = integerValue % 10;
+        return remainder <= 9 ? integerValue + ((9 - remainder) % 10) : integerValue;
+      }
+      const step = [1, 5, 10].includes(rounding) ? rounding : 5;
+      return Math.ceil(value / step) * step;
+    }
+
+    function showPricingMessage(message) {
+      pricingCalcMessage.textContent = message;
+      pricingCalcMessage.hidden = !message;
+    }
+
+    function setCodedPriceManualOverride(enabled) {
+      codedPriceManualOverride.value = enabled ? "true" : "false";
+    }
+
+    function setForceNewBarcode(enabled) {
+      forceNewBarcode.value = enabled ? "true" : "false";
+    }
+
+    function forceNewBarcodeEnabled() {
+      return forceNewBarcode.value === "true";
+    }
+
+    function applyPricingFieldsVisibility(visible) {
+      if (marginField) {
+        marginField.hidden = !Boolean(visible);
+      }
+      const pricingGrid = document.querySelector('.pricing-grid');
+      if (pricingGrid) {
+        pricingGrid.classList.toggle('with-margin', Boolean(visible));
+      }
+    }
+
+    function setPricingFieldsPreference(visible, persist = false) {
+      pricingFieldsPreferenceVisible = Boolean(visible);
+      showPricingFieldsToggle.checked = pricingFieldsPreferenceVisible;
+      if (showPricingFieldsValue) {
+        showPricingFieldsValue.value = pricingFieldsPreferenceVisible ? "1" : "0";
+      }
+      applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
+      if (persist) {
+        saveWorkflowState();
+      }
+    }
+
+    function pricingFieldsVisible() {
+      return Boolean(pricingFieldsPreferenceVisible);
+    }
+
+    function calculateMrpFromMargin() {
+      const marginRaw = String(fields.margin.value || "").trim();
+      const marginPercent = Number(marginRaw);
+      if (!marginRaw || !Number.isFinite(marginPercent)) {
+        showPricingMessage("Enter Margin % before calculating MRP.");
+        fields.margin.focus();
+        fields.margin.select();
+        return;
+      }
+      if (marginPercent < 0) {
+        showPricingMessage("Margin % cannot be negative.");
+        fields.margin.focus();
+        fields.margin.select();
+        return;
+      }
+      if (marginPercent >= 100) {
+        showPricingMessage("Margin % must be less than 100.");
+        fields.margin.focus();
+        fields.margin.select();
+        return;
+      }
+      
+      const candidates = currentPriceCodeCandidates();
+      const selectedKey = String(selectedPriceCodeKey.value || "").trim();
+      const selectedCandidate = selectedKey
+        ? candidates.find(candidate => (candidate.key || candidateKey(candidate)) === selectedKey)
+        : (candidates.length > 0 ? candidates[0] : null);
+        
+      const sellingPrice = selectedCandidate ? Number(selectedCandidate.selling_price) : 0;
+      
+      if (!sellingPrice || !Number.isFinite(sellingPrice) || sellingPrice <= 0) {
+        showPricingMessage("Enter a valid price code first.");
+        fields.coded.focus();
+        fields.coded.select();
+        return;
+      }
+      
+      const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
+      fields.mrp.value = upperRound(calculatedMrp, mrpRounding).toFixed(2);
+      showPricingMessage("");
+      clearActualPreview();
+      updatePreview();
+      saveWorkflowState();
+      fields.mrp.focus();
+      fields.mrp.select();
+    }
+
+    function encodeSellingPrice(value) {
+      const settings = priceCodeSettings.digit_to_code || {};
+      const digits = String(Math.max(0, Math.round(Number(value || 0)))).split("");
+      if (!digits.length) {
+        return "";
+      }
+      const encoded = digits.map(digit => String(settings[digit] || "").split(",", 1)[0].trim().toUpperCase()).join("");
+      return encoded && digits.every(digit => String(settings[digit] || "").split(",", 1)[0].trim()) ? encoded : "";
+    }
+
+    function escapeRegExp(value) {
+      return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function decodePriceCodeGroup(group) {
+      const reverse = priceCodeSettings.code_to_digit || {};
+      const tokens = Object.keys(reverse).sort((left, right) => right.length - left.length);
+      if (!tokens.length || !group) {
+        return "";
+      }
+      const matches = [];
+      function walk(index, digits) {
+        if (matches.length > 1) return;
+        if (index === group.length) {
+          matches.push(digits.join(""));
+          return;
+        }
+        tokens.forEach(token => {
+          if (group.startsWith(token, index)) {
+            walk(index + token.length, [...digits, reverse[token]]);
+          }
+        });
+      }
+      walk(0, []);
+      return matches.length === 1 ? matches[0] : "";
+    }
+
+    function candidateKey(candidate) {
+      return `${candidate.source_field}|${candidate.code}|${candidate.selling_price}`;
+    }
+
+    function extractCandidatesFromField(sourceField, rawValue, priority) {
+      const letters = priceCodeSettings.price_code_letters || "";
+      if (!priceCodeSettings.allow_extraction || !letters || !String(rawValue || "").trim()) {
+        return [];
+      }
+      const pattern = new RegExp(`[${escapeRegExp(letters)}]+`, "g");
+      const value = String(rawValue || "").toUpperCase();
+      const candidates = [];
+      const seen = new Set();
+      let match;
+      while ((match = pattern.exec(value)) !== null) {
+        const code = match[0];
+        const digits = decodePriceCodeGroup(code);
+        if (!digits) continue;
+        const key = `${sourceField}|${code}|${digits}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({
+          source_field: sourceField,
+          raw_value: String(rawValue || ""),
+          code,
+          selling_price: digits,
+          priority,
+          key
+        });
+      }
+      return candidates;
+    }
+
+    function currentPriceCodeFieldValues() {
+      return {
+        coded_price: fields.coded.value.toUpperCase()
+      };
+    }
+
+    function currentPriceCodeCandidates() {
+      const values = currentPriceCodeFieldValues();
+      const priorityCandidates = [];
+      priorityCandidates.push(...extractCandidatesFromField("coded_price", values.coded_price || "", true));
+      return priorityCandidates;
+    }
+
+    function updatePriceCodeInlinePanelVisibility() {
+      const hasMessage = Boolean(String(priceCodeInlineMessage.textContent || "").trim());
+      const hasChoices = !priceCodeInlineChoices.hidden && priceCodeInlineChoices.children.length > 0;
+      priceCodeInlinePanel.hidden = !(hasMessage || hasChoices);
+    }
+
+    function setPriceCodeInlineState(message, kind = "muted") {
+      const cleanMessage = String(message || "").trim();
+      priceCodeInlineMessage.textContent = cleanMessage;
+      priceCodeInlineMessage.hidden = !cleanMessage;
+      priceCodeInlineMessage.className = `field-hint-inline price-code-inline ${kind}`.trim();
+      updatePriceCodeInlinePanelVisibility();
+    }
+
+    function priceEntryReady() {
+      const candidates = currentPriceCodeCandidates();
+      if (candidates.length > 1 && !String(selectedPriceCodeKey.value || "").trim()) {
+        return false;
+      }
+      return Boolean(String(fields.selling.value || "").trim()) || candidates.length > 0;
+    }
+
+    function updatePrintAvailability(readyForEntry) {
+      const canPrint = Boolean(readyForEntry) && priceEntryReady() && !printSubmissionPending;
+      printButton.disabled = !canPrint;
+      actualPreviewButton.disabled = !Boolean(readyForEntry);
+      return canPrint;
+    }
+
+    function syncPriceCodeState() {
+      const candidates = currentPriceCodeCandidates();
+      const selectedKey = String(selectedPriceCodeKey.value || "").trim();
+      const selectedCandidate = selectedKey
+        ? candidates.find(candidate => (candidate.key || candidateKey(candidate)) === selectedKey)
+        : null;
+      priceCodeInlineChoices.hidden = true;
+      priceCodeInlineChoices.innerHTML = "";
+      if (selectedCandidate) {
+        selectedPriceCodeKey.value = selectedCandidate.key || candidateKey(selectedCandidate);
+        fields.selling.value = selectedCandidate.selling_price;
+        if (!String(fields.coded.value || "").trim()) {
+          fields.coded.value = selectedCandidate.code;
+        }
+        setPriceCodeInlineState(`Rs. ${selectedCandidate.selling_price}`, "ok");
+        setCodedPriceManualOverride(true);
+        clearActualPreview();
+        updatePreview();
+        saveWorkflowState();
+        return;
+      }
+      if (candidates.length === 1) {
+        const candidate = candidates[0];
+        selectedPriceCodeKey.value = candidate.key || candidateKey(candidate);
+        fields.selling.value = candidate.selling_price;
+        if (!String(fields.coded.value || "").trim()) {
+          fields.coded.value = candidate.code;
+        }
+        setPriceCodeInlineState(`Rs. ${candidate.selling_price}`, "ok");
+        setCodedPriceManualOverride(true);
+        clearActualPreview();
+        updatePreview();
+        saveWorkflowState();
+        return;
+      }
+      if (candidates.length > 1) {
+        if (selectedKey) {
+          selectedPriceCodeKey.value = "";
+        }
+        renderPriceCodeChoices(candidates);
+        selectedPriceCodeKey.value = "";
+        setPriceCodeInlineState("Multiple codes found. Choose one.", "warn");
+        return;
+      }
+      selectedPriceCodeKey.value = "";
+      if (String(fields.selling.value || "").trim()) {
+        setPriceCodeInlineState(`Rs. ${moneyText(fields.selling.value)}`, "ok");
+      } else if (String(fields.coded.value || "").trim()) {
+        setPriceCodeInlineState("Code cannot be decoded. Fix Code to continue.", "warn");
+      } else {
+        setPriceCodeInlineState("Enter Code to continue.", "warn");
+      }
+      updatePriceCodeInlinePanelVisibility();
+    }
+
+    function renderPriceCodeChoices(candidates) {
+      priceCodeInlineChoices.innerHTML = "";
+      candidates.forEach((candidate, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button small";
+        button.textContent = `${index + 1}. ${fieldLabel(candidate.source_field)}: ${candidate.raw_value} -> ${candidate.code} -> ${candidate.selling_price}`;
+        button.addEventListener("mousedown", event => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        button.addEventListener("click", () => {
+          selectedPriceCodeKey.value = candidate.key || candidateKey(candidate);
+          fields.selling.value = candidate.selling_price;
+          fields.coded.value = candidate.code;
+          printWithoutBillingPrice.checked = false;
+          priceCodeInlineChoices.hidden = true;
+          priceCodeInlineChoices.innerHTML = "";
+          setPriceCodeInlineState(`Rs. ${candidate.selling_price}`, "ok");
+          clearActualPreview();
+          updatePreview();
+          saveWorkflowState();
+        });
+        priceCodeInlineChoices.appendChild(button);
+      });
+      priceCodeInlineChoices.hidden = false;
+      updatePriceCodeInlinePanelVisibility();
+    }
+
+    function refreshPriceCodeDetection() {
+      if (!priceCodeSettings.allow_extraction || !templateSelect.value) {
+        setPriceCodeInlineState("", "muted");
+        priceCodeInlineChoices.hidden = true;
+        priceCodeInlineChoices.innerHTML = "";
+        updatePriceCodeInlinePanelVisibility();
+        updatePrintAvailability(Boolean(templateSelect.value && selectedTemplate()));
+        return;
+      }
+      syncPriceCodeState();
+      updatePrintAvailability(Boolean(templateSelect.value && selectedTemplate()));
+    }
+
+    function setMode(mode, label) {
+      workflowMode.value = mode;
+      modePill.textContent = label;
+    }
+
+    function readyToPrint() {
+      return !printButton.disabled
+        && !printSubmissionPending
+        && Boolean(templateSelect.value)
+        && priceEntryReady();
+    }
+
+    function setPrintControlsDisabled(disabled) {
+      printButton.disabled = disabled;
+      printQuantityInput.disabled = disabled;
+      printButton.textContent = disabled ? "Printing..." : "Print Labels";
+    }
+
+    function submitPrint(copyCount) {
+      if (printSubmissionPending) {
+        return;
+      }
+      const cleanCopies = Math.max(1, Number.parseInt(copyCount || printQuantityInput.value || fields.copies.value || "1", 10) || 1);
+      fields.copies.value = cleanCopies;
+      printQuantityInput.value = cleanCopies;
+      syncExtraFieldValues();
+      refreshPriceCodeDetection();
+      saveWorkflowState();
+      printSubmissionPending = true;
+      setPrintControlsDisabled(true);
+      allowFormSubmit = true;
+      try {
+        form.requestSubmit();
+      } catch (error) {
+        printSubmissionPending = false;
+        setPrintControlsDisabled(false);
+        allowFormSubmit = false;
+        throw error;
+      }
+    }
+
+    function printFromInlineQuantity() {
+      if (printSubmissionPending) {
+        return;
+      }
+      refreshPriceCodeDetection();
+      if (!readyToPrint()) {
+        if (!String(fields.selling.value || "").trim()) {
+          setPriceCodeInlineState("Code cannot be decoded. Fix Code to continue.", "warn");
+          window.setTimeout(() => {
+            fields.coded.focus();
+            fields.coded.select();
+          }, 0);
+        }
+        return;
+      }
+      submitPrint(printQuantityInput.value);
+    }
+
+    function visibleEntryFields() {
+      if (itemSection.hidden) {
+        return [categorySelect, templateSelect, variantSearch].filter(field => field && !field.disabled && field.offsetParent !== null);
+      }
+      return [
+        familyName,
+        fields.coded,
+        fields.margin,
+        fields.mrp,
+        fields.brand,
+        fields.item,
+        fields.article,
+        fields.size,
+        fields.batch,
+        fields.expiry,
+        ...Object.values(customInputByField),
+        printQuantityInput,
+        printButton,
+      ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
+    }
+
+    function moveEntryFocus(currentField, direction) {
+      const entries = visibleEntryFields();
+      const index = entries.indexOf(currentField);
+      if (index === -1) {
+        return;
+      }
+      const next = entries[index + direction];
+      if (next) {
+        next.focus();
+        if (typeof next.select === "function") {
+          next.select();
+        }
+      }
+    }
+
+    function caretAtStart(field) {
+      try {
+        return field.selectionStart === 0 && field.selectionEnd === 0;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function caretAtEnd(field) {
+      try {
+        return field.selectionStart === field.value.length && field.selectionEnd === field.value.length;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function handleEntryArrowNavigation(event) {
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+      const target = event.target;
+      if (!visibleEntryFields().includes(target)) {
+        return;
+      }
+      if ((target === familyName && billingItemCombo.classList.contains("open")) || (target === variantSearch && variantCombo.classList.contains("open"))) {
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveEntryFocus(target, 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveEntryFocus(target, -1);
+      } else if (event.key === "ArrowRight" && caretAtEnd(target)) {
+        event.preventDefault();
+        moveEntryFocus(target, 1);
+      } else if (event.key === "ArrowLeft" && caretAtStart(target)) {
+        event.preventDefault();
+        moveEntryFocus(target, -1);
+      }
+    }
+
+    function focusFirstTemplateField() {
+      const target = visibleEntryFields().find(field => field !== variantSearch && field !== familyName && field !== printQuantityInput && field !== printButton);
+      if (target) {
+        window.setTimeout(() => {
+          target.focus();
+          if (typeof target.select === "function") {
+            target.select();
+          }
+        }, 0);
+        return target;
+      }
+      return null;
+    }
+
+    function firstTemplateEntryField() {
+      return visibleEntryFields().find(field => field !== variantSearch && field !== familyName && field !== printQuantityInput && field !== printButton) || null;
+    }
+
+    function isFocusableEntryField(field) {
+      return Boolean(field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
+    }
+
+    function firstFieldAfterBillingItem() {
+      return [
+        fields.coded,
+        fields.margin,
+        fields.mrp,
+        fields.brand,
+        fields.item,
+        fields.article,
+        fields.size,
+        fields.batch,
+        fields.expiry,
+        ...Object.values(customInputByField),
+        printQuantityInput,
+      ].find(isFocusableEntryField) || templateSelect;
+    }
+
+    function preferredFieldAfterBillingItem() {
+      return isFocusableEntryField(fields.coded) ? fields.coded : firstFieldAfterBillingItem();
+    }
+
+    function focusFieldNow(field) {
+      if (!field) {
+        return false;
+      }
+      field.focus({preventScroll: true});
+      if (typeof field.select === "function") {
+        field.select();
+      }
+      return true;
+    }
+
+    function focusBillingItem() {
+      window.setTimeout(() => {
+        familyName.focus();
+        familyName.select();
+      }, 0);
+    }
+
+    function visibleTemplateOptions() {
+      return Array.from(templateSelect.options).filter(option => !option.hidden);
+    }
+
+    function selectedTemplate() {
+      return templatesData.find(item => String(item.id) === String(templateSelect.value));
+    }
+
+    function selectedTemplatePathExists() {
+      const template = selectedTemplate();
+      return template ? Boolean(template.path_exists) : false;
+    }
+
+    function normalizeFieldName(fieldName) {
+      const key = String(fieldName || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const aliases = {
+        articlenumber: "article",
+        articleno: "article",
+        batch: "batch_no",
+        batchname: "batch_no",
+        batchno: "batch_no",
+        batchnumber: "batch_no",
+        bath: "batch_no",
+        bathname: "batch_no",
+        bathno: "batch_no",
+        code: "coded_price",
+        codedprice: "coded_price",
+        pricecode: "coded_price",
+        printedcodetext: "coded_price",
+        design: "design",
+        designname: "design",
+        itemname: "item_display_name",
+        itemdisplayname: "item_display_name",
+        name: "item_display_name",
+        productname: "item_display_name",
+        sellingprice: "selling_price",
+        stickername: "item_display_name",
+        model: "model_no",
+        modelno: "model_no",
+        itemcode: "item_code"
+      };
+      return aliases[key] || String(fieldName || "").trim().toLowerCase();
+    }
+
+    function templateAppliesToCategory(optionCategory, selectedCategory) {
+      const category = (optionCategory || "").toLowerCase();
+      const universal = ["", "all", "all categories", "general", "imported"];
+      if (universal.includes(category)) {
+        return true;
+      }
+      const knownCategories = categories.map(item => item.value);
+      if (!knownCategories.includes(category)) {
+        return true;
+      }
+      return category === selectedCategory;
+    }
+
+    function requiredFieldSet() {
+      const template = selectedTemplate();
+      return new Set((template ? template.required_fields || [] : []).map(normalizeFieldName).filter(Boolean));
+    }
+
+    function templateDefaultValue(template, fieldName) {
+      const defaults = template && template.field_defaults ? template.field_defaults : {};
+      const normalizedDefaults = {};
+      Object.entries(defaults).forEach(([key, value]) => {
+        normalizedDefaults[normalizeFieldName(key)] = value;
+      });
+      const aliases = fieldName === "article_no"
+        ? ["article_no", "article"]
+        : fieldName === "item_display_name"
+          ? ["item_display_name", "design"]
+          : fieldName === "design"
+            ? ["design", "item_display_name"]
+            : [fieldName];
+      for (const alias of aliases) {
+        const value = normalizedDefaults[normalizeFieldName(alias)];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value);
+        }
+      }
+      return "";
+    }
+
+    function requiresArticle(required) {
+      return required.has("article") || required.has("article_no");
+    }
+
+    function requiresItemName(required) {
+      return required.has("item_display_name") || required.has("design");
+    }
+
+    function fieldLabel(fieldName) {
+      const labels = {
+        article: "Article No",
+        article_no: "Article No",
+        batch_no: "Batch No",
+        coded_price: "Code",
+        family_name: "Billing Item",
+        item_code: "Item Code",
+        item_display_name: "Sticker Name",
+        model_no: "Model No",
+        printed_code_text: "Printed Code",
+        price_code: "Price Code",
+        selling_price: "Selling Price"
+      };
+      if (labels[fieldName]) {
+        return labels[fieldName];
+      }
+      return String(fieldName || "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, letter => letter.toUpperCase());
+    }
+
+    function customTemplateFields(required) {
+      const builtIn = new Set([
+        "brand",
+        "item_display_name",
+        "design",
+        "family_name",
+        "article",
+        "article_no",
+        "size",
+        "batch_no",
+        "expiry",
+        "mrp",
+        "selling_price",
+        "coded_price",
+        "barcode"
+      ]);
+      return Array.from(required).filter(fieldName => !builtIn.has(fieldName));
+    }
+
+    function selectedVariant() {
+      return variants.find(item => String(item.id) === String(existingVariantId.value));
+    }
+
+    function valuesMatchVariant(variant) {
+      const required = requiredFieldSet();
+      if (!variant || normalizedText(variant.item_display_name) !== normalizedText(fields.item.value || familyName.value)) {
+        return false;
+      }
+      if (normalizedText(variant.category) !== normalizedText(categorySelect.value)) {
+        return false;
+      }
+      if (String(variant.template_id || "") !== String(templateSelect.value || "")) {
+        return false;
+      }
+      if (String(familyName.value || "").trim() && normalizedText(variant.family_name) !== normalizedText(familyName.value)) {
+        return false;
+      }
+      if (moneyText(variant.mrp) !== moneyText(fields.mrp.value)) {
+        return false;
+      }
+      if (String(fields.selling.value || "").trim()) {
+        if (moneyText(variant.selling_price) !== moneyText(fields.selling.value)) {
+          return false;
+        }
+      } else if (variant.selling_price !== null && variant.selling_price !== undefined && String(variant.selling_price).trim() !== "") {
+        return false;
+      }
+      if (String(fields.coded.value || "").trim()) {
+        if (normalizedText(variant.coded_price) !== normalizedText(fields.coded.value)) {
+          return false;
+        }
+      } else if (String(variant.coded_price || "").trim()) {
+        return false;
+      }
+      if (required.has("brand") && String(fields.brand.value || "").trim() && normalizedText(variant.brand) !== normalizedText(fields.brand.value)) {
+        return false;
+      }
+      if (requiresArticle(required) && String(fields.article.value || "").trim() && normalizedText(variant.article_no) !== normalizedText(fields.article.value)) {
+        return false;
+      }
+      if (required.has("size") && String(fields.size.value || "").trim() && normalizedText(variant.size) !== normalizedText(fields.size.value)) {
+        return false;
+      }
+      if (required.has("batch_no") && String(fields.batch.value || "").trim() && normalizedText(variant.batch_no) !== normalizedText(fields.batch.value)) {
+        return false;
+      }
+      if (required.has("expiry") && String(fields.expiry.value || "").trim() && normalizedText(variant.expiry) !== normalizedText(fields.expiry.value)) {
+        return false;
+      }
+      const variantExtras = variant.extra_field_values || {};
+      for (const [fieldName, input] of Object.entries(customInputByField)) {
+        if (required.has(fieldName) && String(input.value || "").trim() && normalizedText(variantExtras[fieldName]) !== normalizedText(input.value)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function labelDetailsChangedFromVariant(variant) {
+      if (!variant) return false;
+      const variantExtras = variant.extra_field_values || {};
+      const currentExtras = customFieldState();
+      const extraKeys = Array.from(new Set([...Object.keys(variantExtras), ...Object.keys(currentExtras)]));
+      return normalizedText(variant.family_name) !== normalizedText(familyName.value)
+        || normalizedText(variant.category) !== normalizedText(categorySelect.value)
+        || String(variant.template_id || "") !== String(templateSelect.value || "")
+        || normalizedText(variant.brand) !== normalizedText(fields.brand.value)
+        || normalizedText(variant.item_display_name) !== normalizedText(fields.item.value || familyName.value)
+        || normalizedText(variant.article_no) !== normalizedText(fields.article.value)
+        || normalizedText(variant.size) !== normalizedText(fields.size.value)
+        || normalizedText(variant.batch_no) !== normalizedText(fields.batch.value)
+        || normalizedText(variant.expiry) !== normalizedText(fields.expiry.value)
+        || moneyText(variant.mrp) !== moneyText(fields.mrp.value)
+        || moneyText(variant.selling_price) !== moneyText(fields.selling.value)
+        || normalizedText(variant.coded_price) !== normalizedText(fields.coded.value)
+        || extraKeys.some(fieldName => normalizedText(variantExtras[fieldName]) !== normalizedText(currentExtras[fieldName]));
+    }
+
+    function exactMatch() {
+      if (!templateSelect.value || !String(fields.item.value || familyName.value).trim()) {
+        return null;
+      }
+      return variants.find(valuesMatchVariant) || null;
+    }
+
+    function showExistingBarcodeState(variant, resetManualOverride = true) {
+      fields.barcode.value = variant ? variant.barcode || "" : fields.barcode.value;
+      fields.barcode.readOnly = Boolean(variant);
+      if (resetManualOverride) {
+        manualBarcodeOverride.checked = false;
+      }
+      refreshBarcodeControls();
+    }
+
+    function barcodeIsExistingReadOnly() {
+      return Boolean(existingVariantId.value) && workflowMode.value !== "new_barcode" && !manualBarcodeOverride.checked;
+    }
+
+    function refreshBarcodeControls() {
+      const existingReadOnly = barcodeIsExistingReadOnly();
+      fields.barcode.readOnly = existingReadOnly;
+      regenerateBarcodeButton.hidden = Boolean(existingVariantId.value) && workflowMode.value !== "new_barcode";
+      barcodeSummary.textContent = fields.barcode.value ? fields.barcode.value : "auto";
+    }
+
+    async function requestGeneratedBarcode(force) {
+      if (barcodeGenerationPending || !templateSelect.value) {
+        return;
+      }
+      if (!force && String(fields.barcode.value || "").trim()) {
+        refreshBarcodeControls();
+        return;
+      }
+      if (Boolean(existingVariantId.value) && workflowMode.value !== "new_barcode") {
+        refreshBarcodeControls();
+        return;
+      }
+
+      barcodeGenerationPending = true;
+      regenerateBarcodeButton.disabled = true;
+      try {
+        const payload = new FormData();
+        payload.append("template_id", templateSelect.value);
+        const response = await fetch("/new-stock/generate-barcode", {
+          method: "POST",
+          body: payload
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || "Could not generate barcode.");
+        }
+        const data = await response.json();
+        fields.barcode.value = data.barcode || "";
+        refreshBarcodeControls();
+        updatePreview();
+      } catch (error) {
+        fields.barcode.placeholder = error.message || "Could not generate barcode";
+      } finally {
+        barcodeGenerationPending = false;
+        regenerateBarcodeButton.disabled = false;
+      }
+    }
+
+    function maybeGenerateBarcode(readyForEntry) {
+      refreshBarcodeControls();
+      if (!readyForEntry) {
+        return;
+      }
+      if (!existingVariantId.value || workflowMode.value === "new_barcode") {
+        requestGeneratedBarcode(false);
+      }
+    }
+
+    function refreshRecordDecision() {
+      matchSuggestion.hidden = true;
+      priceDecisionWarning.hidden = true;
+
+      const match = exactMatch();
+      if (match && !forceNewBarcodeEnabled()) {
+        autoMatchVariantId = String(match.id);
+        existingVariantId.value = match.id;
+        familyId.value = match.family_id || "";
+        selectedVariantSnapshot = {...match};
+        setForceNewBarcode(false);
+        showExistingBarcodeState(match);
+        matchSuggestionText.textContent = `${match.item_display_name} / ${match.barcode}`;
+        matchSuggestion.hidden = false;
+        setMode("print", "Reusing existing barcode");
+        return;
+      }
+
+      const selected = selectedVariant();
+      if (selected && labelDetailsChangedFromVariant(selected)) {
+        priceDecisionWarning.hidden = false;
+        if (!["update_existing", "new_barcode"].includes(workflowMode.value)) {
+          setForceNewBarcode(false);
+          setMode("new_barcode", "Creating new barcode for changed details");
+          fields.barcode.value = "";
+          manualBarcodeOverride.checked = false;
+          refreshBarcodeControls();
+          requestGeneratedBarcode(false);
+        } else {
+          refreshBarcodeControls();
+        }
+        return;
+      }
+
+      if (selected && String(selected.id) !== String(autoMatchVariantId)) {
+        setForceNewBarcode(false);
+        if (!manualBarcodeOverride.checked) {
+          showExistingBarcodeState(selected, false);
+        } else {
+          refreshBarcodeControls();
+        }
+        if (!["quick_reprint", "update_existing"].includes(workflowMode.value)) {
+          setMode("print", "Updating selected item");
+        }
+        return;
+      }
+
+      if (autoMatchVariantId && String(existingVariantId.value) === autoMatchVariantId) {
+        existingVariantId.value = "";
+        familyId.value = "";
+        autoMatchVariantId = "";
+      }
+      if (!existingVariantId.value && !["duplicate", "new_barcode"].includes(workflowMode.value)) {
+        setMode("print", "New item");
+      }
+      refreshBarcodeControls();
+    }
+
+    function applyCategory(preserveTemplateId) {
+      const category = categorySelect.value;
+      Array.from(templateSelect.options).forEach(option => {
+        const optionCategory = (option.dataset.category || "").toLowerCase();
+        option.hidden = !templateAppliesToCategory(optionCategory, category);
+      });
+
+      const current = preserveTemplateId || templateSelect.value;
+      const currentOption = Array.from(templateSelect.options).find(option => option.value === String(current));
+      if (currentOption && !currentOption.hidden) {
+        templateSelect.value = String(current);
+      } else {
+        const firstVisible = visibleTemplateOptions()[0];
+        if (firstVisible) {
+          templateSelect.value = firstVisible.value;
+        }
+      }
+
+      const settings = categorySettings[category] || categorySettings.clothes;
+      byId("articleLabel").textContent = settings.article;
+      byId("itemNameLabel").textContent = requiredFieldSet().has("design") ? "Design" : "Sticker Name";
+      byId("sizeLabel").textContent = settings.size;
+      byId("batchLabel").textContent = settings.batch;
+      refreshSizeOptions(category);
+      applyTemplateFields();
+    }
+
+    function refreshSizeOptions(category) {
+      const datalist = byId("sizeOptions");
+      datalist.innerHTML = "";
+      (sizeValues[category] || []).forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        datalist.appendChild(option);
+      });
+    }
+
+    function templateName(id) {
+      const template = templatesData.find(item => String(item.id) === String(id));
+      return template ? template.template_name : "Template";
+    }
+
+    function applyTemplateFields() {
+      const template = selectedTemplate();
+      const required = requiredFieldSet();
+      const hasTemplate = Boolean(templateSelect.value && template);
+      const pathReady = selectedTemplatePathExists();
+      const mapped = required.size > 0;
+      const readyForEntry = hasTemplate && pathReady && mapped;
+
+      selectTemplateState.hidden = hasTemplate;
+      missingTemplateState.hidden = !hasTemplate || pathReady;
+      unmappedTemplateState.hidden = !hasTemplate || !pathReady || mapped;
+      changedTemplateState.hidden = !readyForEntry || !template.file_changed;
+      itemSection.hidden = !readyForEntry;
+      familyName.required = readyForEntry;
+      setupPill.textContent = readyForEntry ? "Ready for item entry" : hasTemplate ? "Template setup needed" : "Choose template first";
+
+      dynamicFields.forEach(fieldName => {
+        const container = containerByField[fieldName];
+        const input = inputByField[fieldName];
+        const visible = readyForEntry && (
+          fieldName === "article_no"
+            ? requiresArticle(required)
+            : fieldName === "barcode"
+              ? true
+            : fieldName === "selling_price" || fieldName === "mrp"
+              ? true
+            : fieldName === "item_display_name" || fieldName === "design"
+              ? requiresItemName(required)
+              : required.has(fieldName)
+        );
+        container.hidden = !visible;
+        input.required = visible && !["barcode", "coded_price"].includes(fieldName);
+      });
+      applyCustomTemplateFields(readyForEntry, required);
+      extractTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
+      refreshTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
+      openTemplateButton.disabled = !hasTemplate || !pathReady;
+      extractTemplateId.value = templateSelect.value;
+      extractCategory.value = categorySelect.value;
+      openTemplateCategory.value = categorySelect.value;
+      applyTemplateDefaults(readyForEntry);
+      refreshPriceCodeDetection();
+      updatePreview();
+      maybeGenerateBarcode(readyForEntry);
+      showCachedTemplatePreview();
+      updatePrintAvailability(readyForEntry);
+    }
+
+    function attachEntryFieldBehavior(field) {
+      field.addEventListener("focus", () => field.select());
+      field.addEventListener("click", () => field.select());
+      field.addEventListener("keydown", handleEntryArrowNavigation);
+    }
+
+    function customFieldState() {
+      const values = {};
+      Object.entries(customInputByField).forEach(([fieldName, input]) => {
+        values[fieldName] = input.value || "";
+      });
+      return values;
+    }
+
+    function syncExtraFieldValues() {
+      extraFieldValuesInput.value = JSON.stringify(customFieldState());
+    }
+
+    function setCustomFieldValues(values) {
+      Object.entries(customInputByField).forEach(([fieldName, input]) => {
+        input.value = values && values[fieldName] ? values[fieldName] : "";
+      });
+      syncExtraFieldValues();
+    }
+
+    function applyCustomTemplateFields(readyForEntry, required) {
+      const oldValues = customFieldState();
+      let savedValues = {};
+      try {
+        savedValues = JSON.parse(extraFieldValuesInput.value || "{}");
+      } catch (error) {
+        savedValues = {};
+      }
+      customInputByField = {};
+      customFieldsGrid.innerHTML = "";
+      if (!readyForEntry) {
+        customFieldsGrid.hidden = true;
+        syncExtraFieldValues();
+        return;
+      }
+      const template = selectedTemplate();
+      customTemplateFields(required).forEach(fieldName => {
+        const label = document.createElement("label");
+        label.dataset.field = fieldName;
+        label.textContent = fieldLabel(fieldName);
+        const input = document.createElement("input");
+        input.name = `extra_${fieldName}`;
+        input.dataset.extraField = fieldName;
+        input.value = oldValues[fieldName] || savedValues[fieldName] || templateDefaultValue(template, fieldName) || "";
+        input.required = true;
+        input.addEventListener("input", () => {
+          syncExtraFieldValues();
+          clearActualPreview();
+          showPricingMessage("");
+          refreshPriceCodeDetection();
+          updatePreview();
+          saveWorkflowState();
+        });
+        input.addEventListener("change", () => {
+          syncExtraFieldValues();
+          clearActualPreview();
+          showPricingMessage("");
+          refreshPriceCodeDetection();
+          updatePreview();
+          saveWorkflowState();
+        });
+        attachEntryFieldBehavior(input);
+        label.appendChild(input);
+        customFieldsGrid.appendChild(label);
+        customInputByField[fieldName] = input;
+      });
+      customFieldsGrid.hidden = Object.keys(customInputByField).length === 0;
+      syncExtraFieldValues();
+    }
+
+    function applyTemplateDefaults(readyForEntry) {
+      if (!readyForEntry) {
+        return;
+      }
+      const template = selectedTemplate();
+      const familyDefault = templateDefaultValue(template, "family_name");
+      if (familyDefault && !familyName.value.trim()) {
+        familyName.value = familyDefault;
+      }
+      dynamicFields.forEach(fieldName => {
+        const input = inputByField[fieldName];
+        const container = containerByField[fieldName];
+        const defaultValue = templateDefaultValue(template, fieldName);
+        if (!container.hidden && defaultValue && !String(input.value).trim()) {
+          input.value = defaultValue;
+        }
+      });
+    }
+
+    function workflowState() {
+      syncExtraFieldValues();
+      return {
+        category: categorySelect.value,
+        template_id: templateSelect.value,
+        existing_variant_id: existingVariantId.value,
+        family_id: familyId.value,
+        family_name: familyName.value,
+        variant_search: variantSearch.value,
+        workflow_mode: workflowMode.value,
+        barcode: existingVariantId.value || manualBarcodeOverride.checked ? fields.barcode.value : "",
+        manual_barcode_override: manualBarcodeOverride.checked,
+        print_without_billing_price: printWithoutBillingPrice.checked,
+        selected_price_code_key: selectedPriceCodeKey.value,
+        force_new_barcode: forceNewBarcode.value,
+        brand: fields.brand.value,
+        item_display_name: fields.item.value,
+        article_no: fields.article.value,
+        size: fields.size.value,
+        batch_no: fields.batch.value,
+        expiry: fields.expiry.value,
+        mrp: fields.mrp.value,
+        selling_price: fields.selling.value,
+        margin_percent: fields.margin.value,
+        show_pricing_fields: pricingFieldsPreferenceVisible,
+        coded_price: fields.coded.value,
+        coded_price_manual_override: codedPriceManualOverride.value === "true",
+        extra_field_values: customFieldState(),
+        copies: fields.copies.value
+      };
+    }
+
+    function saveWorkflowState() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(workflowState()));
+      } catch (error) {
+        // Local storage can be unavailable in locked-down browsers.
+      }
+    }
+
+    function restoreWorkflowState() {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      } catch (error) {
+        saved = null;
+      }
+      if (!saved) {
+        return false;
+      }
+
+      pricingFieldsPreferenceVisible = saved.show_pricing_fields !== undefined ? Boolean(saved.show_pricing_fields) : true;
+      showPricingFieldsToggle.checked = pricingFieldsPreferenceVisible;
+      if (showPricingFieldsValue) {
+        showPricingFieldsValue.value = pricingFieldsPreferenceVisible ? "1" : "0";
+      }
+      applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
+      fields.copies.value = saved.copies || "1";
+      printQuantityInput.value = fields.copies.value;
+
+      if ((initialVariantId && !hasPrintError) || initialBarcode) {
+        return false;
+      }
+
+      categorySelect.value = saved.category || categorySelect.value;
+      templateSelect.value = saved.template_id || templateSelect.value;
+      existingVariantId.value = saved.existing_variant_id || "";
+      familyId.value = saved.family_id || "";
+      familyName.value = saved.family_name || "";
+      variantSearch.value = saved.variant_search || "";
+      workflowMode.value = saved.workflow_mode || "print";
+      manualBarcodeOverride.checked = Boolean(saved.manual_barcode_override);
+      printWithoutBillingPrice.checked = Boolean(saved.print_without_billing_price);
+      selectedPriceCodeKey.value = saved.selected_price_code_key || "";
+      forceNewBarcode.value = saved.force_new_barcode === "true" ? "true" : "false";
+      extraFieldValuesInput.value = JSON.stringify(saved.extra_field_values || {});
+      setCodedPriceManualOverride(Boolean(saved.coded_price_manual_override));
+      fields.barcode.value = saved.barcode || "";
+      fields.brand.value = saved.brand || "";
+      fields.item.value = saved.item_display_name || "";
+      fields.article.value = saved.article_no || "";
+      fields.size.value = saved.size || "";
+      fields.batch.value = saved.batch_no || "";
+      fields.expiry.value = saved.expiry || "";
+      fields.mrp.value = saved.mrp || "";
+      fields.selling.value = saved.selling_price || "";
+      fields.margin.value = saved.margin_percent || "";
+      fields.coded.value = saved.coded_price || "";
+      fields.copies.value = saved.copies || "1";
+      printQuantityInput.value = fields.copies.value;
+      return true;
+    }
+
+    function revokeActualPreviewObjectUrl() {
+      if (actualPreviewUrl) {
+        URL.revokeObjectURL(actualPreviewUrl);
+        actualPreviewUrl = "";
+      }
+    }
+
+    function showCachedTemplatePreview() {
+      revokeActualPreviewObjectUrl();
+      actualPreviewError.hidden = true;
+      actualPreviewError.textContent = "";
+      const template = selectedTemplate();
+      if (template && template.cached_preview_url) {
+        actualPreviewImage.src = template.cached_preview_url;
+        actualPreviewBlock.hidden = false;
+        simulatedPreview.hidden = true;
+        return;
+      }
+      actualPreviewImage.removeAttribute("src");
+      actualPreviewBlock.hidden = true;
+      simulatedPreview.hidden = false;
+    }
+
+    function clearActualPreview() {
+      showCachedTemplatePreview();
+    }
+
+    async function generateActualPreview() {
+      const template = selectedTemplate();
+      if (!template || actualPreviewButton.disabled) {
+        return;
+      }
+
+      actualPreviewButton.disabled = true;
+      actualPreviewButton.textContent = "Generating...";
+      actualPreviewError.hidden = true;
+      actualPreviewError.textContent = "";
+
+      try {
+        const response = await fetch("/new-stock/preview-image", {
+          method: "POST",
+          body: new FormData(form)
+        });
+
+        if (!response.ok) {
+          let message = "Could not generate actual preview.";
+          try {
+            const payload = await response.json();
+            message = payload.error || message;
+          } catch (error) {
+            const text = await response.text();
+            if (text) {
+              message = text;
+            }
+          }
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        if (!blob.type.startsWith("image/")) {
+          throw new Error("BarTender did not return an image preview.");
+        }
+        revokeActualPreviewObjectUrl();
+        actualPreviewUrl = URL.createObjectURL(blob);
+        actualPreviewImage.src = actualPreviewUrl;
+        actualPreviewBlock.hidden = false;
+        simulatedPreview.hidden = true;
+      } catch (error) {
+        showCachedTemplatePreview();
+        actualPreviewError.textContent = error.message || "Could not generate actual preview.";
+        actualPreviewError.hidden = false;
+      } finally {
+        actualPreviewButton.textContent = "Actual Preview";
+        actualPreviewButton.disabled = !(selectedTemplate() && selectedTemplatePathExists() && requiredFieldSet().size > 0);
+      }
+    }
+
+    function showPreviewElement(id, visible) {
+      byId(id).hidden = !visible;
+    }
+
+    function variantLabel(variant) {
+      return [
+        variant.barcode,
+        variant.item_display_name,
+        variant.family_name,
+        variant.brand,
+        variant.category,
+        variant.article_no,
+        variant.batch_no,
+        variant.size,
+        variant.mrp,
+        variant.selling_price,
+        variant.coded_price,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+    }
+
+    function variantSearchText(variant) {
+      return [
+        variant.item_display_name,
+        variant.family_name,
+        variant.barcode,
+        variant.brand,
+        variant.category,
+        variant.article_no,
+        variant.batch_no,
+        variant.size,
+        variant.mrp,
+        variant.selling_price,
+        variant.coded_price,
+        variant.created_at,
+        variant.updated_at,
+        ...(variant.extra_field_values ? Object.values(variant.extra_field_values) : [])
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    function billingItemSearchKey(value) {
+      return normalizedText(value).replace(/\s+/g, "");
+    }
+
+    function comboButtons(menu) {
+      return Array.from(menu.querySelectorAll(".combo-option"));
+    }
+
+    function setComboActive(menu, index) {
+      const buttons = comboButtons(menu);
+      buttons.forEach((button, buttonIndex) => {
+        button.classList.toggle("active", buttonIndex === index);
+      });
+      if (index >= 0 && buttons[index]) {
+        buttons[index].scrollIntoView({block: "nearest"});
+      }
+    }
+
+    function moveComboIndex(currentIndex, rows, delta) {
+      if (!rows.length) {
+        return -1;
+      }
+      if (currentIndex < 0) {
+        return delta > 0 ? 0 : rows.length - 1;
+      }
+      return (currentIndex + delta + rows.length) % rows.length;
+    }
+
+    function scoreVariantMatch(variant, query) {
+      const cleanQuery = normalizedText(query);
+      if (!cleanQuery) {
+        return 0;
+      }
+      const tokens = cleanQuery.split(/\s+/).filter(Boolean);
+      if (!tokens.length) {
+        return 0;
+      }
+      const itemName = normalizedText(variant.item_display_name);
+      const family = normalizedText(variant.family_name);
+      const barcode = normalizedText(variant.barcode);
+      const brand = normalizedText(variant.brand);
+      const article = normalizedText(variant.article_no);
+      const batch = normalizedText(variant.batch_no);
+      const size = normalizedText(variant.size);
+      const category = normalizedText(variant.category);
+      const haystack = normalizedText(variantSearchText(variant));
+      for (const token of tokens) {
+        if (!haystack.includes(token)) {
+          return 0;
+        }
+      }
+      let score = 0;
+      if (itemName === cleanQuery) score += 200;
+      if (family === cleanQuery) score += 190;
+      if (barcode === cleanQuery) score += 180;
+      if (itemName.startsWith(cleanQuery)) score += 120;
+      if (family.startsWith(cleanQuery)) score += 115;
+      if (barcode.startsWith(cleanQuery)) score += 110;
+      if (brand.startsWith(cleanQuery)) score += 90;
+      if (article.startsWith(cleanQuery)) score += 80;
+      if (batch.startsWith(cleanQuery)) score += 75;
+      if (size.startsWith(cleanQuery)) score += 60;
+      if (category.startsWith(cleanQuery)) score += 40;
+      if (haystack.includes(cleanQuery)) score += 25;
+      score += Math.max(0, 30 - Math.abs(haystack.length - cleanQuery.length));
+      score += tokens.length * 5;
+      return score;
+    }
+
+    function searchVariants(query, limit = 12) {
+      const cleanQuery = String(query || "").trim();
+      if (!cleanQuery) {
+        return [];
+      }
+      return variants
+        .map(variant => ({variant, score: scoreVariantMatch(variant, cleanQuery)}))
+        .filter(row => row.score > 0)
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          return String(left.variant.item_display_name || left.variant.family_name || left.variant.barcode || "")
+            .localeCompare(String(right.variant.item_display_name || right.variant.family_name || right.variant.barcode || ""));
+        })
+        .slice(0, limit)
+        .map(row => row.variant);
+    }
+
+    function searchFamilies(query, limit = 12) {
+      const cleanQuery = String(query || "").trim();
+      const cleanKey = billingItemSearchKey(cleanQuery);
+      return families
+        .map(family => {
+          const familyName = String(family.family_name || "").trim();
+          const familyKey = billingItemSearchKey(familyName);
+          if (!familyName) {
+            return null;
+          }
+          if (!cleanKey) {
+            return {family, score: 1};
+          }
+          let score = 0;
+          if (familyKey === cleanKey) score += 200;
+          if (familyKey.startsWith(cleanKey)) score += 140;
+          if (familyKey.includes(cleanKey)) score += 100;
+          if (normalizedText(familyName).includes(normalizedText(cleanQuery))) score += 60;
+          if (cleanKey.length < 2 && familyKey.startsWith(cleanKey)) score += 20;
+          return score > 0 ? {family, score} : null;
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          return String(left.family.family_name || "").localeCompare(String(right.family.family_name || ""));
+        })
+        .slice(0, limit)
+        .map(row => row.family);
+    }
+
+    function renderComboMenu(menu, input, rows, emptyMessage, onPick, metaBuilder = null) {
+      menu.innerHTML = "";
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "combo-empty";
+        empty.textContent = emptyMessage;
+        menu.appendChild(empty);
+        return;
+      }
+      rows.forEach(variant => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "combo-option";
+        button.setAttribute("role", "option");
+        button.dataset.variantId = variant.id;
+
+        const title = document.createElement("strong");
+        title.textContent = variant.item_display_name || variant.family_name || "Unnamed item";
+
+        button.appendChild(title);
+        const metaText = typeof metaBuilder === "function" ? metaBuilder(variant) : null;
+        if (metaText) {
+          const meta = document.createElement("span");
+          meta.textContent = metaText;
+          button.appendChild(meta);
+        }
+        let picked = false;
+        const pickOption = event => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (picked) {
+            return;
+          }
+          picked = true;
+          onPick(variant);
+        };
+        button.addEventListener("pointerdown", pickOption);
+        button.addEventListener("mousedown", pickOption);
+        button.addEventListener("click", pickOption);
+        menu.appendChild(button);
+      });
+      input.setAttribute("aria-expanded", "true");
+    }
+
+    function selectedBillingFamily() {
+      return familyId.value ? families.find(family => String(family.id) === String(familyId.value)) || null : null;
+    }
+
+    function renderBillingItemMenu(rows, emptyMessage) {
+      billingItemMenu.innerHTML = "";
+      billingItemMenu.style.display = "";
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "combo-empty";
+        empty.textContent = emptyMessage;
+        billingItemMenu.appendChild(empty);
+      } else {
+        rows.forEach((family, index) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "combo-option";
+          option.dataset.familyId = family.id || "";
+          option.setAttribute("role", "option");
+          option.setAttribute("aria-selected", index === billingActiveIndex ? "true" : "false");
+
+          const title = document.createElement("strong");
+          title.textContent = family.family_name || "Unnamed billing item";
+          option.appendChild(title);
+
+          let picked = false;
+          const select = event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            focusDebug("billing option click", {eventType: event.type, familyId: option.dataset.familyId});
+            if (picked) {
+              return;
+            }
+            picked = true;
+            const selected = families.find(item => String(item.id) === String(option.dataset.familyId));
+            if (selected) {
+              selectBillingItem(selected, true);
+              window.setTimeout(moveAfterBillingItem, 80);
+            }
+          };
+          option.addEventListener("pointerdown", event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          });
+          option.addEventListener("mousedown", event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          });
+          option.addEventListener("click", select);
+          billingItemMenu.appendChild(option);
+        });
+      }
+      billingMenuOpen = true;
+      billingItemMenu.hidden = false;
+      billingItemCombo.classList.add("open");
+      familyName.setAttribute("aria-expanded", "true");
+      setComboActive(billingItemMenu, billingActiveIndex);
+    }
+
+    function refreshBillingItemMenu(showAll = false) {
+      const query = String(familyName.value || "").trim();
+      if (!showAll && !query) {
+        closeBillingItemMenu();
+        return;
+      }
+      billingMatches = searchFamilies(query, 12);
+      billingActiveIndex = billingMatches.length ? 0 : -1;
+      renderBillingItemMenu(
+        billingMatches,
+        query ? "No matching billing items" : "No billing items yet"
+      );
+    }
+
+    function closeBillingItemMenu(forceBlur = false) {
+      billingMenuOpen = false;
+      billingItemCombo.classList.remove("open");
+      familyName.setAttribute("aria-expanded", "false");
+      billingMatches = [];
+      billingActiveIndex = -1;
+      billingItemMenu.innerHTML = "";
+      billingItemMenu.hidden = true;
+      billingItemMenu.style.display = "none";
+      if (forceBlur && document.activeElement === familyName) {
+        familyName.blur();
+      }
+    }
+
+    function topBillingSuggestion() {
+      return familyName.value.trim() ? searchFamilies(familyName.value, 1)[0] || null : null;
+    }
+
+    function moveAfterBillingItem() {
+      closeBillingItemMenu();
+      redirectBillingFocusUntil = Date.now() + 900;
+      let attempts = 0;
+      const focusNext = () => {
+        closeBillingItemMenu();
+        const target = preferredFieldAfterBillingItem();
+        focusDebug("billing focus attempt", {
+          attempt: attempts + 1,
+          target: elementName(target),
+          targetVisible: Boolean(target && target.offsetParent !== null),
+          targetDisabled: Boolean(target && target.disabled),
+          familyFocused: document.activeElement === familyName,
+        });
+        if (target && target !== familyName) {
+          familyName.blur();
+          focusFieldNow(target);
+          if (document.activeElement === familyName) {
+            const wasDisabled = familyName.disabled;
+            familyName.disabled = true;
+            focusDebug("billing focus fallback disable", {target: elementName(target)});
+            focusFieldNow(target);
+            window.setTimeout(() => {
+              familyName.disabled = wasDisabled;
+            }, 60);
+          }
+          closeBillingItemMenu();
+        }
+        attempts += 1;
+        if (attempts < 8) {
+          window.setTimeout(focusNext, 40);
+        }
+      };
+      window.setTimeout(focusNext, 0);
+      requestAnimationFrame(focusNext);
+      window.setTimeout(focusNext, 160);
+    }
+
+    function filteredVariants() {
+      return searchVariants(variantSearch.value, 12);
+    }
+
+    function renderVariantMenu() {
+      variantMenuRows = filteredVariants();
+      variantMenuIndex = variantMenuRows.length ? 0 : -1;
+      renderComboMenu(
+        variantSearchMenu,
+        variantSearch,
+        variantMenuRows,
+        variantSearch.value.trim() ? "No matching items" : "Type to search existing items",
+        variant => commitVariantSearchSelection(variant),
+        variant => [
+          variant.barcode,
+          variant.family_name,
+          variant.brand,
+          variant.category,
+          variant.article_no,
+          variant.batch_no,
+          variant.size,
+          variant.mrp,
+          variant.selling_price,
+          variant.coded_price,
+          variant.created_at,
+          variant.updated_at,
+          ...(variant.extra_field_values ? Object.values(variant.extra_field_values).filter(Boolean).slice(0, 2) : [])
+        ]
+          .filter(Boolean)
+          .join(" / ")
+      );
+      setComboActive(variantSearchMenu, variantMenuIndex);
+    }
+
+    function openVariantMenu() {
+      if (Date.now() < suppressVariantMenuUntil) {
+        return;
+      }
+      renderVariantMenu();
+      if (variantSearch.value.trim() || variantSearchMenu.querySelector(".combo-option")) {
+        variantCombo.classList.add("open");
+        variantSearch.setAttribute("aria-expanded", "true");
+      } else {
+        closeVariantMenu();
+      }
+    }
+
+    function closeVariantMenu() {
+      variantCombo.classList.remove("open");
+      variantSearch.setAttribute("aria-expanded", "false");
+      variantMenuIndex = -1;
+    }
+
+    function commitVariantSearchSelection(variant) {
+      if (!variant) {
+        closeVariantMenu();
+        return;
+      }
+      closeVariantMenu();
+      suppressVariantMenuUntil = Date.now() + 250;
+      populateVariant(variant, false);
+      window.setTimeout(() => variantSearch.blur(), 0);
+      window.setTimeout(closeVariantMenu, 0);
+      window.setTimeout(closeVariantMenu, 120);
+    }
+
+    function selectBillingItem(family, moveFocus = true) {
+      focusDebug("select billing item start", {family: family ? family.family_name : "", moveFocus});
+      closeBillingItemMenu();
+      if (!family) {
+        if (moveFocus) {
+          moveAfterBillingItem();
+        }
+        return;
+      }
+      familyId.value = family.id || "";
+      familyName.value = family.family_name || "";
+      lastBillingInputValue = familyName.value;
+      try {
+        if (family.category) {
+          categorySelect.value = family.category;
+          applyCategory(family.default_template_id || templateSelect.value || "");
+        }
+        if (family.default_template_id) {
+          templateSelect.value = String(family.default_template_id);
+          applyTemplateFields();
+        }
+      } catch (error) {
+        focusDebug("select billing item setup error", {
+          message: error && error.message ? error.message : String(error),
+          family: family.family_name || "",
+        });
+        console.error("ShopBridge billing item setup error", error);
+      }
+      saveWorkflowState();
+      focusDebug("select billing item saved", {family: family.family_name, moveFocus});
+      if (moveFocus) {
+        moveAfterBillingItem();
+      }
+    }
+
+    function handleBillingItemTyping() {
+      const selectedFamily = selectedBillingFamily();
+      if (!familyName.value.trim() || (selectedFamily && !sameText(selectedFamily.family_name, familyName.value))) {
+        familyId.value = "";
+      }
+      lastBillingInputValue = familyName.value;
+      refreshBillingItemMenu(false);
+      saveWorkflowState();
+    }
+
+    function populateVariant(variant, duplicate) {
+      if (!variant) return;
+      clearActualPreview();
+      existingVariantId.value = duplicate ? "" : variant.id;
+      autoMatchVariantId = "";
+      selectedVariantSnapshot = duplicate ? null : {...variant};
+      setForceNewBarcode(Boolean(duplicate));
+      manualBarcodeOverride.checked = false;
+      familyId.value = variant.family_id || "";
+      familyName.value = variant.family_name || "";
+      categorySelect.value = variant.category || categorySelect.value;
+      fields.barcode.value = duplicate ? "" : variant.barcode;
+      fields.brand.value = variant.brand || "";
+      fields.item.value = variant.item_display_name || "";
+      fields.article.value = variant.article_no || "";
+      fields.size.value = variant.size || "";
+      fields.batch.value = variant.batch_no || "";
+      fields.expiry.value = variant.expiry || "";
+      fields.mrp.value = variant.mrp || "";
+      fields.selling.value = variant.selling_price || "";
+      fields.coded.value = variant.coded_price || "";
+      setCodedPriceManualOverride(!duplicate);
+      printWithoutBillingPrice.checked = Boolean(variant.billing_price_missing);
+      selectedPriceCodeKey.value = "";
+      extraFieldValuesInput.value = JSON.stringify(variant.extra_field_values || {});
+      variantSearch.value = variantLabel(variant);
+      applyCategory(variant.template_id || "");
+      setCustomFieldValues(variant.extra_field_values || {});
+      setMode(duplicate ? "new_barcode" : "print", duplicate ? "Creating new barcode from previous item" : "Updating selected item");
+      if (duplicate) {
+        requestGeneratedBarcode(false);
+      } else {
+        refreshBarcodeControls();
+      }
+      updatePreview();
+      saveWorkflowState();
+      focusFirstTemplateField();
+    }
+
+    function updatePreview() {
+      const required = requiredFieldSet();
+      const hasTemplate = Boolean(templateSelect.value && selectedTemplate());
+      const pathReady = selectedTemplatePathExists();
+      byId("previewBrand").textContent = fields.brand.value || familyName.value || "Brand";
+      byId("previewName").textContent = fields.item.value || "Sticker Name";
+      byId("previewArticle").textContent = "Article: " + (fields.article.value || "-");
+      byId("previewSize").textContent = "Size: " + (fields.size.value || "-");
+      byId("previewBatch").textContent = "Batch: " + (fields.batch.value || "-");
+      byId("previewExpiry").textContent = "Exp: " + (fields.expiry.value || "-");
+      byId("previewMrp").textContent = "MRP: Rs. " + money(fields.mrp.value);
+      byId("previewCode").textContent = "Code: " + (fields.coded.value || "-");
+      byId("previewBarcode").textContent = fields.barcode.value || "auto";
+      refreshRecordDecision();
+      templateBadge.textContent = !hasTemplate
+        ? "Select template"
+        : !pathReady
+          ? "Missing .btw"
+          : required.size === 0
+            ? "Fields not mapped"
+            : templateName(templateSelect.value);
+
+      const showMappedPreview = hasTemplate && pathReady && required.size > 0;
+      showPreviewElement("previewBrandBlock", showMappedPreview && required.has("brand"));
+      showPreviewElement("previewNameBlock", showMappedPreview && requiresItemName(required));
+      showPreviewElement("previewArticle", showMappedPreview && requiresArticle(required));
+      showPreviewElement("previewSize", showMappedPreview && required.has("size"));
+      showPreviewElement("previewBatch", showMappedPreview && required.has("batch_no"));
+      showPreviewElement("previewExpiry", showMappedPreview && required.has("expiry"));
+      showPreviewElement("previewMrp", showMappedPreview && required.has("mrp"));
+      showPreviewElement("previewCode", showMappedPreview && required.has("coded_price"));
+      showPreviewElement("previewBarcodeBlock", showMappedPreview && required.has("barcode"));
+      byId("previewArticleSizeLine").hidden = !showMappedPreview || (!requiresArticle(required) && !required.has("size"));
+      byId("previewBatchMrpLine").hidden = !showMappedPreview || (!required.has("batch_no") && !required.has("expiry") && !required.has("mrp"));
+    }
+
+    variantSearch.addEventListener("focus", openVariantMenu);
+    variantSearch.addEventListener("input", openVariantMenu);
+    variantSearch.addEventListener("input", saveWorkflowState);
+    variantSearch.addEventListener("change", () => {
+      const variant = filteredVariants()[0] || variants.find(item => sameText(variantLabel(item), variantSearch.value));
+      commitVariantSearchSelection(variant);
+    });
+    variantSearch.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeVariantMenu();
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!variantCombo.classList.contains("open")) {
+          openVariantMenu();
+        }
+        variantMenuIndex = moveComboIndex(variantMenuIndex, variantMenuRows, event.key === "ArrowDown" ? 1 : -1);
+        setComboActive(variantSearchMenu, variantMenuIndex);
+        return;
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const exact = variantMenuRows[variantMenuIndex >= 0 ? variantMenuIndex : 0] || filteredVariants()[0] || variants.find(item => sameText(variantLabel(item), variantSearch.value));
+        if (exact) {
+          commitVariantSearchSelection(exact);
+        }
+      }
+    });
+    variantSearch.addEventListener("blur", () => {
+      window.setTimeout(closeVariantMenu, 120);
+    });
+    variantSearchToggle.addEventListener("click", () => {
+      if (variantCombo.classList.contains("open")) {
+        closeVariantMenu();
+      } else {
+        variantSearch.focus();
+        openVariantMenu();
+      }
+    });
+    document.addEventListener("mousedown", event => {
+      if (!variantCombo.contains(event.target)) {
+        closeVariantMenu();
+      }
+      if (billingItemCombo && !billingItemCombo.contains(event.target)) {
+        closeBillingItemMenu();
+      }
+    });
+
+    if (focusDebugEnabled) {
+      [familyName, fields.coded, fields.mrp, templateSelect].forEach(field => {
+        if (!field) {
+          return;
+        }
+        field.addEventListener("focus", event => focusDebug("focus event", {field: elementName(event.target)}));
+        field.addEventListener("blur", event => focusDebug("blur event", {field: elementName(event.target)}));
+      });
+    }
+
+    familyName.addEventListener("focus", () => {
+      if (Date.now() < redirectBillingFocusUntil) {
+        focusDebug("billing focus redirected");
+        window.setTimeout(() => {
+          const target = firstFieldAfterBillingItem();
+          if (target && target !== familyName) {
+            focusFieldNow(target);
+          }
+        }, 0);
+      }
+    });
+    familyName.addEventListener("input", handleBillingItemTyping);
+    familyName.addEventListener("keyup", event => {
+      if (["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab"].includes(event.key)) {
+        return;
+      }
+      if (familyName.value !== lastBillingInputValue) {
+        handleBillingItemTyping();
+      }
+    });
+    familyName.addEventListener("change", () => {
+      if (!familyName.value.trim()) {
+        familyId.value = "";
+      }
+      saveWorkflowState();
+    });
+    familyName.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeBillingItemMenu();
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!billingMenuOpen) {
+          refreshBillingItemMenu(true);
+        }
+        billingActiveIndex = moveComboIndex(billingActiveIndex, billingMatches, event.key === "ArrowDown" ? 1 : -1);
+        setComboActive(billingItemMenu, billingActiveIndex);
+        return;
+      }
+      if (event.key !== "Enter") {
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (billingMenuOpen && !billingMatches.length) {
+        closeBillingItemMenu();
+        moveAfterBillingItem();
+        return;
+      }
+      const suggestion = billingMatches[billingActiveIndex >= 0 ? billingActiveIndex : 0] || topBillingSuggestion();
+      if (!suggestion) {
+        const selectedFamily = selectedBillingFamily();
+        if (selectedFamily && !sameText(selectedFamily.family_name, familyName.value)) {
+          familyId.value = "";
+        }
+        saveWorkflowState();
+        moveAfterBillingItem();
+        return;
+      }
+      selectBillingItem(suggestion, true);
+    });
+    familyName.addEventListener("blur", () => {
+      window.setTimeout(closeBillingItemMenu, 120);
+    });
+    billingItemToggle.addEventListener("click", () => {
+      if (billingMenuOpen) {
+        closeBillingItemMenu(true);
+      } else {
+        familyName.focus();
+        refreshBillingItemMenu(true);
+      }
+    });
+
+    categorySelect.addEventListener("change", () => {
+      clearActualPreview();
+      applyCategory();
+      saveWorkflowState();
+    });
+
+    templateSelect.addEventListener("change", () => {
+      clearActualPreview();
+      applyTemplateFields();
+      saveWorkflowState();
+    });
+
+    openTemplateButton.addEventListener("click", () => {
+      const template = selectedTemplate();
+      if (!template || openTemplateButton.disabled) {
+        return;
+      }
+      openTemplateForm.action = `/templates/${template.id}/open`;
+      openTemplateForm.submit();
+    });
+
+    document.querySelectorAll("form[action$='extract-fields']").forEach(extractForm => {
+      extractForm.addEventListener("submit", () => {
+        document.querySelectorAll("#extractTemplateFieldsButton, #refreshTemplateFieldsButton, form[action$='extract-fields'] button").forEach(button => {
+          button.disabled = true;
+          button.textContent = "Extracting fields...";
+        });
+      });
+    });
+
+    Object.values(fields).forEach(field => {
+      if (field === fields.coded) {
+        return;
+      }
+      field.addEventListener("input", () => {
+        clearActualPreview();
+        showPricingMessage("");
+        selectedPriceCodeKey.value = "";
+        refreshPriceCodeDetection();
+        updatePreview();
+        saveWorkflowState();
+      });
+      field.addEventListener("change", () => {
+        clearActualPreview();
+        showPricingMessage("");
+        selectedPriceCodeKey.value = "";
+        refreshPriceCodeDetection();
+        updatePreview();
+        saveWorkflowState();
+      });
+    });
+
+    fields.coded.addEventListener("input", () => {
+      fields.coded.value = fields.coded.value.toUpperCase();
+      setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
+      clearActualPreview();
+      showPricingMessage("");
+      selectedPriceCodeKey.value = "";
+      refreshPriceCodeDetection();
+      updatePreview();
+      saveWorkflowState();
+    });
+    fields.coded.addEventListener("change", () => {
+      fields.coded.value = fields.coded.value.toUpperCase();
+      setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
+      clearActualPreview();
+      showPricingMessage("");
+      selectedPriceCodeKey.value = "";
+      refreshPriceCodeDetection();
+      updatePreview();
+      saveWorkflowState();
+    });
+
+    actualPreviewButton.addEventListener("click", generateActualPreview);
+    
+    fields.margin.addEventListener("input", () => {
+      const marginRaw = String(fields.margin.value || "").trim();
+      const marginPercent = Number(marginRaw);
+      
+      if (marginRaw && Number.isFinite(marginPercent) && marginPercent >= 0 && marginPercent < 100) {
+        const candidates = currentPriceCodeCandidates();
+        const selectedKey = String(selectedPriceCodeKey.value || "").trim();
+        const selectedCandidate = selectedKey
+          ? candidates.find(candidate => (candidate.key || candidateKey(candidate)) === selectedKey)
+          : (candidates.length > 0 ? candidates[0] : null);
+          
+        const sellingPrice = selectedCandidate ? Number(selectedCandidate.selling_price) : 0;
+        
+        if (sellingPrice && Number.isFinite(sellingPrice) && sellingPrice > 0) {
+          const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
+          // Show the unrounded, actual value to 2 decimal places as preview
+          marginInlineMessage.textContent = `Rs. ${calculatedMrp.toFixed(2)}`;
+          marginInlinePanel.hidden = false;
+          return;
+        }
+      }
+      marginInlinePanel.hidden = true;
+    });
+
+    fields.margin.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        calculateMrpFromMargin();
+      }
+    });
+
+    Array.from(new Set([variantSearch, fields.margin, ...Object.values(inputByField)])).forEach(field => {
+      field.addEventListener("focus", () => field.select());
+      field.addEventListener("click", () => field.select());
+      field.addEventListener("keydown", handleEntryArrowNavigation);
+    });
+
+    reuseMatchButton.addEventListener("click", () => {
+      const match = selectedVariant();
+      if (match) {
+        setForceNewBarcode(false);
+        populateVariant(match, false);
+      }
+    });
+
+    newBarcodeFromMatchButton.addEventListener("click", () => {
+      setForceNewBarcode(true);
+      existingVariantId.value = "";
+      autoMatchVariantId = "";
+      selectedVariantSnapshot = null;
+      fields.barcode.value = "";
+      manualBarcodeOverride.checked = false;
+      setMode("new_barcode", "Creating new barcode");
+      matchSuggestion.hidden = true;
+      requestGeneratedBarcode(true);
+      updatePreview();
+      saveWorkflowState();
+    });
+
+    createNewPriceButton.addEventListener("click", () => {
+      setForceNewBarcode(true);
+      fields.barcode.value = "";
+      manualBarcodeOverride.checked = false;
+      setMode("new_barcode", "Creating new barcode for changed details");
+      priceDecisionWarning.hidden = true;
+      requestGeneratedBarcode(true);
+      updatePreview();
+      saveWorkflowState();
+    });
+
+    updateExistingPriceButton.addEventListener("click", () => {
+      const variant = selectedVariant();
+      setForceNewBarcode(false);
+      showExistingBarcodeState(variant);
+      setMode("update_existing", "Updating existing barcode");
+      priceDecisionWarning.hidden = true;
+      updatePreview();
+      saveWorkflowState();
+    });
+
+    manualBarcodeOverride.addEventListener("change", () => {
+      refreshBarcodeControls();
+      saveWorkflowState();
+    });
+
+    printWithoutBillingPrice.addEventListener("change", () => {
+      refreshPriceCodeDetection();
+      updatePreview();
+      saveWorkflowState();
+    });
+
+    showPricingFieldsToggle.addEventListener("change", () => {
+      setPricingFieldsPreference(showPricingFieldsToggle.checked, true);
+      refreshPriceCodeDetection();
+      updatePreview();
+    });
+
+    regenerateBarcodeButton.addEventListener("click", () => {
+      setForceNewBarcode(true);
+      fields.barcode.value = "";
+      manualBarcodeOverride.checked = false;
+      setMode("new_barcode", "Creating new barcode");
+      requestGeneratedBarcode(true);
+      updatePreview();
+      saveWorkflowState();
+    });
+
+    form.addEventListener("submit", event => {
+      if (!allowFormSubmit) {
+        event.preventDefault();
+        printFromInlineQuantity();
+        return;
+      }
+      allowFormSubmit = false;
+    });
+    form.addEventListener("keydown", event => {
+      if (event.key !== "Tab") {
+        return;
+      }
+      const entries = visibleEntryFields();
+      const active = document.activeElement;
+      const index = entries.indexOf(active);
+      if (index === -1) {
+        return;
+      }
+      event.preventDefault();
+      const nextIndex = event.shiftKey
+        ? (index - 1 + entries.length) % entries.length
+        : (index + 1) % entries.length;
+      const next = entries[nextIndex];
+      next.focus();
+      if (typeof next.select === "function") {
+        next.select();
+      }
+    });
+
+    printButton.addEventListener("click", () => {
+      if (!["new_barcode", "update_existing"].includes(workflowMode.value)) {
+        setMode("print", existingVariantId.value ? "Updating selected item" : "New item");
+      }
+      printFromInlineQuantity();
+    });
+
+    printQuantityInput.addEventListener("click", () => printQuantityInput.select());
+    printQuantityInput.addEventListener("input", () => {
+      printQuantityInput.value = printQuantityInput.value.replace(/\D/g, "");
+      fields.copies.value = printQuantityInput.value || "1";
+      saveWorkflowState();
+    });
+    printQuantityInput.addEventListener("keydown", event => {
+      if (printSubmissionPending) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        printFromInlineQuantity();
+      }
+    });
+
+    document.addEventListener("keydown", event => {
+      if (printSubmissionPending) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Control" && !event.repeat) {
+        const now = Date.now();
+        if (window.__shopbridgeLastCtrlAt && now - window.__shopbridgeLastCtrlAt <= 550) {
+          event.preventDefault();
+          window.__shopbridgeLastCtrlAt = 0;
+          printFromInlineQuantity();
+          return;
+        }
+        window.__shopbridgeLastCtrlAt = now;
+        return;
+      }
+      if (event.ctrlKey && event.key === "Enter") {
+        event.preventDefault();
+        printFromInlineQuantity();
+      } else if (event.ctrlKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        printFromInlineQuantity();
+      }
+    });
+
+    document.querySelectorAll(".load-variant").forEach(button => {
+      button.addEventListener("click", () => {
+        const variant = variants.find(item => String(item.id) === String(button.dataset.variantId));
+        populateVariant(variant, false);
+      });
+    });
+
+    document.querySelectorAll(".tag-button").forEach(button => {
+      button.addEventListener("click", () => {
+        const option = Array.from(templateSelect.options).find(item => item.value === button.dataset.templateId);
+        if (option) {
+          option.hidden = false;
+          templateSelect.value = button.dataset.templateId;
+          applyTemplateFields();
+        }
+      });
+    });
+
+    const restoredWorkflowState = restoreWorkflowState();
+    setPricingFieldsPreference(pricingFieldsPreferenceVisible, false);
+    applyCategory(templateSelect.value);
+    if (restoredWorkflowState) {
+      try {
+        setCustomFieldValues(JSON.parse(extraFieldValuesInput.value || "{}"));
+      } catch (error) {
+        setCustomFieldValues({});
+      }
+      refreshPriceCodeDetection();
+    }
+    if (initialVariantId && !(hasPrintError && restoredWorkflowState)) {
+      const initialVariant = variants.find(item => String(item.id) === String(initialVariantId));
+      if (initialVariant) {
+        populateVariant(initialVariant, initialDuplicate);
+      }
+    } else if (hasPrintError && restoredWorkflowState && initialVariantId) {
+      const failedPrintVariant = variants.find(item => String(item.id) === String(initialVariantId));
+      if (failedPrintVariant) {
+        selectedVariantSnapshot = {...failedPrintVariant};
+        existingVariantId.value = failedPrintVariant.id;
+        familyId.value = failedPrintVariant.family_id || familyId.value;
+        if (!manualBarcodeOverride.checked) {
+          fields.barcode.value = failedPrintVariant.barcode || fields.barcode.value;
+        }
+        if (!workflowMode.value || workflowMode.value === "new_barcode") {
+          setMode("print", "Retrying saved item");
+        }
+        refreshBarcodeControls();
+        updatePreview();
+        saveWorkflowState();
+      }
+    } else if (initialBarcode) {
+      fields.barcode.value = initialBarcode;
+      manualBarcodeOverride.checked = true;
+      refreshBarcodeControls();
+      updatePreview();
+      saveWorkflowState();
+    } else if (restoredWorkflowState && existingVariantId.value) {
+      const restoredVariant = variants.find(item => String(item.id) === String(existingVariantId.value));
+      if (restoredVariant) {
+        selectedVariantSnapshot = {...restoredVariant};
+      }
+      refreshBarcodeControls();
+      updatePreview();
+    }
+    if (pageParams.has("printed") || (!initialVariantId && !initialBarcode)) {
+      focusBillingItem();
+    }
+    window.addEventListener("beforeunload", saveWorkflowState);
+  </script>

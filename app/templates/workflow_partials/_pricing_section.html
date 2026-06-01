@@ -1,0 +1,26 @@
+          <label id="codedField" data-field="coded_price">
+            Code
+            <div class="code-entry-row">
+              <input name="coded_price" id="codedInput">
+              <div class="price-code-inline-panel" id="priceCodeInlinePanel" hidden>
+                <span class="field-hint-inline price-code-inline" id="priceCodeInlineMessage" hidden></span>
+                <div class="choice-list compact-choice-list" id="priceCodeInlineChoices" hidden></div>
+              </div>
+            </div>
+          </label>
+          <label id="marginField" data-field="margin_percent" hidden>
+            Margin %
+            <div class="code-entry-row">
+              <input name="margin_percent" id="marginInput" inputmode="decimal">
+              <div class="price-code-inline-panel" id="marginInlinePanel" style="max-width: max-content" hidden>
+                <span class="field-hint-inline price-code-inline ok" id="marginInlineMessage" style="color: var(--primary)"></span>
+              </div>
+            </div>
+          </label>
+          <label id="mrpField" data-field="mrp">
+            MRP
+            <input name="mrp" id="mrpInput" inputmode="decimal">
+          </label>
+        </div>
+        <input type="hidden" name="selling_price" id="sellingInput">
+        <div class="workflow-state warn-state compact-message" id="pricingCalcMessage" hidden></div>

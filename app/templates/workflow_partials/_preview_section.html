@@ -1,0 +1,31 @@
+      <section class="panel preview-panel">
+        <div class="section-line">
+          <h2>Sticker Preview</h2>
+          <div class="form-actions">
+            <button class="button small" type="button" id="actualPreviewButton" disabled>Actual Preview</button>
+            <span class="badge warn" id="templateBadge">Template</span>
+          </div>
+        </div>
+        <div class="actual-preview" id="actualPreviewBlock" hidden>
+          <img id="actualPreviewImage" alt="BarTender template preview">
+        </div>
+        <div class="error compact-message" id="actualPreviewError" hidden></div>
+        <div class="sticker compact-sticker" id="simulatedPreview">
+          <div class="sticker-brand" id="previewBrandBlock"><span id="previewBrand">Brand</span></div>
+          <div class="sticker-name" id="previewNameBlock"><span id="previewName">Sticker Name</span></div>
+          <div class="sticker-line" id="previewArticleSizeLine">
+            <span id="previewArticle">Art: -</span>
+            <span id="previewSize">Size: -</span>
+          </div>
+          <div class="sticker-line" id="previewBatchMrpLine">
+            <span id="previewBatch">Batch: -</span>
+            <span id="previewExpiry">Exp: -</span>
+            <span id="previewMrp">MRP: Rs. 0.00</span>
+          </div>
+          <div class="sticker-code" id="previewCode">Code: -</div>
+          <div id="previewBarcodeBlock">
+            <div class="barcode-bars"></div>
+            <div class="barcode-text" id="previewBarcode">auto</div>
+          </div>
+        </div>
+      </section>
