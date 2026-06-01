@@ -51,12 +51,10 @@ from app.services.template_preview_service import (
     refresh_cached_template_preview,
 )
 from app.services.template_filters import register_template_filters
+from app.services.workflow.context_service import workflow_context
 from app.services.workflow.form_state_service import (
-    family_payload as _family_payload,
     format_extra_field_values as _format_extra_field_values,
     parse_extra_field_values as _parse_extra_field_values,
-    size_values as _size_values,
-    variant_payload as _variant_payload,
     variant_template_id as _variant_template_id,
 )
 from app.services.workflow.pricing_workflow_service import (
@@ -64,7 +62,6 @@ from app.services.workflow.pricing_workflow_service import (
     find_candidate_by_key as _find_candidate_by_key,
     money as _money,
 )
-from app.services.workflow.template_field_service import template_payload as _template_payload
 from app.services.workflow.validation_service import (
     decimal_or_none as _decimal_or_none,
     int_or_none as _int_or_none,
@@ -83,56 +80,6 @@ CATEGORY_CHOICES = [
     {"value": "gifts", "label": "Gifts"},
     {"value": "toys", "label": "Toys"},
 ]
-
-
-def _active_templates(db: Session) -> list[TemplateMaster]:
-    return db.execute(
-        select(TemplateMaster)
-        .where(TemplateMaster.active_status == True)  # noqa: E712
-        .order_by(TemplateMaster.category, TemplateMaster.template_name)
-    ).scalars().all()
-
-
-def _active_families(db: Session) -> list[ProductFamily]:
-    return db.execute(
-        select(ProductFamily)
-        .where(ProductFamily.active_status == True)  # noqa: E712
-        .order_by(ProductFamily.category, ProductFamily.family_name)
-    ).scalars().all()
-
-
-def _search_variants(db: Session) -> list[LabelVariant]:
-    return db.execute(
-        select(LabelVariant)
-        .where(LabelVariant.status == "active")
-        .order_by(LabelVariant.updated_at.desc(), LabelVariant.id.desc())
-    ).scalars().all()
-
-
-def _recent_variants(db: Session, limit: int = 80) -> list[LabelVariant]:
-    return _search_variants(db)[:limit]
-
-
-def _recent_templates(db: Session, template_rows: list[TemplateMaster]) -> list[TemplateMaster]:
-    seen: set[int] = set()
-    recent: list[TemplateMaster] = []
-    jobs = db.execute(
-        select(PrintJob).order_by(PrintJob.created_at.desc(), PrintJob.id.desc()).limit(40)
-    ).scalars().all()
-    for job in jobs:
-        if job.template and job.template.active_status and job.template.id not in seen:
-            recent.append(job.template)
-            seen.add(job.template.id)
-        if len(recent) >= 6:
-            return recent
-
-    for template in template_rows:
-        if template.id not in seen:
-            recent.append(template)
-            seen.add(template.id)
-        if len(recent) >= 6:
-            break
-    return recent
 
 
 def _find_or_create_family(
@@ -380,62 +327,20 @@ def _workflow_context(
     initial_duplicate: bool = False,
     initial_barcode: str = "",
 ) -> dict[str, object]:
-    scan_bartender_template_folder(db)
-    families = _active_families(db)
-    template_rows = _active_templates(db)
-    variants = _search_variants(db)
-    recent_variants = _recent_variants(db)
-    recent_jobs = db.execute(
-        select(PrintJob).order_by(PrintJob.created_at.desc(), PrintJob.id.desc()).limit(10)
-    ).scalars().all()
-    recent_template_rows = _recent_templates(db, template_rows)
-
-    template_payloads = [_template_payload(template) for template in template_rows]
-    recent_template_ids = {template.id for template in recent_template_rows}
-    for template in template_payloads:
-        template["recent"] = template["id"] in recent_template_ids
-
-    price_code_settings = get_price_code_settings()
-    return {
-        "request": request,
-        "message": message,
-        "warning": warning,
-        "error": error,
-        "categories": CATEGORY_CHOICES,
-        "families": families,
-        "families_json": [_family_payload(family) for family in families],
-        "template_rows": template_rows,
-        "templates_json": template_payloads,
-        "variants_json": [_variant_payload(variant) for variant in variants],
-        "recent_items": recent_variants[:12],
-        "recent_templates": recent_template_rows,
-        "recent_jobs": recent_jobs,
-        "size_values_json": _size_values(variants, CATEGORY_CHOICES),
-        "selected_template_id": selected_template_id,
-        "selected_category": selected_category,
-        "initial_variant_id": initial_variant_id,
-        "initial_duplicate": initial_duplicate,
-        "initial_barcode": normalize_barcode(initial_barcode),
-        "pricing_settings": get_pricing_settings(),
-        "price_code_settings": price_code_settings,
-        "price_code_settings_json": {
-            "digit_to_code": price_code_settings.digit_to_code,
-            "code_to_digit": price_code_settings.code_to_digit,
-            "price_code_letters": price_code_settings.price_code_letters,
-            "allow_extraction": price_code_settings.allow_extraction,
-        },
-        "pricing_fields_visible": pricing_fields_visible,
-        "template_path_exists": template_path_exists,
-        "template_warning": (
-            "No active template was found. Add one in Settings -> Templates."
-            if not template_rows
-            else (
-                None
-                if any(template_path_exists(template) for template in template_rows)
-                else "Templates exist, but their .btw file paths are missing on this PC. Fix the path in Settings before extracting fields or printing."
-            )
-        ),
-    }
+    return workflow_context(
+        request,
+        db,
+        category_choices=CATEGORY_CHOICES,
+        message=message,
+        warning=warning,
+        error=error,
+        pricing_fields_visible=pricing_fields_visible,
+        selected_template_id=selected_template_id,
+        selected_category=selected_category,
+        initial_variant_id=initial_variant_id,
+        initial_duplicate=initial_duplicate,
+        initial_barcode=initial_barcode,
+    )
 
 
 @router.get("/new-stock", response_class=HTMLResponse)
