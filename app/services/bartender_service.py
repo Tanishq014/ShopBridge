@@ -49,6 +49,14 @@ def _money(value: Decimal | None) -> str:
     return f"{value:.2f}"
 
 
+def _compact_money(value: Decimal | None) -> str:
+    if value is None:
+        return ""
+    if value == value.to_integral_value():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 def _extra_field_values(value: str | None) -> dict[str, str]:
     if not value:
         return {}
@@ -91,7 +99,7 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
         "batch_no": variant.batch_no or "",
         "season": variant.season or "",
         "expiry": variant.expiry or "",
-        "mrp": _money(variant.mrp),
+        "mrp": _compact_money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
         "code": variant.coded_price or "",
@@ -134,7 +142,7 @@ def _named_substring_values(job: PrintJob) -> dict[str, str]:
         "size": variant.size or "",
         "batch_no": variant.batch_no or "",
         "expiry": variant.expiry or "",
-        "mrp": _money(variant.mrp),
+        "mrp": _compact_money(variant.mrp),
         "selling_price": _money(variant.selling_price),
         "coded_price": variant.coded_price or "",
         "code": variant.coded_price or "",

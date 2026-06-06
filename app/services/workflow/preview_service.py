@@ -10,7 +10,7 @@ from app.services.price_code_service import generate_coded_price
 from app.services.settings_service import get_bartender_settings, get_price_code_settings
 from app.services.template_preview_service import refresh_cached_template_preview
 from app.services.workflow.form_state_service import parse_extra_field_values
-from app.services.workflow.pricing_workflow_service import money
+from app.services.workflow.pricing_workflow_service import compact_money, money
 from app.services.workflow.validation_service import decimal_or_none
 
 
@@ -71,7 +71,7 @@ def form_field_values(
         "size": size.strip(),
         "batch_no": batch_no.strip(),
         "expiry": expiry.strip(),
-        "mrp": money(mrp_value),
+        "mrp": compact_money(mrp_value),
         "selling_price": money(selling),
         "coded_price": coded,
     }

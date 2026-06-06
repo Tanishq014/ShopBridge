@@ -24,12 +24,14 @@ from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import LabelVariant, PosCartItem, PrintJob, TemplateMaster  # noqa: E402
 from app.routes import pos, templates as template_routes, workflow  # noqa: E402
 from app.services.workflow import print_orchestration_service, print_service  # noqa: E402
+from app.services.bartender_service import _named_substring_values  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
 from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: E402
 from app.services.price_code_service import extract_candidates_from_field, generate_coded_price  # noqa: E402
 from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
 from app.services.settings_service import save_barcode_settings, save_price_code_settings  # noqa: E402
 from app.services.template_folder_service import template_file_changed_since_extract  # noqa: E402
+from app.services.workflow.form_state_service import variant_payload  # noqa: E402
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -152,11 +154,18 @@ def main() -> None:
             )
         settings_markup = (ROOT / "app" / "templates" / "settings.html").read_text(encoding="utf-8")
         pos_markup = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
+        app_css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
         assert_true("printQuantityInput" in workflow_markup and "printFromInlineQuantity" in workflow_markup, "inline print quantity flow missing")
         assert_true("Printing..." in workflow_markup and "printSubmissionPending" in workflow_markup, "print double-submit loading guard missing")
         assert_true("event.key === \"Enter\"" in workflow_markup and "printFromInlineQuantity();" in workflow_markup, "Enter on print quantity does not trigger print")
+        assert_true("resetPrintSubmissionState" in workflow_markup and "form.addEventListener(\"invalid\"" in workflow_markup, "browser validation can leave print stuck")
+        assert_true("restoreVariantForRetry" in workflow_markup and "hasPrintError && initialVariantId" in workflow_markup, "print error retry state is not restored from saved item")
         assert_true("scanner_qr_url" in pos_markup and "scanner_url" in settings_markup, "scanner QR URL is not rendered")
+        assert_true("applyTemplatePlaceholders" in workflow_markup and "setInputPlaceholder" in workflow_markup, "template defaults are not wired as placeholders")
+        assert_true("input.value = defaultValue" not in workflow_markup, "template defaults should not auto-fill submitted values")
+        assert_true("variant_search: selectedSearchVariant ? variantLabel(selectedSearchVariant) : \"\"" in workflow_markup, "partial existing-item search text can be persisted")
+        assert_true(".combo-option.active" in app_css and "background: #1f6feb" in app_css, "dropdown active row styling is not high contrast")
 
         alias_settings = save_price_code_settings(
             digit_to_code={
@@ -250,6 +259,9 @@ def main() -> None:
         assert_true(not has_consecutive_numbers(first_barcode), "generated barcode has consecutive numbers")
         assert_true(db.query(PrintJob).filter_by(variant_id=first.id).count() == 1, "new item print job missing")
         assert_true(str(first.selling_price) in {"11.00", "11"}, "code field did not set selling price")
+        first_job = db.query(PrintJob).filter_by(variant_id=first.id).one()
+        assert_true(variant_payload(first)["mrp"] == "100", "MRP payload should not add .00 for whole numbers")
+        assert_true(_named_substring_values(first_job)["mrp"] == "100", "BarTender MRP value should not add .00 for whole numbers")
 
         print_item(
             db,

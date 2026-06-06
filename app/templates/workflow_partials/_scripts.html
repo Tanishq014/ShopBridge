@@ -90,6 +90,7 @@
     const storageKey = "shopbridge.newStockState.v3";
     const pageParams = new URLSearchParams(window.location.search);
     const hasPrintError = pageParams.has("print_error");
+    const urlTemplateId = pageParams.get("template_id") || "";
     const focusDebugEnabled = pageParams.has("focus_debug") || localStorage.getItem("shopbridge.focusDebug") === "1";
     const fields = {
       barcode: document.getElementById("barcodeInput"),
@@ -152,6 +153,7 @@
       coded_price: byId("codedField"),
       barcode: byId("barcodeField")
     };
+    const basePlaceholders = {};
 
     function byId(id) {
       return document.getElementById(id);
@@ -189,7 +191,21 @@
 
     function money(value) {
       const number = Number(value || 0);
-      return number.toFixed(2);
+      if (!Number.isFinite(number)) {
+        return String(value || "");
+      }
+      if (Number.isInteger(number)) {
+        return String(number);
+      }
+      return number.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    }
+
+    function mrpInputText(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) {
+        return "";
+      }
+      return money(number);
     }
 
     function normalizedText(value) {
@@ -301,7 +317,7 @@
       }
       
       const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
-      fields.mrp.value = upperRound(calculatedMrp, mrpRounding).toFixed(2);
+      fields.mrp.value = mrpInputText(upperRound(calculatedMrp, mrpRounding));
       showPricingMessage("");
       clearActualPreview();
       updatePreview();
@@ -537,6 +553,13 @@
       printButton.textContent = disabled ? "Printing..." : "Print Labels";
     }
 
+    function resetPrintSubmissionState() {
+      printSubmissionPending = false;
+      allowFormSubmit = false;
+      setPrintControlsDisabled(false);
+      updatePrintAvailability(Boolean(templateSelect.value && selectedTemplate()));
+    }
+
     function submitPrint(copyCount) {
       if (printSubmissionPending) {
         return;
@@ -576,6 +599,19 @@
         return;
       }
       submitPrint(printQuantityInput.value);
+    }
+
+    function restoreVariantForRetry(variant) {
+      if (!variant) {
+        return;
+      }
+      populateVariant(variant, false);
+      setForceNewBarcode(false);
+      setMode("print", "Retrying saved item");
+      showExistingBarcodeState(variant);
+      refreshBarcodeControls();
+      updatePreview();
+      saveWorkflowState();
     }
 
     function visibleEntryFields() {
@@ -798,6 +834,43 @@
         }
       }
       return "";
+    }
+
+    function captureBasePlaceholders() {
+      basePlaceholders.family_name = familyName.getAttribute("placeholder") || "";
+      Object.entries(inputByField).forEach(([fieldName, input]) => {
+        basePlaceholders[fieldName] = input.getAttribute("placeholder") || "";
+      });
+    }
+
+    function setInputPlaceholder(input, value, fallback = "") {
+      if (!input) {
+        return;
+      }
+      const cleanValue = String(value || "").trim();
+      input.setAttribute("placeholder", cleanValue || fallback || "");
+    }
+
+    function applyTemplatePlaceholders(readyForEntry) {
+      const template = selectedTemplate();
+      if (!readyForEntry || !template) {
+        setInputPlaceholder(familyName, "", basePlaceholders.family_name);
+        Object.entries(inputByField).forEach(([fieldName, input]) => {
+          setInputPlaceholder(input, "", basePlaceholders[fieldName] || "");
+        });
+        return;
+      }
+
+      setInputPlaceholder(
+        familyName,
+        templateDefaultValue(template, "family_name"),
+        basePlaceholders.family_name
+      );
+      dynamicFields.forEach(fieldName => {
+        const input = inputByField[fieldName];
+        const fallback = basePlaceholders[fieldName] || "";
+        setInputPlaceholder(input, templateDefaultValue(template, fieldName), fallback);
+      });
     }
 
     function requiresArticle(required) {
@@ -1061,8 +1134,9 @@
       refreshBarcodeControls();
     }
 
-    function applyCategory(preserveTemplateId) {
+    function applyCategory(preserveTemplateId, options = {}) {
       const category = categorySelect.value;
+      const previousTemplateId = templateSelect.value;
       Array.from(templateSelect.options).forEach(option => {
         const optionCategory = (option.dataset.category || "").toLowerCase();
         option.hidden = !templateAppliesToCategory(optionCategory, category);
@@ -1085,7 +1159,9 @@
       byId("sizeLabel").textContent = settings.size;
       byId("batchLabel").textContent = settings.batch;
       refreshSizeOptions(category);
-      applyTemplateFields();
+      applyTemplateFields({
+        resetCustomValues: Boolean(options.resetCustomValues) || String(previousTemplateId || "") !== String(templateSelect.value || "")
+      });
     }
 
     function refreshSizeOptions(category) {
@@ -1103,13 +1179,18 @@
       return template ? template.template_name : "Template";
     }
 
-    function applyTemplateFields() {
+    function applyTemplateFields(options = {}) {
       const template = selectedTemplate();
       const required = requiredFieldSet();
       const hasTemplate = Boolean(templateSelect.value && template);
       const pathReady = selectedTemplatePathExists();
       const mapped = required.size > 0;
       const readyForEntry = hasTemplate && pathReady && mapped;
+      const actionDisabledReason = !hasTemplate
+        ? "Select a template first."
+        : !pathReady
+          ? "Template .btw file is missing on this PC."
+          : "";
 
       selectTemplateState.hidden = hasTemplate;
       missingTemplateState.hidden = !hasTemplate || pathReady;
@@ -1136,18 +1217,21 @@
         container.hidden = !visible;
         input.required = visible && !["barcode", "coded_price"].includes(fieldName);
       });
-      applyCustomTemplateFields(readyForEntry, required);
+      applyTemplatePlaceholders(readyForEntry);
+      applyCustomTemplateFields(readyForEntry, required, {resetValues: Boolean(options.resetCustomValues)});
       extractTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
       refreshTemplateFieldsButton.disabled = !hasTemplate || !pathReady;
       openTemplateButton.disabled = !hasTemplate || !pathReady;
+      extractTemplateFieldsButton.title = actionDisabledReason;
+      refreshTemplateFieldsButton.title = actionDisabledReason;
+      openTemplateButton.title = actionDisabledReason;
       extractTemplateId.value = templateSelect.value;
       extractCategory.value = categorySelect.value;
       openTemplateCategory.value = categorySelect.value;
-      applyTemplateDefaults(readyForEntry);
+      showCachedTemplatePreview();
       refreshPriceCodeDetection();
       updatePreview();
       maybeGenerateBarcode(readyForEntry);
-      showCachedTemplatePreview();
       updatePrintAvailability(readyForEntry);
     }
 
@@ -1176,7 +1260,7 @@
       syncExtraFieldValues();
     }
 
-    function applyCustomTemplateFields(readyForEntry, required) {
+    function applyCustomTemplateFields(readyForEntry, required, options = {}) {
       const oldValues = customFieldState();
       let savedValues = {};
       try {
@@ -1199,7 +1283,8 @@
         const input = document.createElement("input");
         input.name = `extra_${fieldName}`;
         input.dataset.extraField = fieldName;
-        input.value = oldValues[fieldName] || savedValues[fieldName] || templateDefaultValue(template, fieldName) || "";
+        input.value = options.resetValues ? "" : (oldValues[fieldName] || savedValues[fieldName] || "");
+        input.placeholder = templateDefaultValue(template, fieldName) || "";
         input.required = true;
         input.addEventListener("input", () => {
           syncExtraFieldValues();
@@ -1226,34 +1311,16 @@
       syncExtraFieldValues();
     }
 
-    function applyTemplateDefaults(readyForEntry) {
-      if (!readyForEntry) {
-        return;
-      }
-      const template = selectedTemplate();
-      const familyDefault = templateDefaultValue(template, "family_name");
-      if (familyDefault && !familyName.value.trim()) {
-        familyName.value = familyDefault;
-      }
-      dynamicFields.forEach(fieldName => {
-        const input = inputByField[fieldName];
-        const container = containerByField[fieldName];
-        const defaultValue = templateDefaultValue(template, fieldName);
-        if (!container.hidden && defaultValue && !String(input.value).trim()) {
-          input.value = defaultValue;
-        }
-      });
-    }
-
     function workflowState() {
       syncExtraFieldValues();
+      const selectedSearchVariant = selectedVariant();
       return {
         category: categorySelect.value,
         template_id: templateSelect.value,
         existing_variant_id: existingVariantId.value,
         family_id: familyId.value,
         family_name: familyName.value,
-        variant_search: variantSearch.value,
+        variant_search: selectedSearchVariant ? variantLabel(selectedSearchVariant) : "",
         workflow_mode: workflowMode.value,
         barcode: existingVariantId.value || manualBarcodeOverride.checked ? fields.barcode.value : "",
         manual_barcode_override: manualBarcodeOverride.checked,
@@ -1309,12 +1376,14 @@
         return false;
       }
 
-      categorySelect.value = saved.category || categorySelect.value;
-      templateSelect.value = saved.template_id || templateSelect.value;
+      if (!urlTemplateId) {
+        categorySelect.value = saved.category || categorySelect.value;
+        templateSelect.value = saved.template_id || templateSelect.value;
+      }
       existingVariantId.value = saved.existing_variant_id || "";
       familyId.value = saved.family_id || "";
       familyName.value = saved.family_name || "";
-      variantSearch.value = saved.variant_search || "";
+      variantSearch.value = saved.existing_variant_id ? (saved.variant_search || "") : "";
       workflowMode.value = saved.workflow_mode || "print";
       manualBarcodeOverride.checked = Boolean(saved.manual_barcode_override);
       printWithoutBillingPrice.checked = Boolean(saved.print_without_billing_price);
@@ -1469,7 +1538,9 @@
     function setComboActive(menu, index) {
       const buttons = comboButtons(menu);
       buttons.forEach((button, buttonIndex) => {
-        button.classList.toggle("active", buttonIndex === index);
+        const active = buttonIndex === index;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
       });
       if (index >= 0 && buttons[index]) {
         buttons[index].scrollIntoView({block: "nearest"});
@@ -1580,6 +1651,8 @@
 
     function renderComboMenu(menu, input, rows, emptyMessage, onPick, metaBuilder = null) {
       menu.innerHTML = "";
+      menu.hidden = false;
+      menu.style.display = "";
       if (!rows.length) {
         const empty = document.createElement("div");
         empty.className = "combo-empty";
@@ -1801,6 +1874,10 @@
     function closeVariantMenu() {
       variantCombo.classList.remove("open");
       variantSearch.setAttribute("aria-expanded", "false");
+      variantSearchMenu.hidden = true;
+      variantSearchMenu.style.display = "none";
+      variantSearchMenu.innerHTML = "";
+      variantMenuRows = [];
       variantMenuIndex = -1;
     }
 
@@ -1832,11 +1909,11 @@
       try {
         if (family.category) {
           categorySelect.value = family.category;
-          applyCategory(family.default_template_id || templateSelect.value || "");
+          applyCategory(family.default_template_id || templateSelect.value || "", {resetCustomValues: false});
         }
         if (family.default_template_id) {
           templateSelect.value = String(family.default_template_id);
-          applyTemplateFields();
+          applyTemplateFields({resetCustomValues: false});
         }
       } catch (error) {
         focusDebug("select billing item setup error", {
@@ -1888,7 +1965,7 @@
       selectedPriceCodeKey.value = "";
       extraFieldValuesInput.value = JSON.stringify(variant.extra_field_values || {});
       variantSearch.value = variantLabel(variant);
-      applyCategory(variant.template_id || "");
+      applyCategory(variant.template_id || "", {resetCustomValues: false});
       setCustomFieldValues(variant.extra_field_values || {});
       setMode(duplicate ? "new_barcode" : "print", duplicate ? "Creating new barcode from previous item" : "Updating selected item");
       if (duplicate) {
@@ -2078,13 +2155,17 @@
 
     categorySelect.addEventListener("change", () => {
       clearActualPreview();
-      applyCategory();
+      closeVariantMenu();
+      closeBillingItemMenu();
+      applyCategory(null, {resetCustomValues: true});
       saveWorkflowState();
     });
 
     templateSelect.addEventListener("change", () => {
       clearActualPreview();
-      applyTemplateFields();
+      closeVariantMenu();
+      closeBillingItemMenu();
+      applyTemplateFields({resetCustomValues: true});
       saveWorkflowState();
     });
 
@@ -2266,6 +2347,18 @@
       }
       allowFormSubmit = false;
     });
+    form.addEventListener("invalid", event => {
+      resetPrintSubmissionState();
+      const target = event.target;
+      if (target && typeof target.focus === "function") {
+        window.setTimeout(() => {
+          target.focus();
+          if (typeof target.select === "function") {
+            target.select();
+          }
+        }, 0);
+      }
+    }, true);
     form.addEventListener("keydown", event => {
       if (event.key !== "Tab") {
         return;
@@ -2336,6 +2429,10 @@
       }
     });
 
+    window.addEventListener("pageshow", () => {
+      resetPrintSubmissionState();
+    });
+
     document.querySelectorAll(".load-variant").forEach(button => {
       button.addEventListener("click", () => {
         const variant = variants.find(item => String(item.id) === String(button.dataset.variantId));
@@ -2349,14 +2446,18 @@
         if (option) {
           option.hidden = false;
           templateSelect.value = button.dataset.templateId;
-          applyTemplateFields();
+          closeVariantMenu();
+          closeBillingItemMenu();
+          applyTemplateFields({resetCustomValues: true});
+          saveWorkflowState();
         }
       });
     });
 
     const restoredWorkflowState = restoreWorkflowState();
     setPricingFieldsPreference(pricingFieldsPreferenceVisible, false);
-    applyCategory(templateSelect.value);
+    captureBasePlaceholders();
+    applyCategory(templateSelect.value, {resetCustomValues: false});
     if (restoredWorkflowState) {
       try {
         setCustomFieldValues(JSON.parse(extraFieldValuesInput.value || "{}"));
@@ -2365,26 +2466,15 @@
       }
       refreshPriceCodeDetection();
     }
-    if (initialVariantId && !(hasPrintError && restoredWorkflowState)) {
+    if (initialVariantId && !hasPrintError) {
       const initialVariant = variants.find(item => String(item.id) === String(initialVariantId));
       if (initialVariant) {
         populateVariant(initialVariant, initialDuplicate);
       }
-    } else if (hasPrintError && restoredWorkflowState && initialVariantId) {
+    } else if (hasPrintError && initialVariantId) {
       const failedPrintVariant = variants.find(item => String(item.id) === String(initialVariantId));
       if (failedPrintVariant) {
-        selectedVariantSnapshot = {...failedPrintVariant};
-        existingVariantId.value = failedPrintVariant.id;
-        familyId.value = failedPrintVariant.family_id || familyId.value;
-        if (!manualBarcodeOverride.checked) {
-          fields.barcode.value = failedPrintVariant.barcode || fields.barcode.value;
-        }
-        if (!workflowMode.value || workflowMode.value === "new_barcode") {
-          setMode("print", "Retrying saved item");
-        }
-        refreshBarcodeControls();
-        updatePreview();
-        saveWorkflowState();
+        restoreVariantForRetry(failedPrintVariant);
       }
     } else if (initialBarcode) {
       fields.barcode.value = initialBarcode;

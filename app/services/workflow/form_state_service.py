@@ -5,7 +5,7 @@ import json
 from app.models import LabelVariant, ProductFamily, TemplateMaster
 from app.services.field_config import normalize_field_name
 from app.services.time_service import format_local_datetime
-from app.services.workflow.pricing_workflow_service import money
+from app.services.workflow.pricing_workflow_service import compact_money, money
 
 
 def parse_extra_field_values(value: str | None) -> dict[str, str]:
@@ -72,7 +72,7 @@ def variant_payload(variant: LabelVariant) -> dict[str, object]:
                 variant.article_no,
                 variant.batch_no,
                 variant.size,
-                money(variant.mrp),
+                compact_money(variant.mrp),
                 money(variant.selling_price),
                 variant.coded_price,
                 *[
@@ -93,7 +93,7 @@ def variant_payload(variant: LabelVariant) -> dict[str, object]:
         "size": variant.size or "",
         "batch_no": variant.batch_no or "",
         "expiry": variant.expiry or "",
-        "mrp": money(variant.mrp),
+        "mrp": compact_money(variant.mrp),
         "selling_price": money(variant.selling_price),
         "coded_price": variant.coded_price or "",
         "billing_price_missing": bool(variant.billing_price_missing),

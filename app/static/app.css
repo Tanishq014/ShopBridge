@@ -392,6 +392,12 @@ textarea {
   width: 100%;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: #7a8699;
+  opacity: 1;
+}
+
 textarea {
   resize: vertical;
 }
@@ -956,7 +962,9 @@ tbody tr:last-child td {
 }
 
 .combo-option.active {
-  background: #dce9ff;
+  background: #1f6feb;
+  box-shadow: inset 4px 0 0 #0f3d8f;
+  color: #ffffff;
 }
 
 .combo-option strong {
@@ -968,6 +976,11 @@ tbody tr:last-child td {
   color: var(--muted);
   font-size: 12px;
   font-weight: 400;
+}
+
+.combo-option.active span,
+.combo-option.active strong {
+  color: #ffffff;
 }
 
 .combo-empty {

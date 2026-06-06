@@ -12,7 +12,7 @@ from app.services.settings_service import get_price_code_settings
 from app.services.template_folder_service import template_path_exists
 from app.services.workflow.form_state_service import format_extra_field_values, parse_extra_field_values
 from app.services.workflow.item_service import find_exact_variant, find_or_create_family
-from app.services.workflow.pricing_workflow_service import candidate_payload, find_candidate_by_key, money
+from app.services.workflow.pricing_workflow_service import candidate_payload, compact_money, find_candidate_by_key, money
 from app.services.workflow.print_service import create_print_job
 from app.services.workflow.validation_service import decimal_or_none, int_or_none, label_details_changed
 
@@ -134,7 +134,7 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
         "size": size_value,
         "batch_no": batch_value,
         "expiry": expiry_value,
-        "mrp": money(mrp_value),
+        "mrp": compact_money(mrp_value),
         "selling_price": money(selling),
         "coded_price": coded,
     }

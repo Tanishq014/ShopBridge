@@ -12,6 +12,14 @@ def money(value: Decimal | None) -> str:
     return f"{value:.2f}"
 
 
+def compact_money(value: Decimal | None) -> str:
+    if value is None:
+        return ""
+    if value == value.to_integral_value():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 def candidate_payload(candidate: PriceCodeCandidate) -> dict[str, str]:
     return {
         "key": candidate.key,
