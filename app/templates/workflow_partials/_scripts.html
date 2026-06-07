@@ -2469,7 +2469,7 @@
       }
     }, true);
     form.addEventListener("keydown", event => {
-      if (event.key !== "Tab") {
+      if (event.key !== "Tab" && !(event.key === "Enter" && active !== printQuantityInput && active !== printButton)) {
         return;
       }
       const entries = visibleEntryFields();

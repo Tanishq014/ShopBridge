@@ -158,6 +158,7 @@ def main() -> None:
         app_css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
         assert_true("familyName.addEventListener(\"click\"" in workflow_markup and "familyName.select();" in workflow_markup, "Billing Item does not select text on click")
+        assert_true("form.addEventListener(\"keydown\"" in workflow_markup and "event.key === \"Enter\"" in workflow_markup and "printQuantityInput" in workflow_markup, "Enter does not reuse Tab-style navigation in the workflow")
         assert_true("printQuantityInput" in workflow_markup and "printFromInlineQuantity" in workflow_markup, "inline print quantity flow missing")
         assert_true("printQuantityDialog" in workflow_markup and "printFromDialogQuantity" in workflow_markup, "Ctrl+P print quantity dialog is missing")
         assert_true("openPrintQuantityDialog();" in workflow_markup, "Ctrl+P does not open the print quantity dialog")
