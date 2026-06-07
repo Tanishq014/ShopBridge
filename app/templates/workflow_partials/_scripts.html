@@ -54,6 +54,7 @@
     const extractTemplateFieldsButton = document.getElementById("extractTemplateFieldsButton");
     const refreshTemplateFieldsButton = document.getElementById("refreshTemplateFieldsButton");
     const openTemplateButton = document.getElementById("openTemplateButton");
+    const templateActionStatus = document.getElementById("templateActionStatus");
     const openTemplateForm = document.getElementById("openTemplateForm");
     const openTemplateCategory = document.getElementById("openTemplateCategory");
     const extractTemplateId = document.getElementById("extractTemplateId");
@@ -61,10 +62,16 @@
     const itemSection = document.getElementById("itemSection");
     const selectTemplateState = document.getElementById("selectTemplateState");
     const missingTemplateState = document.getElementById("missingTemplateState");
+    const missingTemplatePath = document.getElementById("missingTemplatePath");
     const unmappedTemplateState = document.getElementById("unmappedTemplateState");
     const changedTemplateState = document.getElementById("changedTemplateState");
     const printButton = document.getElementById("printButton");
     const printQuantityInput = document.getElementById("printQuantityInput");
+    const printQuantityDialog = document.getElementById("printQuantityDialog");
+    const printDialogQuantityInput = document.getElementById("printDialogQuantityInput");
+    const printQuantityDialogBackdrop = document.getElementById("printQuantityDialogBackdrop");
+    const cancelPrintDialogButton = document.getElementById("cancelPrintDialogButton");
+    const confirmPrintDialogButton = document.getElementById("confirmPrintDialogButton");
     const actualPreviewButton = document.getElementById("actualPreviewButton");
     const actualPreviewBlock = document.getElementById("actualPreviewBlock");
     const actualPreviewImage = document.getElementById("actualPreviewImage");
@@ -79,6 +86,7 @@
     let printSubmissionPending = false;
     let customInputByField = {};
     let pricingFieldsPreferenceVisible = true;
+    let actualPreviewIsGenerated = false;
     let variantMenuRows = [];
     let variantMenuIndex = -1;
     let billingMatches = [];
@@ -154,6 +162,7 @@
       barcode: byId("barcodeField")
     };
     const basePlaceholders = {};
+    const templateDefaultHints = new Map();
 
     function byId(id) {
       return document.getElementById(id);
@@ -550,6 +559,12 @@
     function setPrintControlsDisabled(disabled) {
       printButton.disabled = disabled;
       printQuantityInput.disabled = disabled;
+      if (confirmPrintDialogButton) {
+        confirmPrintDialogButton.disabled = disabled;
+      }
+      if (printDialogQuantityInput) {
+        printDialogQuantityInput.disabled = disabled;
+      }
       printButton.textContent = disabled ? "Printing..." : "Print Labels";
     }
 
@@ -560,13 +575,40 @@
       updatePrintAvailability(Boolean(templateSelect.value && selectedTemplate()));
     }
 
+    function cleanCopyCount(copyCount) {
+      return Math.max(1, Number.parseInt(copyCount || printQuantityInput.value || fields.copies.value || "1", 10) || 1);
+    }
+
+    function closePrintQuantityDialog() {
+      if (printQuantityDialog) {
+        printQuantityDialog.hidden = true;
+      }
+    }
+
+    function openPrintQuantityDialog() {
+      if (printSubmissionPending || !printQuantityDialog || !printDialogQuantityInput) {
+        return;
+      }
+      closeVariantMenu();
+      closeBillingItemMenu();
+      printDialogQuantityInput.value = cleanCopyCount(printQuantityInput.value);
+      printQuantityDialog.hidden = false;
+      window.setTimeout(() => {
+        printDialogQuantityInput.focus();
+        printDialogQuantityInput.select();
+      }, 0);
+    }
+
     function submitPrint(copyCount) {
       if (printSubmissionPending) {
         return;
       }
-      const cleanCopies = Math.max(1, Number.parseInt(copyCount || printQuantityInput.value || fields.copies.value || "1", 10) || 1);
+      const cleanCopies = cleanCopyCount(copyCount);
       fields.copies.value = cleanCopies;
       printQuantityInput.value = cleanCopies;
+      if (printDialogQuantityInput) {
+        printDialogQuantityInput.value = cleanCopies;
+      }
       syncExtraFieldValues();
       refreshPriceCodeDetection();
       saveWorkflowState();
@@ -583,12 +625,13 @@
       }
     }
 
-    function printFromInlineQuantity() {
+    function printWithQuantity(copyCount) {
       if (printSubmissionPending) {
         return;
       }
       refreshPriceCodeDetection();
       if (!readyToPrint()) {
+        closePrintQuantityDialog();
         if (!String(fields.selling.value || "").trim()) {
           setPriceCodeInlineState("Code cannot be decoded. Fix Code to continue.", "warn");
           window.setTimeout(() => {
@@ -598,7 +641,16 @@
         }
         return;
       }
-      submitPrint(printQuantityInput.value);
+      closePrintQuantityDialog();
+      submitPrint(copyCount);
+    }
+
+    function printFromInlineQuantity() {
+      printWithQuantity(printQuantityInput.value);
+    }
+
+    function printFromDialogQuantity() {
+      printWithQuantity(printDialogQuantityInput ? printDialogQuantityInput.value : printQuantityInput.value);
     }
 
     function restoreVariantForRetry(variant) {
@@ -760,9 +812,36 @@
       return templatesData.find(item => String(item.id) === String(templateSelect.value));
     }
 
+    function selectedTemplateOption() {
+      return templateSelect.options[templateSelect.selectedIndex] || null;
+    }
+
     function selectedTemplatePathExists() {
       const template = selectedTemplate();
-      return template ? Boolean(template.path_exists) : false;
+      const option = selectedTemplateOption();
+      return Boolean(
+        (template && template.path_exists) ||
+        (option && option.dataset.pathExists === "1")
+      );
+    }
+
+    function selectedTemplatePathText() {
+      const template = selectedTemplate();
+      const option = selectedTemplateOption();
+      return String(
+        (template && template.bartender_file_path) ||
+        (option && option.dataset.templatePath) ||
+        ""
+      ).trim();
+    }
+
+    function selectedTemplateDisplayText() {
+      const template = selectedTemplate();
+      const option = selectedTemplateOption();
+      if (template) {
+        return `${template.template_name || "Template"} (${template.template_id || template.id})`;
+      }
+      return option ? option.textContent.trim() : "Template";
     }
 
     function normalizeFieldName(fieldName) {
@@ -851,25 +930,55 @@
       input.setAttribute("placeholder", cleanValue || fallback || "");
     }
 
+    function defaultHintHost(input) {
+      if (!input || input.type === "hidden") {
+        return null;
+      }
+      return input.closest(".field-stack") || input.closest("label");
+    }
+
+    function setTemplateDefaultHint(input, value) {
+      const host = defaultHintHost(input);
+      if (!host) {
+        return;
+      }
+      let hint = templateDefaultHints.get(input);
+      if (!hint || !host.contains(hint)) {
+        hint = document.createElement("span");
+        hint.className = "template-default-hint";
+        hint.dataset.defaultFor = input.id || input.name || "";
+        templateDefaultHints.set(input, hint);
+        host.appendChild(hint);
+      }
+      const cleanValue = String(value || "").trim();
+      hint.textContent = cleanValue ? `Default: ${cleanValue}` : "";
+      hint.hidden = !cleanValue;
+    }
+
     function applyTemplatePlaceholders(readyForEntry) {
       const template = selectedTemplate();
       if (!readyForEntry || !template) {
         setInputPlaceholder(familyName, "", basePlaceholders.family_name);
+        setTemplateDefaultHint(familyName, "");
         Object.entries(inputByField).forEach(([fieldName, input]) => {
           setInputPlaceholder(input, "", basePlaceholders[fieldName] || "");
+          setTemplateDefaultHint(input, "");
         });
         return;
       }
 
       setInputPlaceholder(
         familyName,
-        templateDefaultValue(template, "family_name"),
+        "",
         basePlaceholders.family_name
       );
+      setTemplateDefaultHint(familyName, templateDefaultValue(template, "family_name"));
       dynamicFields.forEach(fieldName => {
         const input = inputByField[fieldName];
         const fallback = basePlaceholders[fieldName] || "";
-        setInputPlaceholder(input, templateDefaultValue(template, fieldName), fallback);
+        const defaultValue = templateDefaultValue(template, fieldName);
+        setInputPlaceholder(input, "", fallback);
+        setTemplateDefaultHint(input, defaultValue);
       });
     }
 
@@ -1176,33 +1285,53 @@
 
     function templateName(id) {
       const template = templatesData.find(item => String(item.id) === String(id));
-      return template ? template.template_name : "Template";
+      if (template) {
+        return template.template_name;
+      }
+      const option = Array.from(templateSelect.options).find(item => String(item.value) === String(id));
+      return option ? option.textContent.trim().replace(/\s+- missing \.btw\s*$/, "") : "Template";
     }
 
     function applyTemplateFields(options = {}) {
       const template = selectedTemplate();
       const required = requiredFieldSet();
-      const hasTemplate = Boolean(templateSelect.value && template);
+      const selectedOption = selectedTemplateOption();
+      const hasTemplate = Boolean(templateSelect.value && (template || selectedOption));
       const pathReady = selectedTemplatePathExists();
       const mapped = required.size > 0;
       const readyForEntry = hasTemplate && pathReady && mapped;
+      const templatePath = selectedTemplatePathText();
       const actionDisabledReason = !hasTemplate
         ? "Select a template first."
         : !pathReady
-          ? "Template .btw file is missing on this PC."
+          ? `Template .btw file is missing on this PC.${templatePath ? " Saved path: " + templatePath : ""}`
           : "";
 
       selectTemplateState.hidden = hasTemplate;
       missingTemplateState.hidden = !hasTemplate || pathReady;
+      missingTemplatePath.textContent = !hasTemplate || pathReady
+        ? ""
+        : templatePath
+          ? `Saved path: ${templatePath}`
+          : "No .btw file path is saved for this template.";
       unmappedTemplateState.hidden = !hasTemplate || !pathReady || mapped;
-      changedTemplateState.hidden = !readyForEntry || !template.file_changed;
+      changedTemplateState.hidden = !readyForEntry || !(template && template.file_changed);
       itemSection.hidden = !readyForEntry;
       familyName.required = readyForEntry;
-      setupPill.textContent = readyForEntry ? "Ready for item entry" : hasTemplate ? "Template setup needed" : "Choose template first";
+      setupPill.textContent = readyForEntry
+        ? "Ready for item entry"
+        : hasTemplate
+          ? pathReady
+            ? "Template setup needed"
+            : "Template file missing"
+          : "Choose template first";
 
       dynamicFields.forEach(fieldName => {
         const container = containerByField[fieldName];
         const input = inputByField[fieldName];
+        if (!container || !input) {
+          return;
+        }
         const visible = readyForEntry && (
           fieldName === "article_no"
             ? requiresArticle(required)
@@ -1225,6 +1354,8 @@
       extractTemplateFieldsButton.title = actionDisabledReason;
       refreshTemplateFieldsButton.title = actionDisabledReason;
       openTemplateButton.title = actionDisabledReason;
+      templateActionStatus.hidden = !actionDisabledReason;
+      templateActionStatus.textContent = actionDisabledReason;
       extractTemplateId.value = templateSelect.value;
       extractCategory.value = categorySelect.value;
       openTemplateCategory.value = categorySelect.value;
@@ -1284,7 +1415,7 @@
         input.name = `extra_${fieldName}`;
         input.dataset.extraField = fieldName;
         input.value = options.resetValues ? "" : (oldValues[fieldName] || savedValues[fieldName] || "");
-        input.placeholder = templateDefaultValue(template, fieldName) || "";
+        input.placeholder = "";
         input.required = true;
         input.addEventListener("input", () => {
           syncExtraFieldValues();
@@ -1305,6 +1436,7 @@
         attachEntryFieldBehavior(input);
         label.appendChild(input);
         customFieldsGrid.appendChild(label);
+        setTemplateDefaultHint(input, templateDefaultValue(template, fieldName));
         customInputByField[fieldName] = input;
       });
       customFieldsGrid.hidden = Object.keys(customInputByField).length === 0;
@@ -1416,6 +1548,7 @@
 
     function showCachedTemplatePreview() {
       revokeActualPreviewObjectUrl();
+      actualPreviewIsGenerated = false;
       actualPreviewError.hidden = true;
       actualPreviewError.textContent = "";
       const template = selectedTemplate();
@@ -1431,7 +1564,12 @@
     }
 
     function clearActualPreview() {
-      showCachedTemplatePreview();
+      if (!actualPreviewIsGenerated) {
+        showCachedTemplatePreview();
+        return;
+      }
+      actualPreviewError.hidden = true;
+      actualPreviewError.textContent = "";
     }
 
     async function generateActualPreview() {
@@ -1474,6 +1612,7 @@
         actualPreviewImage.src = actualPreviewUrl;
         actualPreviewBlock.hidden = false;
         simulatedPreview.hidden = true;
+        actualPreviewIsGenerated = true;
       } catch (error) {
         showCachedTemplatePreview();
         actualPreviewError.textContent = error.message || "Could not generate actual preview.";
@@ -1941,7 +2080,7 @@
 
     function populateVariant(variant, duplicate) {
       if (!variant) return;
-      clearActualPreview();
+      showCachedTemplatePreview();
       existingVariantId.value = duplicate ? "" : variant.id;
       autoMatchVariantId = "";
       selectedVariantSnapshot = duplicate ? null : {...variant};
@@ -2085,7 +2224,12 @@
             focusFieldNow(target);
           }
         }, 0);
+        return;
       }
+      familyName.select();
+    });
+    familyName.addEventListener("click", () => {
+      familyName.select();
     });
     familyName.addEventListener("input", handleBillingItemTyping);
     familyName.addEventListener("keyup", event => {
@@ -2154,7 +2298,7 @@
     });
 
     categorySelect.addEventListener("change", () => {
-      clearActualPreview();
+      showCachedTemplatePreview();
       closeVariantMenu();
       closeBillingItemMenu();
       applyCategory(null, {resetCustomValues: true});
@@ -2162,7 +2306,7 @@
     });
 
     templateSelect.addEventListener("change", () => {
-      clearActualPreview();
+      showCachedTemplatePreview();
       closeVariantMenu();
       closeBillingItemMenu();
       applyTemplateFields({resetCustomValues: true});
@@ -2170,11 +2314,11 @@
     });
 
     openTemplateButton.addEventListener("click", () => {
-      const template = selectedTemplate();
-      if (!template || openTemplateButton.disabled) {
+      const templateId = templateSelect.value;
+      if (!templateId || openTemplateButton.disabled) {
         return;
       }
-      openTemplateForm.action = `/templates/${template.id}/open`;
+      openTemplateForm.action = `/templates/${templateId}/open`;
       openTemplateForm.submit();
     });
 
@@ -2404,6 +2548,42 @@
       }
     });
 
+    if (printDialogQuantityInput) {
+      printDialogQuantityInput.addEventListener("click", () => printDialogQuantityInput.select());
+      printDialogQuantityInput.addEventListener("input", () => {
+        printDialogQuantityInput.value = printDialogQuantityInput.value.replace(/\D/g, "");
+      });
+      printDialogQuantityInput.addEventListener("keydown", event => {
+        if (printSubmissionPending) {
+          event.preventDefault();
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          printFromDialogQuantity();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closePrintQuantityDialog();
+          printQuantityInput.focus();
+        }
+      });
+    }
+    if (confirmPrintDialogButton) {
+      confirmPrintDialogButton.addEventListener("click", printFromDialogQuantity);
+    }
+    if (cancelPrintDialogButton) {
+      cancelPrintDialogButton.addEventListener("click", () => {
+        closePrintQuantityDialog();
+        printQuantityInput.focus();
+      });
+    }
+    if (printQuantityDialogBackdrop) {
+      printQuantityDialogBackdrop.addEventListener("click", () => {
+        closePrintQuantityDialog();
+        printQuantityInput.focus();
+      });
+    }
+
     document.addEventListener("keydown", event => {
       if (printSubmissionPending) {
         event.preventDefault();
@@ -2425,7 +2605,7 @@
         printFromInlineQuantity();
       } else if (event.ctrlKey && event.key.toLowerCase() === "p") {
         event.preventDefault();
-        printFromInlineQuantity();
+        openPrintQuantityDialog();
       }
     });
 

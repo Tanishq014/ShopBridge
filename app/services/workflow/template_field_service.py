@@ -23,6 +23,7 @@ def template_payload(template: TemplateMaster) -> dict[str, object]:
         "template_name": template.template_name,
         "category": (template.category or "").strip().lower(),
         "label_size": template.label_size or "",
+        "bartender_file_path": template.bartender_file_path or "",
         "required_fields": parse_required_fields(template.required_fields),
         "field_defaults": field_defaults,
         "path_exists": template_path_exists(template),

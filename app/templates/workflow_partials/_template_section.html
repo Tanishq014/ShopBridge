@@ -24,7 +24,7 @@
             <select name="template_id" id="templateSelect" required>
               <option value="">Select template</option>
               {% for template in template_rows %}
-                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" {% if selected_template_id == template.id %}selected{% endif %}>
+                <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" data-template-path="{{ template.bartender_file_path or '' }}" {% if selected_template_id == template.id %}selected{% endif %}>
                   {{ template.template_name }} ({{ template.template_id }}){% if not template_path_exists(template) %} - missing .btw{% endif %}
                 </option>
               {% else %}
@@ -35,6 +35,7 @@
           <div class="form-actions template-action-row">
             <button class="button" type="button" id="openTemplateButton" disabled>Open Template</button>
             <button class="button" type="submit" form="extractTemplateForm" id="refreshTemplateFieldsButton" disabled>Refresh Fields from Template</button>
+            <div class="template-action-status" id="templateActionStatus" hidden></div>
           </div>
           <label class="span-two">
             Search existing item

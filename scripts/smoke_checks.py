@@ -156,16 +156,22 @@ def main() -> None:
         pos_markup = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
         app_css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
+        assert_true("familyName.addEventListener(\"click\"" in workflow_markup and "familyName.select();" in workflow_markup, "Billing Item does not select text on click")
         assert_true("printQuantityInput" in workflow_markup and "printFromInlineQuantity" in workflow_markup, "inline print quantity flow missing")
+        assert_true("printQuantityDialog" in workflow_markup and "printFromDialogQuantity" in workflow_markup, "Ctrl+P print quantity dialog is missing")
+        assert_true("openPrintQuantityDialog();" in workflow_markup, "Ctrl+P does not open the print quantity dialog")
         assert_true("Printing..." in workflow_markup and "printSubmissionPending" in workflow_markup, "print double-submit loading guard missing")
         assert_true("event.key === \"Enter\"" in workflow_markup and "printFromInlineQuantity();" in workflow_markup, "Enter on print quantity does not trigger print")
         assert_true("resetPrintSubmissionState" in workflow_markup and "form.addEventListener(\"invalid\"" in workflow_markup, "browser validation can leave print stuck")
         assert_true("restoreVariantForRetry" in workflow_markup and "hasPrintError && initialVariantId" in workflow_markup, "print error retry state is not restored from saved item")
         assert_true("scanner_qr_url" in pos_markup and "scanner_url" in settings_markup, "scanner QR URL is not rendered")
-        assert_true("applyTemplatePlaceholders" in workflow_markup and "setInputPlaceholder" in workflow_markup, "template defaults are not wired as placeholders")
+        assert_true("applyTemplatePlaceholders" in workflow_markup and "setTemplateDefaultHint" in workflow_markup, "template defaults are not wired as persistent hints")
+        assert_true("template-default-hint" in app_css, "template default hints are not styled")
         assert_true("input.value = defaultValue" not in workflow_markup, "template defaults should not auto-fill submitted values")
         assert_true("variant_search: selectedSearchVariant ? variantLabel(selectedSearchVariant) : \"\"" in workflow_markup, "partial existing-item search text can be persisted")
         assert_true(".combo-option.active" in app_css and "background: #1f6feb" in app_css, "dropdown active row styling is not high contrast")
+        assert_true("data-template-path" in workflow_markup and "templateActionStatus" in workflow_markup, "template disabled action reason is not shown")
+        assert_true("selectedTemplateOption" in workflow_markup and "option.dataset.pathExists" in workflow_markup, "template path check does not fall back to selected option data")
 
         alias_settings = save_price_code_settings(
             digit_to_code={

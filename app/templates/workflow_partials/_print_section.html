@@ -5,3 +5,17 @@
           </label>
           <button class="button primary print-button" type="button" id="printButton" disabled>Print Labels</button>
         </div>
+        <div class="print-sheet" id="printQuantityDialog" role="dialog" aria-modal="true" aria-labelledby="printQuantityDialogTitle" hidden>
+          <div class="print-sheet-backdrop" id="printQuantityDialogBackdrop"></div>
+          <div class="print-sheet-panel">
+            <h3 id="printQuantityDialogTitle">Print Labels</h3>
+            <label>
+              Quantity
+              <input id="printDialogQuantityInput" inputmode="numeric" value="1">
+            </label>
+            <div class="form-actions">
+              <button class="button" type="button" id="cancelPrintDialogButton">Cancel</button>
+              <button class="button primary" type="button" id="confirmPrintDialogButton">Print</button>
+            </div>
+          </div>
+        </div>
