@@ -743,6 +743,24 @@
       }
     }
 
+    function handleEntryAdvanceNavigation(event) {
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+      if (event.key !== "Enter") {
+        return;
+      }
+      const target = event.target;
+      if (!visibleEntryFields().includes(target) || target === printQuantityInput || target === printButton) {
+        return;
+      }
+      if ((target === familyName && billingItemCombo.classList.contains("open")) || (target === variantSearch && variantCombo.classList.contains("open"))) {
+        return;
+      }
+      event.preventDefault();
+      moveEntryFocus(target, 1);
+    }
+
     function focusFirstTemplateField() {
       const target = visibleEntryFields().find(field => field !== variantSearch && field !== familyName && field !== printQuantityInput && field !== printButton);
       if (target) {
@@ -2365,16 +2383,22 @@
       marginInlinePanel.hidden = true;
     });
 
-    fields.margin.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        calculateMrpFromMargin();
-      }
-    });
-
-    Array.from(new Set([variantSearch, fields.margin, ...Object.values(inputByField)])).forEach(field => {
+    Array.from(new Set([
+      fields.coded,
+      fields.margin,
+      fields.mrp,
+      fields.selling,
+      fields.brand,
+      fields.item,
+      fields.article,
+      fields.size,
+      fields.batch,
+      fields.expiry,
+      ...Object.values(inputByField),
+    ])).forEach(field => {
       field.addEventListener("focus", () => field.select());
       field.addEventListener("click", () => field.select());
+      field.addEventListener("keydown", handleEntryAdvanceNavigation);
       field.addEventListener("keydown", handleEntryArrowNavigation);
     });
 
