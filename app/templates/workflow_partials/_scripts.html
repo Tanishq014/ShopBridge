@@ -162,7 +162,6 @@
       barcode: byId("barcodeField")
     };
     const basePlaceholders = {};
-    const templateDefaultHints = new Map();
 
     function byId(id) {
       return document.getElementById(id);
@@ -930,55 +929,22 @@
       input.setAttribute("placeholder", cleanValue || fallback || "");
     }
 
-    function defaultHintHost(input) {
-      if (!input || input.type === "hidden") {
-        return null;
-      }
-      return input.closest(".field-stack") || input.closest("label");
-    }
-
-    function setTemplateDefaultHint(input, value) {
-      const host = defaultHintHost(input);
-      if (!host) {
-        return;
-      }
-      let hint = templateDefaultHints.get(input);
-      if (!hint || !host.contains(hint)) {
-        hint = document.createElement("span");
-        hint.className = "template-default-hint";
-        hint.dataset.defaultFor = input.id || input.name || "";
-        templateDefaultHints.set(input, hint);
-        host.appendChild(hint);
-      }
-      const cleanValue = String(value || "").trim();
-      hint.textContent = cleanValue ? `Default: ${cleanValue}` : "";
-      hint.hidden = !cleanValue;
-    }
-
     function applyTemplatePlaceholders(readyForEntry) {
       const template = selectedTemplate();
       if (!readyForEntry || !template) {
         setInputPlaceholder(familyName, "", basePlaceholders.family_name);
-        setTemplateDefaultHint(familyName, "");
         Object.entries(inputByField).forEach(([fieldName, input]) => {
           setInputPlaceholder(input, "", basePlaceholders[fieldName] || "");
-          setTemplateDefaultHint(input, "");
         });
         return;
       }
 
-      setInputPlaceholder(
-        familyName,
-        "",
-        basePlaceholders.family_name
-      );
-      setTemplateDefaultHint(familyName, templateDefaultValue(template, "family_name"));
+      setInputPlaceholder(familyName, templateDefaultValue(template, "family_name"), basePlaceholders.family_name);
       dynamicFields.forEach(fieldName => {
         const input = inputByField[fieldName];
         const fallback = basePlaceholders[fieldName] || "";
         const defaultValue = templateDefaultValue(template, fieldName);
-        setInputPlaceholder(input, "", fallback);
-        setTemplateDefaultHint(input, defaultValue);
+        setInputPlaceholder(input, defaultValue, fallback);
       });
     }
 
@@ -1436,7 +1402,6 @@
         attachEntryFieldBehavior(input);
         label.appendChild(input);
         customFieldsGrid.appendChild(label);
-        setTemplateDefaultHint(input, templateDefaultValue(template, fieldName));
         customInputByField[fieldName] = input;
       });
       customFieldsGrid.hidden = Object.keys(customInputByField).length === 0;
