@@ -16,7 +16,7 @@ from app.db import get_db
 from app.models import PosCart, PosCartItem
 from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
-from app.services.network_service import qr_url_for_scanner, scanner_url
+from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
 from app.services.template_filters import register_template_filters
 
 
@@ -118,6 +118,7 @@ def _json_error(message: str, *, status_code: int, status: str, **extra: object)
 @router.get("/pos", response_class=HTMLResponse)
 def pos_page(request: Request, db: Session = Depends(get_db)):
     scanner, detected = scanner_url(request.headers.get("host"))
+    phone_print, phone_print_detected = phone_print_url(request.headers.get("host"))
     return templates.TemplateResponse(
         request,
         "pos.html",
@@ -126,6 +127,9 @@ def pos_page(request: Request, db: Session = Depends(get_db)):
             "scanner_url": scanner,
             "scanner_qr_url": qr_url_for_scanner(scanner),
             "scanner_ip_detected": detected,
+            "phone_print_url": phone_print,
+            "phone_print_qr_url": qr_url_for_phone_print(phone_print),
+            "phone_print_ip_detected": phone_print_detected,
         },
     )
 

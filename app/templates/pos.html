@@ -43,6 +43,17 @@
     <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
   </section>
 
+  <section class="panel scanner-link-panel">
+    <div>
+      <h2>Phone Print</h2>
+      <p class="mono">{{ phone_print_url }}</p>
+      {% if not phone_print_ip_detected %}
+        <p class="muted-text">LAN IP was not detected. If the phone cannot open this, use the laptop IP address with port 8001.</p>
+      {% endif %}
+    </div>
+    <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
+  </section>
+
   <section class="table-wrap pos-cart-panel">
     <table class="pos-table">
       <thead>

@@ -13,7 +13,7 @@
       <a class="brand" href="/new-stock">ShopBridge</a>
       <nav class="nav">
         {% set path = request.url.path %}
-        <a class="{{ 'active' if path.startswith('/new-stock') else '' }}" href="/new-stock">New Stock / Print Labels</a>
+        <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">New Stock / Print Labels</a>
         <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS Shadow</a>
         <a class="{{ 'active' if path == '/scan' else '' }}" href="/scan">Scan / Lookup</a>
         <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>

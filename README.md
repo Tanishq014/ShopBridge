@@ -126,7 +126,15 @@ Open the phone scanner on the same Wi-Fi:
 http://<laptop-ip>:8001/scanner
 ```
 
+Open the phone print page on the same Wi-Fi:
+
+```text
+http://<laptop-ip>:8001/phone-print
+```
+
 The scanner uses saved barcode records only. It looks up the scanned barcode in ShopBridge and adds the saved item price to the active cart. It does not decode coded price text while scanning.
+
+Phone Print uses the same laptop server, saved templates, settings, barcode records, BarTender ActiveX print path, and CSV fallback as New Stock. The phone only sends the print request; the laptop does the actual printing.
 
 Phone camera scanning depends on browser support and security rules. If the browser will not allow camera access over the local network address, use the manual barcode input fallback on `/scanner`.
 

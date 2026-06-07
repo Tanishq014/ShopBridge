@@ -1,0 +1,1515 @@
+{% extends "base.html" %}
+{% block title %}Phone Print - ShopBridge{% endblock %}
+{% block content %}
+  {% set submitted = submitted_values|default({}, true) %}
+  <section class="page-header compact-header phone-print-header">
+    <div>
+      <h1>Phone Print</h1>
+      <p>Uses this laptop's templates, settings, barcode records, and BarTender print path.</p>
+    </div>
+    <div class="form-actions">
+      <a class="button" href="/scanner">Scanner</a>
+      <a class="button" href="/new-stock">Laptop Print</a>
+    </div>
+  </section>
+
+  <section class="phone-print-shell">
+    <form class="panel phone-print-card" method="post" action="/phone-print/print" id="phonePrintForm">
+      <input type="hidden" name="workflow_mode" id="phoneWorkflowMode" value="{{ submitted.get('workflow_mode', 'print') }}">
+      <input type="hidden" name="existing_variant_id" id="phoneExistingVariantId" value="{{ submitted.get('existing_variant_id', '') }}">
+      <input type="hidden" name="family_id" id="phoneFamilyId" value="{{ submitted.get('family_id', '') }}">
+      <input type="hidden" name="barcode" id="phoneBarcode" value="{{ submitted.get('barcode', initial_barcode or '') }}">
+      <input type="hidden" name="selling_price" id="phoneSellingPrice" value="{{ submitted.get('selling_price', '') }}">
+      <input type="hidden" name="extra_field_values" id="phoneExtraFieldValues" value="{{ submitted.get('extra_field_values', '') }}">
+      <input type="hidden" name="selected_price_code_key" id="phoneSelectedPriceCodeKey" value="{{ submitted.get('selected_price_code_key', '') }}">
+      <input type="hidden" name="coded_price_manual_override" id="phoneCodedManualOverride" value="{{ 'true' if submitted.get('coded_price_manual_override') else 'false' }}">
+      <input type="hidden" name="force_new_barcode" id="phoneForceNewBarcode" value="{{ 'true' if submitted.get('force_new_barcode') else 'false' }}">
+      <input type="hidden" name="manual_barcode_override" id="phoneManualBarcodeOverride" value="{{ 'true' if submitted.get('manual_barcode_override') else 'false' }}">
+
+      <div class="scanner-status {% if error %}error{% elif message %}ok{% else %}ready{% endif %}" id="phonePrintStatus">
+        <strong>{% if error %}Print error{% elif message %}Print status{% else %}Ready{% endif %}</strong>
+        <span>{{ error or message or "Select a template, enter item details, then print from this laptop." }}</span>
+      </div>
+
+      <details class="phone-secondary-tools" id="phoneSecondaryTools">
+        <summary>Scan or load existing item</summary>
+        <div class="phone-secondary-body">
+          <div class="phone-camera-panel" id="phoneCameraPanel" hidden>
+            <video id="phonePrintVideo" autoplay muted playsinline></video>
+          </div>
+          <div class="form-actions phone-action-row">
+            <button class="button" type="button" id="phoneScanButton">Scan Existing Barcode</button>
+            <button class="button" type="button" id="phoneStopScanButton" hidden>Stop Camera</button>
+          </div>
+
+          <label>
+            Search Existing Item
+            <input id="phoneVariantSearch" autocomplete="off" placeholder="Barcode, billing item, sticker name, article">
+          </label>
+          <div class="phone-option-list" id="phoneVariantResults" hidden></div>
+          <div class="phone-advanced-action">
+            <button class="button" type="button" id="phoneForceNewButton">Force New Barcode</button>
+            <span>Usually leave this automatic. Use only when the same details must get a fresh barcode.</span>
+          </div>
+        </div>
+      </details>
+
+      <div class="phone-advanced-action phone-margin-toggle">
+        <label class="checkline">
+          <input type="checkbox" id="phoneShowPricingFieldsToggle" {% if pricing_fields_visible %}checked{% endif %}>
+          Show selling price / margin
+        </label>
+        <input type="hidden" name="show_pricing_fields_visible" id="phoneShowPricingFieldsValue" value="{{ '1' if pricing_fields_visible else '0' }}">
+      </div>
+
+      <label>
+        Category
+        <select name="category" id="phoneCategorySelect" required>
+          {% for category in categories %}
+            <option value="{{ category.value }}" {% if submitted.get('category', selected_category) == category.value %}selected{% endif %}>{{ category.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Template
+        <select name="template_id" id="phoneTemplateSelect" required>
+          {% for template in template_rows %}
+            <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" {% if (submitted.get('template_id', selected_template_id)|string) == (template.id|string) %}selected{% endif %}>
+              {{ template.template_name }}{% if not template_path_exists(template) %} - missing .btw{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <section class="phone-preview-panel" id="phonePreviewPanel" hidden>
+        <div class="section-line">
+          <h2>Preview</h2>
+          <button class="button small" type="button" id="phoneActualPreviewButton" disabled>Actual Preview</button>
+        </div>
+        <div class="phone-preview-box" id="phonePreviewBox">
+          <img id="phonePreviewImage" alt="BarTender template preview" hidden>
+          <span id="phonePreviewEmpty">Select a ready template to show preview.</span>
+        </div>
+        <div class="error compact-message" id="phonePreviewError" hidden></div>
+      </section>
+
+      <label>
+        Billing Item
+        <input name="family_name" id="phoneFamilyName" list="phoneFamilyOptions" value="{{ submitted.get('family_name', '') }}" autocomplete="off" required>
+      </label>
+      <datalist id="phoneFamilyOptions">
+        {% for family in families_json %}
+          <option value="{{ family.family_name }}"></option>
+        {% endfor %}
+      </datalist>
+
+      <div class="form-grid phone-field-grid" id="phoneBuiltInFields">
+        <label data-phone-field="brand">
+          Brand
+          <input name="brand" id="phoneBrand" value="{{ submitted.get('brand', '') }}">
+        </label>
+        <label data-phone-field="item_display_name">
+          <span id="phoneItemLabel">Sticker Name</span>
+          <input name="item_display_name" id="phoneItemName" value="{{ submitted.get('item_display_name', '') }}">
+        </label>
+        <label data-phone-field="article_no">
+          <span id="phoneArticleLabel">Article No</span>
+          <input name="article_no" id="phoneArticle" value="{{ submitted.get('article_no', '') }}">
+        </label>
+        <label data-phone-field="size">
+          <span id="phoneSizeLabel">Size</span>
+          <input name="size" id="phoneSize" value="{{ submitted.get('size', '') }}">
+        </label>
+        <label data-phone-field="batch_no">
+          <span id="phoneBatchLabel">Batch No</span>
+          <input name="batch_no" id="phoneBatch" value="{{ submitted.get('batch_no', '') }}">
+        </label>
+        <label data-phone-field="expiry">
+          Expiry
+          <input name="expiry" id="phoneExpiry" value="{{ submitted.get('expiry', '') }}" placeholder="MM/YYYY">
+        </label>
+      </div>
+
+      <div class="form-grid phone-field-grid" id="phoneCustomFields" hidden></div>
+
+      <div class="form-grid phone-pricing-grid">
+        <label data-phone-field="coded_price">
+          Code
+          <input name="coded_price" id="phoneCode" value="{{ submitted.get('coded_price', '') }}" autocomplete="off">
+        </label>
+        <label data-phone-field="margin_percent">
+          Margin %
+          <div class="phone-inline-input">
+            <input name="margin_percent" id="phoneMargin" value="{{ submitted.get('margin_percent', '') }}" inputmode="decimal">
+            <button class="button small" type="button" id="phoneCalculateMarginButton">Calculate</button>
+          </div>
+          <span class="phone-field-hint" id="phoneMarginPreview" hidden></span>
+        </label>
+        <label data-phone-field="mrp">
+          MRP
+          <input name="mrp" id="phoneMrp" value="{{ submitted.get('mrp', '') }}" inputmode="decimal">
+        </label>
+      </div>
+
+      <div class="workflow-state compact-message" id="phonePriceState" hidden>
+        <strong>Code</strong>
+        <span>Enter code to decode selling price.</span>
+      </div>
+      <div class="choice-list" id="phoneCodeChoices" hidden></div>
+      <div class="workflow-state compact-message info-state" id="phoneRecordDecision" hidden>
+        <strong>Automatic barcode</strong>
+        <span>ShopBridge will reuse an exact saved barcode, otherwise create a new one.</span>
+      </div>
+
+      <div class="form-actions phone-action-row">
+        <button class="button primary print-button" type="button" id="phonePrintButton">Print Labels</button>
+      </div>
+      <div class="phone-sticky-print" id="phoneStickyPrint">
+        <div>
+          <span>Selling price</span>
+          <strong id="phoneStickyPrice">Code needed</strong>
+        </div>
+        <button class="button primary print-button" type="button" id="phoneStickyPrintButton">Print</button>
+      </div>
+      <div class="phone-print-dialog-backdrop" id="phonePrintCopiesBackdrop" hidden></div>
+      <div class="phone-print-dialog" id="phonePrintCopiesDialog" role="dialog" aria-modal="true" aria-labelledby="phonePrintCopiesTitle" hidden>
+        <h2 id="phonePrintCopiesTitle">Print Copies</h2>
+        <label>
+          Copies
+          <input name="copies" id="phoneCopies" value="{{ submitted.get('copies', 1) }}" inputmode="numeric" required>
+        </label>
+        <div class="copy-chip-row" aria-label="Quick copy count">
+          <button class="chip-button" type="button" data-copy-count="1">1</button>
+          <button class="chip-button" type="button" data-copy-count="2">2</button>
+          <button class="chip-button" type="button" data-copy-count="3">3</button>
+          <button class="chip-button" type="button" data-copy-count="5">5</button>
+        </div>
+        <div class="form-actions phone-action-row">
+          <button class="button" type="button" id="phoneCancelCopiesButton">Cancel</button>
+          <button class="button primary print-button" type="button" id="phoneConfirmCopiesButton">Print</button>
+        </div>
+      </div>
+      <button type="submit" id="phoneSubmitPrintButton" hidden></button>
+    </form>
+  </section>
+
+  <script>
+    const phoneTemplates = {{ templates_json|tojson }};
+    const phoneVariants = {{ variants_json|tojson }};
+    const phoneFamilies = {{ families_json|default([], true)|tojson }};
+    const phoneCategories = {{ categories|tojson }};
+    const phonePriceCodeSettings = {{ price_code_settings_json|tojson }};
+    const phoneSubmittedValues = {{ submitted|tojson }};
+    const phoneInitialVariantId = "{{ initial_variant_id or '' }}";
+    const phoneMrpRounding = Number({{ pricing_settings.mrp_rounding|tojson }});
+
+    const phoneForm = document.getElementById("phonePrintForm");
+    const phoneStatus = document.getElementById("phonePrintStatus");
+    const phoneCategory = document.getElementById("phoneCategorySelect");
+    const phoneTemplate = document.getElementById("phoneTemplateSelect");
+    const phoneVariantSearch = document.getElementById("phoneVariantSearch");
+    const phoneVariantResults = document.getElementById("phoneVariantResults");
+    const phoneExtraFieldValues = document.getElementById("phoneExtraFieldValues");
+    const phoneWorkflowMode = document.getElementById("phoneWorkflowMode");
+    const phoneExistingVariantId = document.getElementById("phoneExistingVariantId");
+    const phoneFamilyId = document.getElementById("phoneFamilyId");
+    const phoneBarcode = document.getElementById("phoneBarcode");
+    const phoneSellingPrice = document.getElementById("phoneSellingPrice");
+    const phoneSelectedPriceCodeKey = document.getElementById("phoneSelectedPriceCodeKey");
+    const phoneCodedManualOverride = document.getElementById("phoneCodedManualOverride");
+    const phoneForceNewBarcode = document.getElementById("phoneForceNewBarcode");
+    const phoneManualBarcodeOverride = document.getElementById("phoneManualBarcodeOverride");
+    const phoneFamilyName = document.getElementById("phoneFamilyName");
+    const phoneCustomFields = document.getElementById("phoneCustomFields");
+    const phonePriceState = document.getElementById("phonePriceState");
+    const phoneCodeChoices = document.getElementById("phoneCodeChoices");
+    const phoneRecordDecision = document.getElementById("phoneRecordDecision");
+    const phonePrintButton = document.getElementById("phonePrintButton");
+    const phoneForceNewButton = document.getElementById("phoneForceNewButton");
+    const phoneCalculateMarginButton = document.getElementById("phoneCalculateMarginButton");
+    const phoneMarginPreview = document.getElementById("phoneMarginPreview");
+    const phoneScanButton = document.getElementById("phoneScanButton");
+    const phoneStopScanButton = document.getElementById("phoneStopScanButton");
+    const phoneCameraPanel = document.getElementById("phoneCameraPanel");
+    const phoneVideo = document.getElementById("phonePrintVideo");
+    const phoneSecondaryTools = document.getElementById("phoneSecondaryTools");
+    const phonePreviewPanel = document.getElementById("phonePreviewPanel");
+    const phonePreviewImage = document.getElementById("phonePreviewImage");
+    const phonePreviewEmpty = document.getElementById("phonePreviewEmpty");
+    const phonePreviewError = document.getElementById("phonePreviewError");
+    const phoneActualPreviewButton = document.getElementById("phoneActualPreviewButton");
+    const phoneStickyPrintButton = document.getElementById("phoneStickyPrintButton");
+    const phoneStickyPrice = document.getElementById("phoneStickyPrice");
+    const phonePrintCopiesBackdrop = document.getElementById("phonePrintCopiesBackdrop");
+    const phonePrintCopiesDialog = document.getElementById("phonePrintCopiesDialog");
+    const phoneCancelCopiesButton = document.getElementById("phoneCancelCopiesButton");
+    const phoneConfirmCopiesButton = document.getElementById("phoneConfirmCopiesButton");
+    const phoneSubmitPrintButton = document.getElementById("phoneSubmitPrintButton");
+    const phoneShowPricingFieldsToggle = document.getElementById("phoneShowPricingFieldsToggle");
+    const phoneShowPricingFieldsValue = document.getElementById("phoneShowPricingFieldsValue");
+
+    const phoneFields = {
+      brand: document.getElementById("phoneBrand"),
+      item: document.getElementById("phoneItemName"),
+      article: document.getElementById("phoneArticle"),
+      size: document.getElementById("phoneSize"),
+      batch: document.getElementById("phoneBatch"),
+      expiry: document.getElementById("phoneExpiry"),
+      code: document.getElementById("phoneCode"),
+      margin: document.getElementById("phoneMargin"),
+      mrp: document.getElementById("phoneMrp"),
+      copies: document.getElementById("phoneCopies"),
+    };
+    const phoneMarginField = document.querySelector('[data-phone-field="margin_percent"]');
+    const phoneInputByField = {
+      brand: phoneFields.brand,
+      item_display_name: phoneFields.item,
+      design: phoneFields.item,
+      article: phoneFields.article,
+      article_no: phoneFields.article,
+      size: phoneFields.size,
+      batch_no: phoneFields.batch,
+      expiry: phoneFields.expiry,
+      coded_price: phoneFields.code,
+      margin_percent: phoneFields.margin,
+      mrp: phoneFields.mrp,
+    };
+    const phoneCategorySettings = {
+      clothes: {article: "Article No", size: "Size", batch: "Batch No"},
+      cosmetics: {article: "Shade / Article", size: "Pack Size", batch: "Batch No"},
+      gifts: {article: "Article / Model", size: "Size", batch: "Batch No"},
+      toys: {article: "Article / Model", size: "Size / Age", batch: "Batch No"},
+    };
+    const phoneBuiltInFields = new Set([
+      "brand", "item_display_name", "design", "family_name", "article", "article_no",
+      "size", "batch_no", "expiry", "mrp", "selling_price", "coded_price", "barcode",
+    ]);
+    let phoneCustomInputs = {};
+    let phonePrinting = false;
+    let phoneScanStream = null;
+    let phoneScanDetector = null;
+    let phoneScanPending = false;
+    let phoneLastScanValue = "";
+    let phoneLastScanAt = 0;
+    let phoneActualPreviewUrl = "";
+    let phoneActualPreviewIsGenerated = false;
+    let phoneHydrating = true;
+    let phonePrintCopiesConfirmed = false;
+    let phonePricingFieldsPreferenceVisible = true;
+    const phoneStorageKey = "shopbridge.phonePrintState.v1";
+    phonePricingFieldsPreferenceVisible = Boolean(phoneShowPricingFieldsToggle && phoneShowPricingFieldsToggle.checked);
+
+    function phoneSetStatus(kind, title, detail) {
+      phoneStatus.className = `scanner-status ${kind}`;
+      phoneStatus.querySelector("strong").textContent = title;
+      phoneStatus.querySelector("span").textContent = detail || "";
+    }
+
+    function phoneNormalizeText(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function phoneNormalizeBarcode(value) {
+      return String(value || "").trim().toUpperCase();
+    }
+
+    function phoneSameText(left, right) {
+      return phoneNormalizeText(left) === phoneNormalizeText(right);
+    }
+
+    function phoneMoneyNumber(value) {
+      const raw = String(value ?? "").replace(/,/g, "").trim();
+      if (!raw) {
+        return null;
+      }
+      const amount = Number(raw);
+      return Number.isFinite(amount) ? amount : null;
+    }
+
+    function phoneSameMoney(left, right) {
+      const leftAmount = phoneMoneyNumber(left);
+      const rightAmount = phoneMoneyNumber(right);
+      if (leftAmount === null && rightAmount === null) {
+        return true;
+      }
+      if (leftAmount === null || rightAmount === null) {
+        return false;
+      }
+      return Math.abs(leftAmount - rightAmount) < 0.01;
+    }
+
+    function phoneSelectTextOnEdit(field) {
+      if (!field || field.dataset.phoneSelectText === "1") {
+        return;
+      }
+      field.dataset.phoneSelectText = "1";
+      let nextClickSelects = true;
+      const moveCursorToEnd = () => {
+        const end = String(field.value || "").length;
+        if (typeof field.setSelectionRange === "function") {
+          field.setSelectionRange(end, end);
+        }
+      };
+      field.addEventListener("click", event => {
+        event.preventDefault();
+        if (nextClickSelects) {
+          field.select();
+        } else {
+          moveCursorToEnd();
+        }
+        nextClickSelects = !nextClickSelects;
+      });
+      field.addEventListener("blur", () => {
+        nextClickSelects = true;
+      });
+    }
+
+    function phoneNormalizeFieldName(fieldName) {
+      const key = String(fieldName || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const aliases = {
+        articlenumber: "article",
+        articleno: "article",
+        batch: "batch_no",
+        batchname: "batch_no",
+        batchno: "batch_no",
+        batchnumber: "batch_no",
+        code: "coded_price",
+        codedprice: "coded_price",
+        pricecode: "coded_price",
+        design: "design",
+        designname: "design",
+        itemname: "item_display_name",
+        itemdisplayname: "item_display_name",
+        name: "item_display_name",
+        productname: "item_display_name",
+        stickername: "item_display_name",
+        sellingprice: "selling_price",
+        model: "model_no",
+        modelno: "model_no",
+        itemcode: "item_code",
+      };
+      return aliases[key] || String(fieldName || "").trim().toLowerCase();
+    }
+
+    function phoneFieldLabel(fieldName) {
+      const labels = {
+        article: "Article No",
+        article_no: "Article No",
+        batch_no: "Batch No",
+        coded_price: "Code",
+        item_code: "Item Code",
+        item_display_name: "Sticker Name",
+        model_no: "Model No",
+      };
+      return labels[fieldName] || String(fieldName || "").replace(/_/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
+    }
+
+    function phoneFieldValue(fieldName) {
+      const normalized = phoneNormalizeFieldName(fieldName);
+      if (normalized === "family_name") return phoneFamilyName.value;
+      if (normalized === "brand") return phoneFields.brand.value;
+      if (normalized === "item_display_name" || normalized === "design") return phoneFields.item.value;
+      if (normalized === "article" || normalized === "article_no") return phoneFields.article.value;
+      if (normalized === "size") return phoneFields.size.value;
+      if (normalized === "batch_no") return phoneFields.batch.value;
+      if (normalized === "expiry") return phoneFields.expiry.value;
+      if (normalized === "mrp") return phoneFields.mrp.value;
+      if (normalized === "coded_price") return phoneFields.code.value;
+      if (phoneCustomInputs[normalized]) return phoneCustomInputs[normalized].value;
+      return "";
+    }
+
+    function phoneSelectedTemplate() {
+      return phoneTemplates.find(item => String(item.id) === String(phoneTemplate.value));
+    }
+
+    function phoneRequiredFields() {
+      const template = phoneSelectedTemplate();
+      return new Set((template ? template.required_fields || [] : []).map(phoneNormalizeFieldName).filter(Boolean));
+    }
+
+    function phoneTemplateAppliesToCategory(templateCategory, selectedCategory) {
+      const category = String(templateCategory || "").toLowerCase();
+      if (["", "all", "all categories", "general", "imported"].includes(category)) {
+        return true;
+      }
+      const known = phoneCategories.map(item => item.value);
+      return !known.includes(category) || category === selectedCategory;
+    }
+
+    function phoneTemplateReady() {
+      const template = phoneSelectedTemplate();
+      return Boolean(template && template.path_exists && (template.required_fields || []).length);
+    }
+
+    function phoneTemplateDefault(template, fieldName) {
+      const defaults = template && template.field_defaults ? template.field_defaults : {};
+      const normalizedDefaults = {};
+      Object.entries(defaults).forEach(([key, value]) => {
+        normalizedDefaults[phoneNormalizeFieldName(key)] = value;
+      });
+      const aliases = fieldName === "article_no"
+        ? ["article_no", "article"]
+        : fieldName === "item_display_name"
+          ? ["item_display_name", "design"]
+          : fieldName === "design"
+            ? ["design", "item_display_name"]
+            : [fieldName];
+      for (const alias of aliases) {
+        const value = normalizedDefaults[phoneNormalizeFieldName(alias)];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value);
+        }
+      }
+      return "";
+    }
+
+    function phoneParseExtraValues(value) {
+      try {
+        const parsed = JSON.parse(value || "{}");
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function phoneCurrentExtraValues() {
+      if (Object.keys(phoneCustomInputs).length) {
+        phoneSyncExtraValues();
+      }
+      return phoneParseExtraValues(phoneExtraFieldValues.value);
+    }
+
+    function phoneState() {
+      return {
+        category: phoneCategory.value,
+        template_id: phoneTemplate.value,
+        existing_variant_id: phoneExistingVariantId.value,
+        family_id: phoneFamilyId.value,
+        family_name: phoneFamilyName.value,
+        variant_search: phoneExistingVariantId.value ? phoneVariantSearch.value : "",
+        workflow_mode: phoneWorkflowMode.value,
+        barcode: phoneExistingVariantId.value || phoneManualBarcodeOverride.value === "true" ? phoneBarcode.value : "",
+        selling_price: phoneSellingPrice.value,
+        selected_price_code_key: phoneSelectedPriceCodeKey.value,
+        coded_price_manual_override: phoneCodedManualOverride.value === "true",
+        force_new_barcode: phoneForceNewBarcode.value,
+        manual_barcode_override: phoneManualBarcodeOverride.value,
+        brand: phoneFields.brand.value,
+        item_display_name: phoneFields.item.value,
+        article_no: phoneFields.article.value,
+        size: phoneFields.size.value,
+        batch_no: phoneFields.batch.value,
+        expiry: phoneFields.expiry.value,
+        mrp: phoneFields.mrp.value,
+        margin_percent: phoneFields.margin.value,
+        coded_price: phoneFields.code.value,
+        show_pricing_fields_visible: phonePricingFieldsPreferenceVisible,
+        extra_field_values: phoneCurrentExtraValues(),
+        copies: phoneFields.copies.value || "1",
+        secondary_tools_open: phoneSecondaryTools.open,
+      };
+    }
+
+    function phoneSaveState() {
+      if (phoneHydrating) {
+        return;
+      }
+      try {
+        window.localStorage.setItem(phoneStorageKey, JSON.stringify(phoneState()));
+      } catch (error) {
+        // localStorage may be unavailable in locked-down mobile browsers.
+      }
+    }
+
+    function phoneStoredPricingPreference() {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(phoneStorageKey) || "null");
+        if (saved && typeof saved === "object" && saved.show_pricing_fields_visible !== undefined) {
+          return Boolean(saved.show_pricing_fields_visible);
+        }
+      } catch (error) {
+        // Ignore invalid localStorage data.
+      }
+      return null;
+    }
+
+    function phoneApplyPricingFieldsVisibility(visible) {
+      if (phoneMarginField) {
+        phoneMarginField.hidden = !Boolean(visible);
+      }
+      if (phonePriceState) {
+        phonePriceState.hidden = true;
+      }
+    }
+
+    function phoneSetPricingFieldsPreference(visible, persist = false) {
+      phonePricingFieldsPreferenceVisible = Boolean(visible);
+      if (phoneShowPricingFieldsToggle) {
+        phoneShowPricingFieldsToggle.checked = phonePricingFieldsPreferenceVisible;
+      }
+      if (phoneShowPricingFieldsValue) {
+        phoneShowPricingFieldsValue.value = phonePricingFieldsPreferenceVisible ? "1" : "0";
+      }
+      phoneApplyPricingFieldsVisibility(phonePricingFieldsPreferenceVisible);
+      if (persist) {
+        phoneSaveState();
+      }
+      phoneRefreshMarginPreview();
+      phoneRefreshReadyState();
+    }
+
+    function phoneRestoreState() {
+      let saved = null;
+      try {
+        saved = JSON.parse(window.localStorage.getItem(phoneStorageKey) || "null");
+      } catch (error) {
+        saved = null;
+      }
+      if (!saved || typeof saved !== "object") {
+        return false;
+      }
+      if (saved.category) {
+        phoneCategory.value = saved.category;
+      }
+      if (saved.template_id) {
+        phoneTemplate.value = saved.template_id;
+      }
+      phoneExistingVariantId.value = saved.existing_variant_id || "";
+      phoneFamilyId.value = saved.family_id || "";
+      phoneFamilyName.value = saved.family_name || "";
+      phoneVariantSearch.value = saved.existing_variant_id ? (saved.variant_search || "") : "";
+      phoneWorkflowMode.value = saved.workflow_mode || "print";
+      phoneBarcode.value = saved.barcode || "";
+      phoneSellingPrice.value = saved.selling_price || "";
+      phoneSelectedPriceCodeKey.value = saved.selected_price_code_key || "";
+      phoneCodedManualOverride.value = saved.coded_price_manual_override ? "true" : "false";
+      phoneForceNewBarcode.value = saved.force_new_barcode === "true" ? "true" : "false";
+      phoneManualBarcodeOverride.value = saved.manual_barcode_override === "true" ? "true" : "false";
+      phonePricingFieldsPreferenceVisible = saved.show_pricing_fields_visible !== undefined ? Boolean(saved.show_pricing_fields_visible) : true;
+      phoneFields.brand.value = saved.brand || "";
+      phoneFields.item.value = saved.item_display_name || "";
+      phoneFields.article.value = saved.article_no || "";
+      phoneFields.size.value = saved.size || "";
+      phoneFields.batch.value = saved.batch_no || "";
+      phoneFields.expiry.value = saved.expiry || "";
+      phoneFields.mrp.value = saved.mrp || "";
+      phoneFields.margin.value = saved.margin_percent || "";
+      phoneFields.code.value = saved.coded_price || "";
+      phoneFields.copies.value = saved.copies || "1";
+      if (phoneShowPricingFieldsToggle) {
+        phoneShowPricingFieldsToggle.checked = phonePricingFieldsPreferenceVisible;
+      }
+      if (phoneShowPricingFieldsValue) {
+        phoneShowPricingFieldsValue.value = phonePricingFieldsPreferenceVisible ? "1" : "0";
+      }
+      phoneApplyPricingFieldsVisibility(phonePricingFieldsPreferenceVisible);
+      phoneExtraFieldValues.value = JSON.stringify(saved.extra_field_values || {});
+      phoneSecondaryTools.open = Boolean(saved.secondary_tools_open);
+      return true;
+    }
+
+    function phoneRevokeActualPreviewObjectUrl() {
+      if (phoneActualPreviewUrl) {
+        URL.revokeObjectURL(phoneActualPreviewUrl);
+        phoneActualPreviewUrl = "";
+      }
+    }
+
+    function phoneShowCachedPreview() {
+      phoneRevokeActualPreviewObjectUrl();
+      phoneActualPreviewIsGenerated = false;
+      phonePreviewError.hidden = true;
+      phonePreviewError.textContent = "";
+      const template = phoneSelectedTemplate();
+      phonePreviewPanel.hidden = !template;
+      phoneActualPreviewButton.disabled = !phoneTemplateReady();
+      if (!template) {
+        phonePreviewImage.hidden = true;
+        phonePreviewImage.removeAttribute("src");
+        phonePreviewEmpty.textContent = "Select a ready template to show preview.";
+        phonePreviewEmpty.hidden = false;
+        return;
+      }
+      if (template.cached_preview_url) {
+        phonePreviewImage.src = template.cached_preview_url;
+        phonePreviewImage.hidden = false;
+        phonePreviewEmpty.hidden = true;
+        return;
+      }
+      phonePreviewImage.hidden = true;
+      phonePreviewImage.removeAttribute("src");
+      phonePreviewEmpty.textContent = phoneTemplateReady()
+        ? "No cached preview yet. Tap Actual Preview."
+        : "Refresh fields on the laptop before previewing this template.";
+      phonePreviewEmpty.hidden = false;
+    }
+
+    async function phoneGenerateActualPreview() {
+      if (!phoneTemplateReady() || phoneActualPreviewButton.disabled) {
+        return;
+      }
+      phoneSyncExtraValues();
+      phoneActualPreviewButton.disabled = true;
+      phoneActualPreviewButton.textContent = "Generating...";
+      phonePreviewError.hidden = true;
+      phonePreviewError.textContent = "";
+
+      try {
+        const response = await fetch("/new-stock/preview-image", {
+          method: "POST",
+          body: new FormData(phoneForm),
+        });
+        if (!response.ok) {
+          let message = "Could not generate actual preview.";
+          try {
+            const payload = await response.json();
+            message = payload.error || message;
+          } catch (error) {
+            const text = await response.text();
+            if (text) {
+              message = text;
+            }
+          }
+          throw new Error(message);
+        }
+        const blob = await response.blob();
+        if (!blob.type.startsWith("image/")) {
+          throw new Error("BarTender did not return an image preview.");
+        }
+        phoneRevokeActualPreviewObjectUrl();
+        phoneActualPreviewUrl = URL.createObjectURL(blob);
+        phonePreviewImage.src = phoneActualPreviewUrl;
+        phonePreviewImage.hidden = false;
+        phonePreviewEmpty.hidden = true;
+        phoneActualPreviewIsGenerated = true;
+      } catch (error) {
+        if (!phoneActualPreviewIsGenerated) {
+          phoneShowCachedPreview();
+        }
+        phonePreviewError.textContent = error.message || "Could not generate actual preview.";
+        phonePreviewError.hidden = false;
+      } finally {
+        phoneActualPreviewButton.textContent = "Actual Preview";
+        phoneActualPreviewButton.disabled = !phoneTemplateReady();
+      }
+    }
+
+    function phoneSyncStickyPrintState() {
+      const sellingPrice = String(phoneSellingPrice.value || "").trim();
+      phoneStickyPrice.textContent = sellingPrice ? `Rs. ${sellingPrice}` : "Code needed";
+      const disabled = Boolean(phonePrintButton.disabled || phonePrinting);
+      phoneStickyPrintButton.disabled = disabled;
+      phoneStickyPrintButton.textContent = phonePrinting ? "Printing..." : "Print";
+      document.querySelectorAll("[data-copy-count]").forEach(button => {
+        button.classList.toggle("active", button.dataset.copyCount === String(phoneFields.copies.value || "1"));
+      });
+    }
+
+    function phoneCleanCopies() {
+      phoneFields.copies.value = phoneFields.copies.value.replace(/\D/g, "") || "1";
+      return phoneFields.copies.value;
+    }
+
+    function phoneOpenCopiesDialog() {
+      phoneCleanCopies();
+      phoneSyncExtraValues();
+      phoneRefreshPriceState();
+      phoneRefreshReadyState();
+      if (phonePrintButton.disabled || phonePrinting) {
+        return;
+      }
+      if (typeof phoneForm.reportValidity === "function" && !phoneForm.reportValidity()) {
+        return;
+      }
+      phonePrintCopiesDialog.hidden = false;
+      phonePrintCopiesBackdrop.hidden = false;
+      window.setTimeout(() => {
+        phoneFields.copies.focus();
+        phoneFields.copies.select();
+      }, 0);
+    }
+
+    function phoneCloseCopiesDialog() {
+      phonePrintCopiesDialog.hidden = true;
+      phonePrintCopiesBackdrop.hidden = true;
+    }
+
+    function phoneSubmitAfterCopiesConfirm() {
+      phoneCleanCopies();
+      phonePrintCopiesConfirmed = true;
+      if (phoneForm.requestSubmit) {
+        phoneForm.requestSubmit(phoneSubmitPrintButton);
+      } else {
+        phoneSubmitPrintButton.click();
+      }
+    }
+
+    function phoneRequiredFieldsMissing() {
+      const required = phoneRequiredFields();
+      return Array.from(required).some(fieldName => {
+        const normalized = phoneNormalizeFieldName(fieldName);
+        if (normalized === "barcode" || normalized === "selling_price") {
+          return false;
+        }
+        return !String(phoneFieldValue(normalized) || "").trim();
+      });
+    }
+
+    function phoneExactVariant() {
+      const template = phoneSelectedTemplate();
+      if (!template || !phoneTemplateReady() || phoneRequiredFieldsMissing()) {
+        return null;
+      }
+      const required = phoneRequiredFields();
+      const itemName = String(phoneFields.item.value || "").trim();
+      if (!itemName) {
+        return null;
+      }
+      const currentMrp = phoneMoneyNumber(phoneFields.mrp.value);
+      const currentSelling = phoneMoneyNumber(phoneSellingPrice.value);
+      const currentCode = String(phoneFields.code.value || "").trim();
+      const currentFamily = String(phoneFamilyName.value || "").trim();
+      return phoneVariants.find(variant => {
+        if (!phoneSameText(variant.item_display_name, itemName)) return false;
+        if (!phoneSameText(variant.category, phoneCategory.value)) return false;
+        if (String(variant.template_id || "") !== String(template.id || "")) return false;
+        if (currentMrp !== null && !phoneSameMoney(variant.mrp, currentMrp)) return false;
+        if (currentSelling !== null) {
+          if (!phoneSameMoney(variant.selling_price, currentSelling)) return false;
+        } else if (String(variant.selling_price || "").trim()) {
+          return false;
+        }
+        if (currentCode) {
+          if (!phoneSameText(variant.coded_price, currentCode)) return false;
+        } else if (String(variant.coded_price || "").trim()) {
+          return false;
+        }
+        if (currentFamily && !phoneSameText(variant.family_name, currentFamily)) return false;
+        if (required.has("brand") && String(phoneFields.brand.value || "").trim() && !phoneSameText(variant.brand, phoneFields.brand.value)) return false;
+        if ((required.has("article") || required.has("article_no")) && String(phoneFields.article.value || "").trim() && !phoneSameText(variant.article_no, phoneFields.article.value)) return false;
+        if (required.has("size") && String(phoneFields.size.value || "").trim() && !phoneSameText(variant.size, phoneFields.size.value)) return false;
+        if (required.has("batch_no") && String(phoneFields.batch.value || "").trim() && !phoneSameText(variant.batch_no, phoneFields.batch.value)) return false;
+        if (required.has("expiry") && String(phoneFields.expiry.value || "").trim() && !phoneSameText(variant.expiry, phoneFields.expiry.value)) return false;
+        const variantExtras = variant.extra_field_values || {};
+        for (const [fieldName, input] of Object.entries(phoneCustomInputs)) {
+          if (required.has(fieldName) && String(input.value || "").trim() && !phoneSameText(variantExtras[fieldName], input.value)) {
+            return false;
+          }
+        }
+        return true;
+      }) || null;
+    }
+
+    function phoneRefreshRecordDecision() {
+      if (!phoneTemplateReady()) {
+        phoneRecordDecision.className = "workflow-state compact-message warn-state";
+        phoneRecordDecision.querySelector("strong").textContent = "Template not ready";
+        phoneRecordDecision.querySelector("span").textContent = "Select a ready template before printing.";
+        phoneForceNewButton.disabled = true;
+        return;
+      }
+      phoneForceNewButton.disabled = false;
+      const forced = phoneForceNewBarcode.value === "true";
+      phoneForceNewButton.textContent = forced ? "Use Automatic Barcode" : "Force New Barcode";
+      if (forced) {
+        phoneRecordDecision.className = "workflow-state compact-message warn-state";
+        phoneRecordDecision.querySelector("strong").textContent = "Will create new barcode";
+        phoneRecordDecision.querySelector("span").textContent = "Force New Barcode is on.";
+        return;
+      }
+      const codeVisible = !document.querySelector('[data-phone-field="coded_price"]').hidden;
+      if (codeVisible && !String(phoneSellingPrice.value || "").trim()) {
+        phoneRecordDecision.className = "workflow-state compact-message warn-state";
+        phoneRecordDecision.querySelector("strong").textContent = "Code needed";
+        phoneRecordDecision.querySelector("span").textContent = "Fix Code so ShopBridge can save the billing price.";
+        return;
+      }
+      if (phoneRequiredFieldsMissing()) {
+        phoneRecordDecision.className = "workflow-state compact-message info-state";
+        phoneRecordDecision.querySelector("strong").textContent = "Automatic barcode";
+        phoneRecordDecision.querySelector("span").textContent = "Finish the required fields to check for an exact saved barcode.";
+        return;
+      }
+      const match = phoneExactVariant();
+      if (match) {
+        phoneRecordDecision.className = "workflow-state compact-message info-state";
+        phoneRecordDecision.querySelector("strong").textContent = `Will reuse barcode ${match.barcode}`;
+        phoneRecordDecision.querySelector("span").textContent = match.family_name || match.item_display_name || "Exact saved item found.";
+      } else {
+        phoneRecordDecision.className = "workflow-state compact-message info-state";
+        phoneRecordDecision.querySelector("strong").textContent = "Will create new barcode";
+        phoneRecordDecision.querySelector("span").textContent = "No exact saved item matches these details.";
+      }
+    }
+
+    function phoneApplyCategory(preserveTemplateId = "") {
+      const selectedCategory = phoneCategory.value;
+      Array.from(phoneTemplate.options).forEach(option => {
+        const templateCategory = option.dataset.category || "";
+        option.hidden = !phoneTemplateAppliesToCategory(templateCategory, selectedCategory);
+      });
+      const wanted = preserveTemplateId || phoneTemplate.value;
+      const wantedOption = Array.from(phoneTemplate.options).find(option => option.value === String(wanted) && !option.hidden);
+      if (wantedOption) {
+        phoneTemplate.value = wantedOption.value;
+      } else {
+        const first = Array.from(phoneTemplate.options).find(option => !option.hidden);
+        if (first) {
+          phoneTemplate.value = first.value;
+        }
+      }
+      const settings = phoneCategorySettings[selectedCategory] || phoneCategorySettings.clothes;
+      document.getElementById("phoneArticleLabel").textContent = settings.article;
+      document.getElementById("phoneSizeLabel").textContent = settings.size;
+      document.getElementById("phoneBatchLabel").textContent = settings.batch;
+      phoneApplyTemplate();
+    }
+
+    function phoneSetFieldVisible(fieldName, visible, required = false) {
+      const input = phoneInputByField[fieldName];
+      const label = document.querySelector(`[data-phone-field="${fieldName}"]`);
+      if (!input || !label) {
+        return;
+      }
+      label.hidden = !visible;
+      input.required = Boolean(visible && required);
+    }
+
+    function phoneSyncExtraValues() {
+      const values = {};
+      Object.entries(phoneCustomInputs).forEach(([fieldName, input]) => {
+        if (String(input.value || "").trim()) {
+          values[fieldName] = input.value;
+        }
+      });
+      phoneExtraFieldValues.value = JSON.stringify(values);
+    }
+
+    function phoneApplyCustomValues(values) {
+      Object.entries(phoneCustomInputs).forEach(([fieldName, input]) => {
+        input.value = values && values[fieldName] ? values[fieldName] : "";
+      });
+      phoneSyncExtraValues();
+    }
+
+    function phoneApplyTemplate() {
+      const template = phoneSelectedTemplate();
+      const required = phoneRequiredFields();
+      const ready = phoneTemplateReady();
+      const requiresArticle = required.has("article") || required.has("article_no");
+      const requiresItem = required.has("item_display_name") || required.has("design");
+      document.getElementById("phoneItemLabel").textContent = required.has("design") ? "Design" : "Sticker Name";
+
+      phoneSetFieldVisible("brand", ready && required.has("brand"), required.has("brand"));
+      phoneSetFieldVisible("item_display_name", ready && requiresItem, requiresItem);
+      phoneSetFieldVisible("article_no", ready && requiresArticle, requiresArticle);
+      phoneSetFieldVisible("size", ready && required.has("size"), required.has("size"));
+      phoneSetFieldVisible("batch_no", ready && required.has("batch_no"), required.has("batch_no"));
+      phoneSetFieldVisible("expiry", ready && required.has("expiry"), required.has("expiry"));
+      phoneSetFieldVisible("coded_price", ready && required.has("coded_price"), false);
+      phoneSetFieldVisible("mrp", ready, false);
+      phoneSetFieldVisible("margin_percent", ready && required.has("coded_price"), false);
+
+      Object.entries(phoneInputByField).forEach(([fieldName, input]) => {
+        const defaultValue = phoneTemplateDefault(template, fieldName);
+        input.placeholder = defaultValue || "";
+      });
+      phoneFamilyName.placeholder = phoneTemplateDefault(template, "family_name") || "";
+
+      const currentExtras = {};
+      try {
+        Object.assign(currentExtras, JSON.parse(phoneExtraFieldValues.value || "{}"));
+      } catch (error) {
+        // Keep empty extras if previous state is malformed.
+      }
+      phoneCustomFields.innerHTML = "";
+      phoneCustomInputs = {};
+      Array.from(required).filter(fieldName => !phoneBuiltInFields.has(fieldName)).forEach(fieldName => {
+        const label = document.createElement("label");
+        label.textContent = phoneFieldLabel(fieldName);
+        const input = document.createElement("input");
+        input.name = `extra_${fieldName}`;
+        input.dataset.extraField = fieldName;
+        input.required = true;
+        input.value = currentExtras[fieldName] || "";
+        input.placeholder = phoneTemplateDefault(template, fieldName);
+        phoneSelectTextOnEdit(input);
+        input.addEventListener("input", () => {
+          phoneSyncExtraValues();
+          phoneRefreshPriceState();
+          phoneRefreshReadyState();
+          phoneSaveState();
+        });
+        input.addEventListener("change", () => {
+          phoneSyncExtraValues();
+          phoneRefreshPriceState();
+          phoneRefreshReadyState();
+          phoneSaveState();
+        });
+        label.appendChild(input);
+        phoneCustomFields.appendChild(label);
+        phoneCustomInputs[fieldName] = input;
+      });
+      phoneCustomFields.hidden = Object.keys(phoneCustomInputs).length === 0;
+      phoneSyncExtraValues();
+      phoneRefreshPriceState();
+      phoneRefreshReadyState();
+      phoneShowCachedPreview();
+    }
+
+    function phoneSearchText(variant) {
+      return [
+        variant.search,
+        variant.barcode,
+        variant.family_name,
+        variant.item_display_name,
+        variant.brand,
+        variant.article_no,
+        variant.batch_no,
+        variant.size,
+        variant.coded_price,
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function phoneVariantLabel(variant) {
+      return [
+        variant.barcode,
+        variant.family_name,
+        variant.item_display_name,
+        variant.article_no,
+        variant.mrp,
+        variant.coded_price,
+      ].filter(Boolean).join(" | ");
+    }
+
+    function phoneFindVariants(query, limit = 8) {
+      const tokens = phoneNormalizeText(query).split(/\s+/).filter(Boolean);
+      if (!tokens.length) {
+        return [];
+      }
+      return phoneVariants
+        .filter(variant => tokens.every(token => phoneSearchText(variant).includes(token)))
+        .slice(0, limit);
+    }
+
+    function phoneCloseVariantResults() {
+      phoneVariantResults.hidden = true;
+      phoneVariantResults.innerHTML = "";
+    }
+
+    function phoneRenderVariantResults() {
+      const matches = phoneFindVariants(phoneVariantSearch.value);
+      phoneVariantResults.innerHTML = "";
+      if (!matches.length) {
+        phoneVariantResults.hidden = true;
+        return;
+      }
+      matches.forEach(variant => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "plain-item";
+        button.innerHTML = `<strong>${phoneVariantLabel(variant)}</strong><span>${variant.template_name || "Template"} / ${variant.category || ""}</span>`;
+        button.addEventListener("click", () => {
+          phoneFillVariant(variant);
+          phoneCloseVariantResults();
+        });
+        phoneVariantResults.appendChild(button);
+      });
+      phoneVariantResults.hidden = false;
+    }
+
+    function phoneFillVariant(variant) {
+      phoneWorkflowMode.value = "print";
+      phoneForceNewBarcode.value = "false";
+      phoneManualBarcodeOverride.value = "false";
+      phoneExistingVariantId.value = variant.id || "";
+      phoneFamilyId.value = variant.family_id || "";
+      phoneFamilyName.value = variant.family_name || "";
+      phoneCategory.value = variant.category || phoneCategory.value;
+      phoneTemplate.value = variant.template_id || phoneTemplate.value;
+      phoneBarcode.value = variant.barcode || "";
+      phoneFields.brand.value = variant.brand || "";
+      phoneFields.item.value = variant.item_display_name || "";
+      phoneFields.article.value = variant.article_no || "";
+      phoneFields.size.value = variant.size || "";
+      phoneFields.batch.value = variant.batch_no || "";
+      phoneFields.expiry.value = variant.expiry || "";
+      phoneFields.mrp.value = variant.mrp || "";
+      phoneSellingPrice.value = variant.selling_price || "";
+      phoneFields.code.value = variant.coded_price || "";
+      phoneVariantSearch.value = phoneVariantLabel(variant);
+      phoneApplyCategory(variant.template_id || "");
+      phoneApplyCustomValues(variant.extra_field_values || {});
+      phoneRefreshPriceState();
+      phoneRefreshReadyState();
+      phoneSetStatus("ready", "Ready", "Saved item details loaded.");
+      phoneSaveState();
+    }
+
+    function phoneEscapeRegExp(value) {
+      return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function phoneDecodeGroup(group) {
+      const codeToDigit = phonePriceCodeSettings.code_to_digit || {};
+      const tokens = Object.keys(codeToDigit).sort((left, right) => right.length - left.length);
+      const cleanGroup = String(group || "").toUpperCase();
+      const matches = [];
+      function walk(index, digits) {
+        if (matches.length > 1) {
+          return;
+        }
+        if (index === cleanGroup.length) {
+          matches.push(digits.join(""));
+          return;
+        }
+        tokens.forEach(token => {
+          if (cleanGroup.startsWith(token, index)) {
+            walk(index + token.length, [...digits, codeToDigit[token]]);
+          }
+        });
+      }
+      walk(0, []);
+      return matches.length === 1 ? matches[0] : "";
+    }
+
+    function phonePriceCandidates() {
+      const raw = String(phoneFields.code.value || "").toUpperCase();
+      const letters = String(phonePriceCodeSettings.price_code_letters || "");
+      if (!raw || !letters || phonePriceCodeSettings.allow_extraction === false) {
+        return [];
+      }
+      const groups = raw.match(new RegExp(`[${phoneEscapeRegExp(letters)}]+`, "g")) || [];
+      const seen = new Set();
+      return groups.map(group => {
+        const digits = phoneDecodeGroup(group);
+        if (!digits || seen.has(group)) {
+          return null;
+        }
+        seen.add(group);
+        return {
+          source_field: "coded_price",
+          raw_value: raw,
+          code: group,
+          selling_price: digits,
+          key: `coded_price|${group}|${digits}`,
+        };
+      }).filter(Boolean);
+    }
+
+    function phoneRefreshPriceState() {
+      phoneFields.code.value = String(phoneFields.code.value || "").toUpperCase();
+      phoneCodeChoices.hidden = true;
+      phoneCodeChoices.innerHTML = "";
+      const codeVisible = !document.querySelector('[data-phone-field="coded_price"]').hidden;
+      if (!codeVisible) {
+        phonePriceState.hidden = true;
+        return;
+      }
+      phonePriceState.hidden = true;
+      const candidates = phonePriceCandidates();
+      if (phoneSelectedPriceCodeKey.value) {
+        const selected = candidates.find(candidate => candidate.key === phoneSelectedPriceCodeKey.value);
+        if (selected) {
+          phoneSellingPrice.value = selected.selling_price;
+          phonePriceState.className = "workflow-state compact-message info-state";
+          phonePriceState.querySelector("strong").textContent = `Rs. ${selected.selling_price}`;
+          phonePriceState.querySelector("span").textContent = "Code selected.";
+          return;
+        }
+      }
+      if (candidates.length === 1) {
+        const candidate = candidates[0];
+        phoneSelectedPriceCodeKey.value = candidate.key;
+        phoneSellingPrice.value = candidate.selling_price;
+        phonePriceState.className = "workflow-state compact-message info-state";
+        phonePriceState.querySelector("strong").textContent = `Rs. ${candidate.selling_price}`;
+        phonePriceState.querySelector("span").textContent = "Selling price decoded from code.";
+      } else if (candidates.length > 1) {
+        phoneSelectedPriceCodeKey.value = "";
+        phoneSellingPrice.value = "";
+        phonePriceState.className = "workflow-state compact-message warn-state";
+        phonePriceState.querySelector("strong").textContent = "Choose code";
+        phonePriceState.querySelector("span").textContent = "Multiple possible codes were found.";
+        candidates.forEach(candidate => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "button small";
+          button.textContent = `${candidate.code} -> Rs. ${candidate.selling_price}`;
+          button.addEventListener("click", () => {
+            phoneSelectedPriceCodeKey.value = candidate.key;
+            phoneSellingPrice.value = candidate.selling_price;
+            phoneFields.code.value = candidate.code;
+            phoneRefreshPriceState();
+            phoneRefreshReadyState();
+            phoneSaveState();
+          });
+          phoneCodeChoices.appendChild(button);
+        });
+        phoneCodeChoices.hidden = false;
+      } else if (phoneFields.code.value.trim()) {
+        phoneSelectedPriceCodeKey.value = "";
+        phoneSellingPrice.value = "";
+        phonePriceState.className = "workflow-state compact-message warn-state";
+        phonePriceState.querySelector("strong").textContent = "Code not decoded";
+        phonePriceState.querySelector("span").textContent = "Fix code before printing.";
+      } else {
+        phoneSelectedPriceCodeKey.value = "";
+        phoneSellingPrice.value = "";
+        phonePriceState.className = "workflow-state compact-message warn-state";
+        phonePriceState.querySelector("strong").textContent = "Code needed";
+        phonePriceState.querySelector("span").textContent = "Enter code before printing.";
+      }
+    }
+
+    function phoneUpperRound(value, step) {
+      if (step === 9) {
+        const whole = Math.ceil(Number(value));
+        if (whole <= 9) {
+          return 9;
+        }
+        return whole % 10 === 9 ? whole : whole + (9 - (whole % 10) + 10) % 10;
+      }
+      return Math.ceil(Number(value) / step) * step;
+    }
+
+    function phoneMarginRawMrp() {
+      const marginRaw = String(phoneFields.margin.value || "").trim();
+      const margin = Number(marginRaw);
+      const selling = Number(phoneSellingPrice.value);
+      if (!marginRaw || !Number.isFinite(margin) || margin < 0 || margin >= 100 || !selling) {
+        return null;
+      }
+      return selling / (1 - margin / 100);
+    }
+
+    function phoneRefreshMarginPreview() {
+      if (!phonePricingFieldsPreferenceVisible || (phoneMarginField && phoneMarginField.hidden)) {
+        phoneMarginPreview.hidden = true;
+        phoneMarginPreview.textContent = "";
+        return;
+      }
+      const rawMrp = phoneMarginRawMrp();
+      if (rawMrp === null) {
+        phoneMarginPreview.hidden = true;
+        phoneMarginPreview.textContent = "";
+        return;
+      }
+      phoneMarginPreview.textContent = `Rs. ${rawMrp.toFixed(2)}`;
+      phoneMarginPreview.hidden = false;
+    }
+
+    function phoneCalculateMrpFromMargin() {
+      const rawMrp = phoneMarginRawMrp();
+      if (rawMrp === null) {
+        phoneRefreshMarginPreview();
+        return;
+      }
+      phoneFields.mrp.value = String(phoneUpperRound(rawMrp, phoneMrpRounding));
+      phoneRefreshMarginPreview();
+      phoneRefreshRecordDecision();
+      phoneSaveState();
+    }
+
+    function phoneRefreshReadyState() {
+      const ready = phoneTemplateReady() && !phonePrinting;
+      const codeVisible = !document.querySelector('[data-phone-field="coded_price"]').hidden;
+      const priceReady = !codeVisible || Boolean(String(phoneSellingPrice.value || "").trim());
+      phonePrintButton.disabled = !(ready && priceReady);
+      phoneActualPreviewButton.disabled = !ready;
+      phoneForceNewButton.hidden = !phoneExistingVariantId.value;
+      if (!ready) {
+        const template = phoneSelectedTemplate();
+        const detail = !template
+          ? "Select a template."
+          : !template.path_exists
+            ? "Selected template file is missing on this PC."
+            : "Refresh/extract fields for this template on the laptop.";
+        phoneSetStatus("warn", "Template not ready", detail);
+      }
+      phoneRefreshMarginPreview();
+      phoneRefreshRecordDecision();
+      phoneSyncStickyPrintState();
+    }
+
+    function phoneApplyFamilyMatch() {
+      const match = phoneFamilies.find(family => phoneNormalizeText(family.family_name) === phoneNormalizeText(phoneFamilyName.value));
+      if (!match) {
+        phoneFamilyId.value = "";
+        return;
+      }
+      phoneFamilyId.value = match.id || "";
+      if (match.category) {
+        phoneCategory.value = match.category;
+      }
+      if (match.default_template_id) {
+        phoneTemplate.value = String(match.default_template_id);
+      }
+      phoneApplyCategory(match.default_template_id || phoneTemplate.value);
+    }
+
+    async function phoneStartCamera() {
+      if (!("BarcodeDetector" in window)) {
+        phoneSetStatus("warn", "Camera scanner unavailable", "Use search or type the barcode in Search Existing Item.");
+        return;
+      }
+      try {
+        phoneScanDetector = new BarcodeDetector({
+          formats: ["code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code", "data_matrix"],
+        });
+        phoneScanStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: "environment"}}, audio: false});
+        phoneVideo.srcObject = phoneScanStream;
+        phoneCameraPanel.hidden = false;
+        phoneScanButton.hidden = true;
+        phoneStopScanButton.hidden = false;
+        phoneSetStatus("ready", "Ready to scan", "Scan a saved barcode to load that item.");
+        requestAnimationFrame(phoneScanFrame);
+      } catch (error) {
+        phoneSetStatus("error", "Camera error", error.message || "Could not start camera.");
+      }
+    }
+
+    async function phoneScanFrame() {
+      if (!phoneScanStream || phoneScanPending) {
+        if (phoneScanStream) {
+          requestAnimationFrame(phoneScanFrame);
+        }
+        return;
+      }
+      phoneScanPending = true;
+      try {
+        const barcodes = await phoneScanDetector.detect(phoneVideo);
+        if (barcodes.length) {
+          const value = phoneNormalizeBarcode(barcodes[0].rawValue || "");
+          const now = Date.now();
+          if (value && value === phoneLastScanValue && now - phoneLastScanAt < 1500) {
+            return;
+          }
+          phoneLastScanValue = value;
+          phoneLastScanAt = now;
+          const variant = phoneVariants.find(item => phoneNormalizeBarcode(item.barcode) === value);
+          if (variant) {
+            phoneFillVariant(variant);
+            phoneStopCamera();
+          } else {
+            phoneSetStatus("warn", "Barcode not found", value);
+          }
+        }
+      } catch (error) {
+        // Continue scanning after transient frame failures.
+      } finally {
+        phoneScanPending = false;
+        if (phoneScanStream) {
+          requestAnimationFrame(phoneScanFrame);
+        }
+      }
+    }
+
+    function phoneStopCamera() {
+      if (phoneScanStream) {
+        phoneScanStream.getTracks().forEach(track => track.stop());
+      }
+      phoneScanStream = null;
+      phoneVideo.srcObject = null;
+      phoneCameraPanel.hidden = true;
+      phoneScanButton.hidden = false;
+      phoneStopScanButton.hidden = true;
+    }
+
+    phoneCategory.addEventListener("change", () => {
+      phoneApplyCategory();
+      phoneRefreshRecordDecision();
+      phoneSaveState();
+    });
+    phoneTemplate.addEventListener("change", () => {
+      phoneApplyTemplate();
+      phoneRefreshRecordDecision();
+      phoneSaveState();
+    });
+    phoneVariantSearch.addEventListener("input", () => {
+      phoneRenderVariantResults();
+      phoneSaveState();
+    });
+    phoneVariantSearch.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        const first = phoneFindVariants(phoneVariantSearch.value, 1)[0];
+        if (first) {
+          event.preventDefault();
+          phoneFillVariant(first);
+          phoneCloseVariantResults();
+        }
+      }
+    });
+    phoneFamilyName.addEventListener("input", () => {
+      phoneRefreshReadyState();
+      phoneSaveState();
+    });
+    phoneFamilyName.addEventListener("change", () => {
+      phoneApplyFamilyMatch();
+      phoneRefreshReadyState();
+      phoneSaveState();
+    });
+    phoneFields.code.addEventListener("input", () => {
+      phoneSelectedPriceCodeKey.value = "";
+      phoneRefreshPriceState();
+      phoneRefreshReadyState();
+      phoneSaveState();
+    });
+    phoneFields.margin.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        phoneCalculateMrpFromMargin();
+        phoneFields.mrp.focus();
+        phoneFields.mrp.select();
+        phoneSaveState();
+      }
+    });
+    phoneCalculateMarginButton.addEventListener("click", phoneCalculateMrpFromMargin);
+    if (phoneShowPricingFieldsToggle) {
+      phoneShowPricingFieldsToggle.addEventListener("change", () => {
+        phoneSetPricingFieldsPreference(phoneShowPricingFieldsToggle.checked, true);
+      });
+    }
+    [
+      phoneFields.brand,
+      phoneFields.item,
+      phoneFields.article,
+      phoneFields.size,
+      phoneFields.batch,
+      phoneFields.expiry,
+      phoneFields.margin,
+      phoneFields.mrp,
+    ].forEach(field => {
+      field.addEventListener("input", () => {
+        phoneRefreshReadyState();
+        phoneSaveState();
+      });
+      field.addEventListener("change", () => {
+        phoneRefreshReadyState();
+        phoneSaveState();
+      });
+    });
+    phoneFields.copies.addEventListener("input", () => {
+      phoneFields.copies.value = phoneFields.copies.value.replace(/\D/g, "") || "1";
+      phoneRefreshReadyState();
+      phoneSaveState();
+    });
+    document.querySelectorAll("[data-copy-count]").forEach(button => {
+      button.addEventListener("click", () => {
+        phoneFields.copies.value = button.dataset.copyCount || "1";
+        phoneRefreshReadyState();
+        phoneSaveState();
+      });
+    });
+    phoneForceNewButton.addEventListener("click", () => {
+      const enabling = phoneForceNewBarcode.value !== "true";
+      phoneForceNewBarcode.value = enabling ? "true" : "false";
+      if (enabling) {
+        phoneWorkflowMode.value = "new_barcode";
+        phoneExistingVariantId.value = "";
+        phoneBarcode.value = "";
+        phoneSetStatus("ready", "New barcode", "The next print will create a new saved label record.");
+      } else {
+        phoneWorkflowMode.value = "print";
+        phoneSetStatus("ready", "Automatic barcode", "ShopBridge will reuse an exact saved barcode or create a new one.");
+      }
+      phoneRefreshReadyState();
+      phoneSaveState();
+    });
+    phoneScanButton.addEventListener("click", phoneStartCamera);
+    phoneStopScanButton.addEventListener("click", phoneStopCamera);
+    phoneActualPreviewButton.addEventListener("click", phoneGenerateActualPreview);
+    phonePrintButton.addEventListener("click", phoneOpenCopiesDialog);
+    phoneStickyPrintButton.addEventListener("click", phoneOpenCopiesDialog);
+    phoneCancelCopiesButton.addEventListener("click", () => {
+      phonePrintCopiesConfirmed = false;
+      phoneCloseCopiesDialog();
+    });
+    phonePrintCopiesBackdrop.addEventListener("click", () => {
+      phonePrintCopiesConfirmed = false;
+      phoneCloseCopiesDialog();
+    });
+    phoneConfirmCopiesButton.addEventListener("click", phoneSubmitAfterCopiesConfirm);
+    phoneFields.copies.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        phoneSubmitAfterCopiesConfirm();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        phonePrintCopiesConfirmed = false;
+        phoneCloseCopiesDialog();
+      }
+    });
+    phoneSecondaryTools.addEventListener("toggle", phoneSaveState);
+    window.addEventListener("beforeunload", phoneSaveState);
+    document.addEventListener("mousedown", event => {
+      if (!phoneVariantResults.contains(event.target) && event.target !== phoneVariantSearch) {
+        phoneCloseVariantResults();
+      }
+    });
+    [
+      phoneVariantSearch,
+      phoneFamilyName,
+      phoneFields.brand,
+      phoneFields.item,
+      phoneFields.article,
+      phoneFields.size,
+      phoneFields.batch,
+      phoneFields.expiry,
+      phoneFields.code,
+      phoneFields.margin,
+      phoneFields.mrp,
+      phoneFields.copies,
+    ].forEach(phoneSelectTextOnEdit);
+    phoneForm.addEventListener("submit", event => {
+      phoneCleanCopies();
+      phoneSyncExtraValues();
+      phoneRefreshPriceState();
+      phoneRefreshReadyState();
+      if (phonePrintButton.disabled || phonePrinting) {
+        event.preventDefault();
+        return;
+      }
+      if (!phonePrintCopiesConfirmed) {
+        event.preventDefault();
+        phoneOpenCopiesDialog();
+        return;
+      }
+      phonePrintCopiesConfirmed = false;
+      phoneCloseCopiesDialog();
+      phoneSaveState();
+      phonePrinting = true;
+      phonePrintButton.disabled = true;
+      phoneStickyPrintButton.disabled = true;
+      phoneConfirmCopiesButton.disabled = true;
+      phonePrintButton.textContent = "Printing...";
+      phoneStickyPrintButton.textContent = "Printing...";
+      phoneSetStatus("working", "Printing...", "Command sent to the laptop.");
+    });
+
+    const phoneHasSubmittedValues = Boolean(Object.keys(phoneSubmittedValues || {}).length);
+    const phoneRestoredFromStorage = !phoneHasSubmittedValues && !phoneInitialVariantId ? phoneRestoreState() : false;
+    phoneApplyCategory(phoneSubmittedValues.template_id || phoneTemplate.value);
+    if (phoneHasSubmittedValues && phoneSubmittedValues.extra_field_values) {
+      phoneApplyCustomValues(phoneParseExtraValues(phoneSubmittedValues.extra_field_values));
+    } else if (phoneRestoredFromStorage) {
+      phoneApplyCustomValues(phoneParseExtraValues(phoneExtraFieldValues.value));
+    }
+    if (phoneInitialVariantId) {
+      const initialVariant = phoneVariants.find(item => String(item.id) === String(phoneInitialVariantId));
+      if (initialVariant) {
+        phoneFillVariant(initialVariant);
+      }
+    }
+    const phoneStoredPricingFieldsPreference = phoneStoredPricingPreference();
+    if (phoneStoredPricingFieldsPreference !== null) {
+      phoneSetPricingFieldsPreference(phoneStoredPricingFieldsPreference, false);
+    }
+    phoneRefreshPriceState();
+    phoneRefreshReadyState();
+    phoneHydrating = false;
+    phoneSaveState();
+  </script>
+{% endblock %}

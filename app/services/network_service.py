@@ -16,13 +16,30 @@ def detected_lan_ip() -> str | None:
     return ip
 
 
-def scanner_url(request_host: str | None, *, port: int = 8001) -> tuple[str, bool]:
+def public_lan_url(request_host: str | None, path: str, *, port: int = 8001) -> tuple[str, bool]:
     lan_ip = detected_lan_ip()
+    clean_path = path if path.startswith("/") else f"/{path}"
     if lan_ip:
-        return f"http://{lan_ip}:{port}/scanner", True
+        return f"http://{lan_ip}:{port}{clean_path}", True
     host = (request_host or "").split(":", 1)[0] or "127.0.0.1"
-    return f"http://{host}:{port}/scanner", False
+    return f"http://{host}:{port}{clean_path}", False
+
+
+def scanner_url(request_host: str | None, *, port: int = 8001) -> tuple[str, bool]:
+    return public_lan_url(request_host, "/scanner", port=port)
+
+
+def phone_print_url(request_host: str | None, *, port: int = 8001) -> tuple[str, bool]:
+    return public_lan_url(request_host, "/phone-print", port=port)
+
+
+def qr_url_for_url(url: str) -> str:
+    return f"/scanner/qr.svg?url={quote(url, safe='')}"
 
 
 def qr_url_for_scanner(scanner: str) -> str:
-    return f"/scanner/qr.svg?url={quote(scanner, safe='')}"
+    return qr_url_for_url(scanner)
+
+
+def qr_url_for_phone_print(phone_print: str) -> str:
+    return qr_url_for_url(phone_print)

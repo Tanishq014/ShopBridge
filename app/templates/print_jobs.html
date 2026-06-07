@@ -44,6 +44,8 @@
           <th>Template</th>
           <th>Copies</th>
           <th>Status</th>
+          <th>Created</th>
+          <th>Printed</th>
           <th>CSV file</th>
           <th></th>
         </tr>
@@ -56,6 +58,8 @@
             <td>{{ job.template.template_id }}</td>
             <td>{{ job.copies }}</td>
             <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
+            <td>{{ job.created_at|local_time }}</td>
+            <td>{{ job.printed_at|local_time if job.printed_at else "" }}</td>
             <td class="path-cell">{{ job.csv_file_path or job.error_message or "" }}</td>
             <td class="row-actions">
               {% if job.status == "pending" %}
@@ -66,7 +70,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="7" class="empty">
+            <td colspan="9" class="empty">
               <div class="empty-state">
                 <strong>No print jobs yet.</strong>
                 <span>This admin page will show CSV/debug jobs after labels are created.</span>

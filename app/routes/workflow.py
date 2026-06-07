@@ -68,6 +68,31 @@ def _print_redirect(job: PrintJob, template: TemplateMaster, category: str = "cl
     return RedirectResponse(new_stock_print_redirect_url(job, template, category), status_code=303)
 
 
+def _phone_print_redirect_url(job: PrintJob, template: TemplateMaster, category: str = "clothes") -> str:
+    query: dict[str, object] = {
+        "printed": job.id,
+        "template_id": template.id,
+        "category": category,
+        "load_variant_id": job.variant_id,
+    }
+    if job.status == "failed" and job.error_message:
+        query["print_error"] = job.error_message
+    return f"/phone-print?{urlencode(query)}"
+
+
+def _print_status_message(db: Session, printed: int | None) -> str | None:
+    if not printed:
+        return None
+    job = db.get(PrintJob, printed)
+    if job and job.status == "printed":
+        return f"Print job #{printed} sent to BarTender."
+    if job and job.status == "pending":
+        return f"CSV print job #{printed} created."
+    if job and job.status == "failed":
+        return f"Print job #{printed} failed. CSV fallback may be available."
+    return f"Print job #{printed} created."
+
+
 def _workflow_context(
     request: Request,
     db: Session,
@@ -95,6 +120,35 @@ def _workflow_context(
         initial_duplicate=initial_duplicate,
         initial_barcode=initial_barcode,
     )
+
+
+def _phone_print_context(
+    request: Request,
+    db: Session,
+    message: str | None = None,
+    warning: str | None = None,
+    error: str | None = None,
+    pricing_fields_visible: bool = True,
+    selected_template_id: int | None = None,
+    selected_category: str = "clothes",
+    initial_variant_id: int | None = None,
+    initial_barcode: str = "",
+    submitted_values: dict[str, object] | None = None,
+) -> dict[str, object]:
+    context = _workflow_context(
+        request,
+        db,
+        message=message,
+        warning=warning,
+        error=error,
+        pricing_fields_visible=pricing_fields_visible,
+        selected_template_id=selected_template_id,
+        selected_category=selected_category,
+        initial_variant_id=initial_variant_id,
+        initial_barcode=initial_barcode,
+    )
+    context["submitted_values"] = submitted_values or {}
+    return context
 
 
 @router.get("/new-stock", response_class=HTMLResponse)
@@ -139,6 +193,33 @@ def new_stock(
             selected_category=category,
             initial_variant_id=duplicate_variant_id or load_variant_id,
             initial_duplicate=bool(duplicate_variant_id),
+            initial_barcode=barcode,
+        ),
+    )
+
+
+@router.get("/phone-print", response_class=HTMLResponse)
+def phone_print(
+    request: Request,
+    printed: int | None = None,
+    template_id: int | None = None,
+    category: str = "clothes",
+    print_error: str | None = None,
+    load_variant_id: int | None = None,
+    barcode: str = "",
+    db: Session = Depends(get_db),
+):
+    return templates.TemplateResponse(
+        request,
+        "phone_print.html",
+        _phone_print_context(
+            request,
+            db,
+            message=_print_status_message(db, printed),
+            error=print_error,
+            selected_template_id=template_id,
+            selected_category=category,
+            initial_variant_id=load_variant_id,
             initial_barcode=barcode,
         ),
     )
@@ -333,6 +414,111 @@ def print_new_stock(
         return workflow_error_response(exc.message, status_code=exc.status_code)
 
     return _print_redirect(result.job, result.template, result.category)
+
+
+@router.post("/phone-print/print", response_class=HTMLResponse)
+def phone_print_new_stock(
+    request: Request,
+    workflow_mode: str = Form("print"),
+    existing_variant_id: str = Form(""),
+    family_id: str = Form(""),
+    family_name: str = Form(""),
+    category: str = Form("clothes"),
+    barcode: str = Form(""),
+    brand: str = Form(""),
+    item_display_name: str = Form(""),
+    article_no: str = Form(""),
+    size: str = Form(""),
+    batch_no: str = Form(""),
+    expiry: str = Form(""),
+    mrp: str = Form(""),
+    selling_price: str = Form(""),
+    margin_percent: str = Form(""),
+    coded_price: str = Form(""),
+    coded_price_manual_override: bool = Form(False),
+    extra_field_values: str = Form(""),
+    selected_price_code_key: str = Form(""),
+    print_without_billing_price: bool = Form(False),
+    show_pricing_fields_visible: str = Form("1"),
+    force_new_barcode: bool = Form(False),
+    template_id: int = Form(...),
+    copies: int = Form(1),
+    manual_barcode_override: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    pricing_fields_visible = str(show_pricing_fields_visible).strip().lower() not in {"0", "false", "off", "no"}
+    submitted_values = {
+        "workflow_mode": workflow_mode,
+        "existing_variant_id": existing_variant_id,
+        "family_id": family_id,
+        "family_name": family_name,
+        "category": category,
+        "barcode": barcode,
+        "brand": brand,
+        "item_display_name": item_display_name,
+        "article_no": article_no,
+        "size": size,
+        "batch_no": batch_no,
+        "expiry": expiry,
+        "mrp": mrp,
+        "selling_price": selling_price,
+        "margin_percent": margin_percent,
+        "coded_price": coded_price,
+        "coded_price_manual_override": coded_price_manual_override,
+        "extra_field_values": extra_field_values,
+        "selected_price_code_key": selected_price_code_key,
+        "print_without_billing_price": print_without_billing_price,
+        "show_pricing_fields_visible": show_pricing_fields_visible,
+        "force_new_barcode": force_new_barcode,
+        "template_id": template_id,
+        "copies": copies,
+        "manual_barcode_override": manual_barcode_override,
+    }
+    try:
+        result = process_new_stock_print(
+            db,
+            PrintNewStockInput(
+                workflow_mode=workflow_mode,
+                existing_variant_id=existing_variant_id,
+                family_id=family_id,
+                family_name=family_name,
+                category=category,
+                barcode=barcode,
+                brand=brand,
+                item_display_name=item_display_name,
+                article_no=article_no,
+                size=size,
+                batch_no=batch_no,
+                expiry=expiry,
+                mrp=mrp,
+                selling_price=selling_price,
+                coded_price=coded_price,
+                extra_field_values=extra_field_values,
+                selected_price_code_key=selected_price_code_key,
+                print_without_billing_price=print_without_billing_price,
+                force_new_barcode=force_new_barcode,
+                template_id=template_id,
+                copies=copies,
+                manual_barcode_override=manual_barcode_override,
+            ),
+        )
+    except WorkflowPrintError as exc:
+        return templates.TemplateResponse(
+            request,
+            "phone_print.html",
+            _phone_print_context(
+                request,
+                db,
+                error=exc.message,
+                pricing_fields_visible=pricing_fields_visible,
+                selected_template_id=template_id,
+                selected_category=category,
+                submitted_values=submitted_values,
+            ),
+            status_code=exc.status_code,
+        )
+
+    return RedirectResponse(_phone_print_redirect_url(result.job, result.template, result.category), status_code=303)
 
 
 @router.post("/new-stock/quick-reprint")

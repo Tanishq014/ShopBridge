@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
-from app.services.network_service import qr_url_for_scanner, scanner_url
+from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
 from app.services.settings_service import (
     get_barcode_settings,
     get_bartender_settings,
@@ -74,6 +74,7 @@ def settings_context(
     settings_error: str | None = None,
 ) -> dict[str, object]:
     scanner, scanner_ip_detected = scanner_url(request.headers.get("host"))
+    phone_print, phone_print_ip_detected = phone_print_url(request.headers.get("host"))
     scan_bartender_template_folder(db)
     template_rows = db.execute(select(TemplateMaster).order_by(TemplateMaster.template_name)).scalars().all()
     active_templates = [template for template in template_rows if template.active_status]
@@ -110,4 +111,7 @@ def settings_context(
         "scanner_url": scanner,
         "scanner_qr_url": qr_url_for_scanner(scanner),
         "scanner_ip_detected": scanner_ip_detected,
+        "phone_print_url": phone_print,
+        "phone_print_qr_url": qr_url_for_phone_print(phone_print),
+        "phone_print_ip_detected": phone_print_ip_detected,
     }

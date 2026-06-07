@@ -90,6 +90,17 @@
     <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
   </section>
 
+  <section class="panel setup-panel scanner-link-panel">
+    <div>
+      <h2>Phone Print</h2>
+      <p class="mono">{{ phone_print_url }}</p>
+      {% if not phone_print_ip_detected %}
+        <p class="muted-text">LAN IP was not detected. Start with <span class="mono">uvicorn app.main:app --host 0.0.0.0 --port 8001</span>, then use the laptop IP from Windows Wi-Fi settings.</p>
+      {% endif %}
+    </div>
+    <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
+  </section>
+
   <section class="panel setup-panel">
     <div class="section-line">
       <h2>Price Code Settings</h2>

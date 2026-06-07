@@ -70,6 +70,7 @@
                 <th>Status</th>
                 <th>Copies</th>
                 <th>Created</th>
+                <th>Printed</th>
               </tr>
             </thead>
             <tbody>
@@ -79,9 +80,10 @@
                   <td><span class="badge {{ 'ok' if job.status == 'printed' else 'warn' if job.status == 'pending' else 'muted' }}">{{ job.status }}</span></td>
                   <td>{{ job.copies }}</td>
                   <td>{{ job.created_at|local_time }}</td>
+                  <td>{{ job.printed_at|local_time if job.printed_at else "" }}</td>
                 </tr>
               {% else %}
-                <tr><td colspan="4">No print jobs yet.</td></tr>
+                <tr><td colspan="5">No print jobs yet.</td></tr>
               {% endfor %}
             </tbody>
           </table>
