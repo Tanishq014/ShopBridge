@@ -754,6 +754,12 @@
       if (!visibleEntryFields().includes(target) || target === printQuantityInput || target === printButton) {
         return;
       }
+      if (target === fields.margin) {
+        event.preventDefault();
+        event.stopPropagation();
+        calculateMrpFromMargin();
+        return;
+      }
       if ((target === familyName && billingItemCombo.classList.contains("open")) || (target === variantSearch && variantCombo.classList.contains("open"))) {
         return;
       }
