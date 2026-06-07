@@ -671,9 +671,6 @@
       }
       return [
         familyName,
-        fields.coded,
-        fields.margin,
-        fields.mrp,
         fields.brand,
         fields.item,
         fields.article,
@@ -681,6 +678,9 @@
         fields.batch,
         fields.expiry,
         ...Object.values(customInputByField),
+        fields.coded,
+        fields.margin,
+        fields.mrp,
         printQuantityInput,
         printButton,
       ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
@@ -785,9 +785,6 @@
 
     function firstFieldAfterBillingItem() {
       return [
-        fields.coded,
-        fields.margin,
-        fields.mrp,
         fields.brand,
         fields.item,
         fields.article,
@@ -795,12 +792,15 @@
         fields.batch,
         fields.expiry,
         ...Object.values(customInputByField),
+        fields.coded,
+        fields.margin,
+        fields.mrp,
         printQuantityInput,
       ].find(isFocusableEntryField) || templateSelect;
     }
 
     function preferredFieldAfterBillingItem() {
-      return isFocusableEntryField(fields.coded) ? fields.coded : firstFieldAfterBillingItem();
+      return firstFieldAfterBillingItem();
     }
 
     function focusFieldNow(field) {
@@ -2097,7 +2097,7 @@
       }
       updatePreview();
       saveWorkflowState();
-      focusFirstTemplateField();
+      focusBillingItem();
     }
 
     function updatePreview() {
@@ -2651,6 +2651,7 @@
       refreshBarcodeControls();
       updatePreview();
       saveWorkflowState();
+      focusBillingItem();
     } else if (restoredWorkflowState && existingVariantId.value) {
       const restoredVariant = variants.find(item => String(item.id) === String(existingVariantId.value));
       if (restoredVariant) {
@@ -2658,9 +2659,8 @@
       }
       refreshBarcodeControls();
       updatePreview();
-    }
-    if (pageParams.has("printed") || (!initialVariantId && !initialBarcode)) {
       focusBillingItem();
     }
+    focusBillingItem();
     window.addEventListener("beforeunload", saveWorkflowState);
   </script>
