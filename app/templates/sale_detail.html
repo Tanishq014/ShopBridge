@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ sale.bill_number }} - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>{{ sale.bill_number }}</h1>
+      <p>Local POS sale saved in ShopBridge. Tally write is not implemented in this milestone.</p>
+    </div>
+    <div class="form-actions">
+      <a class="button primary" href="/sales/{{ sale.id }}/receipt">Open Receipt</a>
+      <a class="button" href="/pos">Back to POS</a>
+      <a class="button" href="/sales">Sales List</a>
+    </div>
+  </section>
+
+  <section class="status-strip">
+    <div class="status-tile">
+      <span>Date</span>
+      <strong>{{ sale.created_at|local_time }}</strong>
+    </div>
+    <div class="status-tile ok">
+      <span>Total</span>
+      <strong>Rs. {{ "%.2f"|format(sale.total) }}</strong>
+    </div>
+    <div class="status-tile">
+      <span>Payment</span>
+      <strong>{{ sale.payment_mode|title }}</strong>
+    </div>
+    <div class="status-tile">
+      <span>Status</span>
+      <strong>{{ sale.status|title }}</strong>
+    </div>
+  </section>
+
+  <section class="two-column">
+    <div class="panel">
+      <h2>Bill Details</h2>
+      <dl class="detail-list">
+        <dt>Bill Number</dt><dd class="mono">{{ sale.bill_number }}</dd>
+        <dt>Print Status</dt><dd>{{ sale.print_status }}</dd>
+        <dt>Tally Sync Status</dt><dd>{{ sale.tally_sync_status }}</dd>
+        <dt>Tally Voucher Number</dt><dd>{{ sale.tally_voucher_number or "" }}</dd>
+        <dt>Tally Voucher GUID</dt><dd>{{ sale.tally_voucher_guid or "" }}</dd>
+        <dt>Tally Last Error</dt><dd>{{ sale.tally_last_error or "" }}</dd>
+        <dt>Notes</dt><dd>{{ sale.notes or "" }}</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <h2>Totals</h2>
+      <dl class="detail-list">
+        <dt>Subtotal</dt><dd>Rs. {{ "%.2f"|format(sale.subtotal) }}</dd>
+        <dt>Discount</dt><dd>Rs. {{ "%.2f"|format(sale.discount_total) }}</dd>
+        <dt>Round Off</dt><dd>Rs. {{ "%.2f"|format(sale.round_off) }}</dd>
+        <dt>Total</dt><dd><strong>Rs. {{ "%.2f"|format(sale.total) }}</strong></dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-line">
+      <h2>Items</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Barcode</th>
+            <th>MRP</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Discount</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in sale.items %}
+            <tr>
+              <td>{{ item.item_name }}</td>
+              <td class="mono">{{ item.barcode }}</td>
+              <td>{{ "%.2f"|format(item.mrp) if item.mrp is not none else "" }}</td>
+              <td>{{ item.qty }}</td>
+              <td>{{ "%.2f"|format(item.rate) }}</td>
+              <td>{{ "%.2f"|format(item.discount_amount) }}</td>
+              <td>{{ "%.2f"|format(item.amount) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="empty">No items were saved for this sale.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

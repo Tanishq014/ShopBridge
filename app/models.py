@@ -124,3 +124,45 @@ class PosCartItem(Base):
 
     cart = relationship("PosCart", back_populates="items")
     variant = relationship("LabelVariant", foreign_keys=[variant_id])
+
+
+class Sale(Base):
+    __tablename__ = "sales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bill_number = Column(String(40), nullable=False, unique=True, index=True)
+    status = Column(String(40), nullable=False, default="completed", index=True)
+    subtotal = Column(Numeric(10, 2), nullable=False, default=0)
+    discount_total = Column(Numeric(10, 2), nullable=False, default=0)
+    round_off = Column(Numeric(10, 2), nullable=False, default=0)
+    total = Column(Numeric(10, 2), nullable=False, default=0)
+    payment_mode = Column(String(40), nullable=False, default="cash")
+    notes = Column(Text, nullable=True)
+    print_status = Column(String(40), nullable=False, default="not_printed", index=True)
+    tally_sync_status = Column(String(40), nullable=False, default="not_started", index=True)
+    tally_voucher_number = Column(String(120), nullable=True)
+    tally_voucher_guid = Column(String(120), nullable=True)
+    tally_last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
+
+
+class SaleItem(Base):
+    __tablename__ = "sale_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False, index=True)
+    label_variant_id = Column(Integer, ForeignKey("label_variants.id"), nullable=True, index=True)
+    barcode = Column(String(80), nullable=False, index=True)
+    item_name = Column(String(250), nullable=False)
+    tally_stock_item_name = Column(String(250), nullable=True, index=True)
+    qty = Column(Integer, nullable=False, default=1)
+    rate = Column(Numeric(10, 2), nullable=False)
+    mrp = Column(Numeric(10, 2), nullable=True)
+    discount_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    amount = Column(Numeric(10, 2), nullable=False)
+
+    sale = relationship("Sale", back_populates="items")
+    label_variant = relationship("LabelVariant", foreign_keys=[label_variant_id])

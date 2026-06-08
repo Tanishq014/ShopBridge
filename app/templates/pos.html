@@ -1,152 +1,371 @@
 {% extends "base.html" %}
-{% block title %}POS Shadow Mode - ShopBridge{% endblock %}
+{% block title %}ShopBridge POS{% endblock %}
 {% block content %}
-  <section class="page-header compact-header">
-    <div>
-      <h1>POS Shadow Mode - No Tally Sync</h1>
-      <p>Phone scans update this laptop cart. Prices come only from saved barcode records.</p>
-    </div>
-    <div class="form-actions">
-      <a class="button primary" href="/scanner">Open Phone Scanner</a>
-      <button class="button" type="button" id="refreshCartButton">Refresh</button>
-      <button class="button" type="button" id="clearCartButton">Clear Cart</button>
-    </div>
-  </section>
+  <section class="pos-shell">
+    <header class="pos-header">
+      <div>
+        <div class="pos-title-row">
+          <h1>ShopBridge POS</h1>
+          <span class="pos-mode-badge">Local Mode / Tally Off</span>
+        </div>
+        <p>Scan or type, press Enter, then keep billing. Prices come only from saved barcode records.</p>
+      </div>
+      <div class="pos-top-actions">
+        <a class="button" href="/sales">Sales</a>
+        <details class="pos-qr-popover">
+          <summary class="button">Phone Scanner QR</summary>
+          <div class="pos-qr-card">
+            <strong>Phone Scanner</strong>
+            <p class="mono">{{ scanner_url }}</p>
+            {% if not scanner_ip_detected %}
+              <p class="muted-text">LAN IP was not detected. Use the laptop IP with port 8001 if needed.</p>
+            {% endif %}
+            <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
+          </div>
+        </details>
+        <details class="pos-qr-popover">
+          <summary class="button">Phone Print QR</summary>
+          <div class="pos-qr-card">
+            <strong>Phone Print</strong>
+            <p class="mono">{{ phone_print_url }}</p>
+            {% if not phone_print_ip_detected %}
+              <p class="muted-text">LAN IP was not detected. Use the laptop IP with port 8001 if needed.</p>
+            {% endif %}
+            <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
+          </div>
+        </details>
+        <button class="button" type="button" id="refreshCartButton">Refresh</button>
+      </div>
+    </header>
 
-  <section class="status-strip pos-summary">
-    <div class="status-tile">
-      <span>Items</span>
-      <strong id="cartCount">0</strong>
-    </div>
-    <div class="status-tile ok">
-      <span>Total</span>
-      <strong id="cartTotal">Rs. 0.00</strong>
-    </div>
-    <div class="status-tile warn">
-      <span>Mode</span>
-      <strong>Shadow</strong>
-    </div>
-    <div class="status-tile">
-      <span>Sync</span>
-      <strong>Off</strong>
-    </div>
-  </section>
+    <section class="pos-entry-panel">
+      <label for="posSearchInput">Scan / Search / Article</label>
+      <div class="pos-search-wrap">
+        <input
+          id="posSearchInput"
+          autocomplete="off"
+          inputmode="text"
+          placeholder="Scan barcode or type item name/article"
+          spellcheck="false"
+        >
+        <div class="pos-suggestions" id="posSuggestions" role="listbox" hidden></div>
+      </div>
+      <div class="pos-status pos-status-info" id="cartStatus" role="status">
+        Ready. Scan an item or press F2 to focus here.
+      </div>
+    </section>
 
-  <section class="panel scanner-link-panel">
-    <div>
-      <h2>Phone Scanner</h2>
-      <p class="mono">{{ scanner_url }}</p>
-      {% if not scanner_ip_detected %}
-        <p class="muted-text">LAN IP was not detected. If the phone cannot open this, use the laptop IP address with port 8001.</p>
-      {% endif %}
-    </div>
-    <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
-  </section>
+    <section class="pos-workspace">
+      <div class="pos-cart-panel">
+        <div class="pos-section-title">
+          <h2>Current Bill</h2>
+          <span id="cartLineCount">0 lines</span>
+        </div>
+        <div class="pos-cart-list" id="cartRows">
+          <div class="pos-empty-cart">Cart is empty. Scan or search an item to start.</div>
+        </div>
+      </div>
 
-  <section class="panel scanner-link-panel">
-    <div>
-      <h2>Phone Print</h2>
-      <p class="mono">{{ phone_print_url }}</p>
-      {% if not phone_print_ip_detected %}
-        <p class="muted-text">LAN IP was not detected. If the phone cannot open this, use the laptop IP address with port 8001.</p>
-      {% endif %}
-    </div>
-    <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
-  </section>
+      <aside class="pos-bill-panel">
+        <form method="post" action="/pos/checkout" id="checkoutForm">
+          <div class="pos-summary-grid">
+            <span>Lines</span>
+            <strong id="summaryLines">0</strong>
+            <span>Qty</span>
+            <strong id="cartCount">0</strong>
+            <span>Subtotal</span>
+            <strong id="summarySubtotal">Rs. 0.00</strong>
+          </div>
 
-  <section class="table-wrap pos-cart-panel">
-    <table class="pos-table">
-      <thead>
-        <tr>
-          <th>Item Name</th>
-          <th>Barcode</th>
-          <th>MRP</th>
-          <th>Selling Price</th>
-          <th>Qty</th>
-          <th>Amount</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="cartRows">
-        <tr>
-          <td colspan="7" class="empty">Cart is empty.</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+          <div class="pos-total-box">
+            <span>Total</span>
+            <strong id="cartTotal">Rs. 0.00</strong>
+          </div>
 
-  <div class="workflow-state compact-message" id="cartStatus">Waiting for scans.</div>
+          <label class="pos-summary-field">
+            Payment Mode
+            <select name="payment_mode" id="paymentMode">
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </label>
+          <label class="pos-summary-field">
+            Notes
+            <input name="notes" id="checkoutNotes" placeholder="Optional">
+          </label>
+
+          <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
+            Checkout - Rs. 0.00
+          </button>
+        </form>
+
+        <button class="button pos-clear-button" type="button" id="clearCartButton">Clear Cart</button>
+      </aside>
+    </section>
+
+    <footer class="pos-help-bar">
+      F2 Item | Enter Add | Up/Down Select | +/- Qty | Del Remove | F4 Pay | Ctrl+Enter Checkout | Esc Back | F10 Receipt
+    </footer>
+  </section>
 
   <script>
     const cartRows = document.getElementById("cartRows");
     const cartCount = document.getElementById("cartCount");
+    const cartLineCount = document.getElementById("cartLineCount");
     const cartTotal = document.getElementById("cartTotal");
     const cartStatus = document.getElementById("cartStatus");
-    const refreshCartButton = document.getElementById("refreshCartButton");
+    const checkoutButton = document.getElementById("checkoutButton");
+    const checkoutForm = document.getElementById("checkoutForm");
+    const checkoutNotes = document.getElementById("checkoutNotes");
     const clearCartButton = document.getElementById("clearCartButton");
+    const paymentMode = document.getElementById("paymentMode");
+    const refreshCartButton = document.getElementById("refreshCartButton");
+    const searchInput = document.getElementById("posSearchInput");
+    const suggestionsBox = document.getElementById("posSuggestions");
+    const summaryLines = document.getElementById("summaryLines");
+    const summarySubtotal = document.getElementById("summarySubtotal");
+
+    const checkoutError = {{ error|tojson }};
+    const state = {
+      cart: {items: [], count: 0, total: "0.00"},
+      selectedIndex: -1,
+      suggestions: [],
+      suggestionIndex: -1,
+      searchTimer: null,
+      searchRequestId: 0,
+    };
 
     function money(value) {
-      return value ? `Rs. ${value}` : "";
+      return value ? `Rs. ${value}` : "Rs. 0.00";
     }
 
-    function actionButton(label, endpoint, itemId) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "button small";
-      button.textContent = label;
-      button.addEventListener("click", async () => {
-        await postCartAction(`/pos/cart/items/${itemId}/${endpoint}`);
+    function focusItemInput(selectText = false) {
+      window.requestAnimationFrame(() => {
+        searchInput.focus();
+        if (selectText) {
+          searchInput.select();
+        }
       });
-      return button;
+    }
+
+    function setStatus(message, type = "info") {
+      cartStatus.textContent = message;
+      cartStatus.className = `pos-status pos-status-${type}`;
+    }
+
+    function playBeep(ok = true) {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+          return;
+        }
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = ok ? 880 : 220;
+        gain.gain.value = 0.05;
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.08);
+        oscillator.addEventListener("ended", () => context.close());
+      } catch (error) {
+        // Sound is optional.
+      }
+    }
+
+    function itemDescription(item) {
+      return [item.article_no, item.brand, item.category].filter(Boolean).join(" | ");
+    }
+
+    function selectedCartItem() {
+      if (!state.cart.items || state.selectedIndex < 0) {
+        return null;
+      }
+      return state.cart.items[state.selectedIndex] || null;
+    }
+
+    function selectCartIndex(index) {
+      const items = state.cart.items || [];
+      if (!items.length) {
+        state.selectedIndex = -1;
+      } else {
+        state.selectedIndex = Math.max(0, Math.min(index, items.length - 1));
+      }
+      renderCart(state.cart);
+    }
+
+    function closeSuggestions() {
+      state.suggestions = [];
+      state.suggestionIndex = -1;
+      suggestionsBox.hidden = true;
+      suggestionsBox.innerHTML = "";
+    }
+
+    function renderSuggestions() {
+      suggestionsBox.innerHTML = "";
+      if (!state.suggestions.length) {
+        suggestionsBox.hidden = true;
+        return;
+      }
+      state.suggestionIndex = Math.max(0, Math.min(state.suggestionIndex, state.suggestions.length - 1));
+      state.suggestions.forEach((item, index) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = `pos-suggestion${index === state.suggestionIndex ? " active" : ""}`;
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", index === state.suggestionIndex ? "true" : "false");
+        option.innerHTML = `
+          <strong></strong>
+          <span></span>
+          <em></em>
+        `;
+        option.querySelector("strong").textContent = item.item_name || item.family_name || item.barcode;
+        option.querySelector("span").textContent = [
+          item.barcode,
+          item.article_no,
+          item.tally_stock_item_name || item.category,
+        ].filter(Boolean).join(" | ");
+        option.querySelector("em").textContent = item.missing_price ? "Missing price" : money(item.selling_price);
+        option.addEventListener("mousedown", event => event.preventDefault());
+        option.addEventListener("click", () => selectSuggestion(index));
+        suggestionsBox.appendChild(option);
+      });
+      suggestionsBox.hidden = false;
+    }
+
+    async function searchItems(query) {
+      const term = query.trim();
+      window.clearTimeout(state.searchTimer);
+      if (!term) {
+        closeSuggestions();
+        return;
+      }
+      state.searchTimer = window.setTimeout(async () => {
+        const requestId = ++state.searchRequestId;
+        try {
+          const response = await fetch(`/pos/search?q=${encodeURIComponent(term)}`, {cache: "no-store"});
+          const data = await response.json();
+          if (requestId !== state.searchRequestId || searchInput.value.trim() !== term) {
+            return;
+          }
+          state.suggestions = data.items || [];
+          state.suggestionIndex = 0;
+          renderSuggestions();
+        } catch (error) {
+          closeSuggestions();
+        }
+      }, 120);
+    }
+
+    async function selectSuggestion(index) {
+      const item = state.suggestions[index];
+      if (!item) {
+        return;
+      }
+      searchInput.value = item.barcode;
+      closeSuggestions();
+      await addBarcode(item.barcode);
     }
 
     function renderCart(cart) {
-      cartCount.textContent = cart.count || 0;
-      cartTotal.textContent = money(cart.total || "0.00");
+      state.cart = cart || {items: [], count: 0, total: "0.00"};
+      const items = state.cart.items || [];
+      if (!items.length) {
+        state.selectedIndex = -1;
+      } else if (state.selectedIndex < 0 || state.selectedIndex >= items.length) {
+        state.selectedIndex = items.length - 1;
+      }
+
+      const lineLabel = `${items.length} ${items.length === 1 ? "line" : "lines"}`;
+      cartLineCount.textContent = lineLabel;
+      summaryLines.textContent = items.length;
+      cartCount.textContent = state.cart.count || 0;
+      cartTotal.textContent = money(state.cart.total || "0.00");
+      summarySubtotal.textContent = money(state.cart.total || "0.00");
+      checkoutButton.disabled = items.length === 0;
+      checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
       cartRows.innerHTML = "";
 
-      if (!cart.items || cart.items.length === 0) {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.colSpan = 7;
-        cell.className = "empty";
-        cell.textContent = "Cart is empty.";
-        row.appendChild(cell);
-        cartRows.appendChild(row);
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "pos-empty-cart";
+        empty.textContent = "Cart is empty. Scan or search an item to start.";
+        cartRows.appendChild(empty);
         return;
       }
 
-      cart.items.forEach(item => {
-        const row = document.createElement("tr");
-        if (item.missing_price) {
-          row.className = "warn-row";
-        }
+      items.forEach((item, index) => {
+        const row = document.createElement("article");
+        row.className = `pos-cart-row${index === state.selectedIndex ? " selected" : ""}${item.missing_price ? " warn" : ""}`;
+        row.tabIndex = -1;
+        row.dataset.itemId = item.id;
+        row.addEventListener("click", () => {
+          state.selectedIndex = index;
+          renderCart(state.cart);
+          focusItemInput(false);
+        });
 
-        const name = document.createElement("td");
-        const nameStrong = document.createElement("strong");
-        nameStrong.textContent = item.item_name || "";
-        const nameMeta = document.createElement("span");
-        nameMeta.className = "muted-text";
-        nameMeta.textContent = item.category || "";
-        name.append(nameStrong, document.createElement("br"), nameMeta);
-        const barcode = document.createElement("td");
+        const details = document.createElement("div");
+        details.className = "pos-cart-main";
+        const name = document.createElement("strong");
+        name.textContent = item.item_name || "";
+        const meta = document.createElement("span");
+        meta.textContent = itemDescription(item);
+        const barcode = document.createElement("small");
         barcode.className = "mono";
         barcode.textContent = item.barcode || "";
-        const mrp = document.createElement("td");
-        mrp.textContent = money(item.mrp);
-        const selling = document.createElement("td");
-        selling.textContent = item.missing_price ? "Missing" : money(item.selling_price);
-        const qty = document.createElement("td");
-        qty.textContent = item.qty;
-        const amount = document.createElement("td");
-        amount.textContent = item.missing_price ? "" : money(item.amount);
-        const actions = document.createElement("td");
-        actions.className = "row-actions";
-        actions.appendChild(actionButton("+", "increase", item.id));
-        actions.appendChild(actionButton("-", "decrease", item.id));
-        actions.appendChild(actionButton("Remove", "remove", item.id));
+        details.append(name, meta, barcode);
 
-        row.append(name, barcode, mrp, selling, qty, amount, actions);
+        const prices = document.createElement("div");
+        prices.className = "pos-cart-prices";
+        prices.innerHTML = `
+          <span>MRP <strong></strong></span>
+          <span>Rate <strong></strong></span>
+        `;
+        prices.children[0].querySelector("strong").textContent = money(item.mrp);
+        prices.children[1].querySelector("strong").textContent = item.missing_price ? "Missing" : money(item.selling_price);
+
+        const qty = document.createElement("div");
+        qty.className = "pos-cart-qty";
+        qty.innerHTML = `
+          <button type="button" class="button small" aria-label="Decrease quantity">-</button>
+          <strong></strong>
+          <button type="button" class="button small" aria-label="Increase quantity">+</button>
+        `;
+        qty.querySelector("strong").textContent = item.qty;
+        qty.children[0].addEventListener("click", event => {
+          event.stopPropagation();
+          state.selectedIndex = index;
+          changeSelectedQty(-1);
+        });
+        qty.children[2].addEventListener("click", event => {
+          event.stopPropagation();
+          state.selectedIndex = index;
+          changeSelectedQty(1);
+        });
+
+        const amount = document.createElement("div");
+        amount.className = "pos-cart-amount";
+        const amountLabel = document.createElement("span");
+        amountLabel.textContent = "Amount";
+        const amountValue = document.createElement("strong");
+        amountValue.textContent = item.missing_price ? "" : money(item.amount);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "button small";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", event => {
+          event.stopPropagation();
+          state.selectedIndex = index;
+          removeSelectedItem();
+        });
+        amount.append(amountLabel, amountValue, remove);
+
+        row.append(details, prices, qty, amount);
         cartRows.appendChild(row);
       });
     }
@@ -157,17 +376,16 @@
         if (!response.ok) {
           throw new Error("Could not load cart.");
         }
-        const cart = await response.json();
-        renderCart(cart);
+        renderCart(await response.json());
         if (!silent) {
-          cartStatus.textContent = "Cart refreshed.";
+          setStatus("Cart refreshed.", "info");
         }
       } catch (error) {
-        cartStatus.textContent = error.message || "Could not load cart.";
+        setStatus(error.message || "Could not load cart.", "error");
       }
     }
 
-    async function postCartAction(url) {
+    async function postCartAction(url, successMessage) {
       try {
         const response = await fetch(url, {method: "POST"});
         const cart = await response.json();
@@ -175,18 +393,243 @@
           throw new Error(cart.message || "Cart action failed.");
         }
         renderCart(cart);
-        cartStatus.textContent = "Cart updated.";
+        setStatus(successMessage || "Cart updated.", "success");
+        focusItemInput(false);
       } catch (error) {
-        cartStatus.textContent = error.message || "Cart action failed.";
+        setStatus(error.message || "Cart action failed.", "error");
+        playBeep(false);
+        focusItemInput(false);
       }
     }
 
-    refreshCartButton.addEventListener("click", () => loadCart(false));
-    clearCartButton.addEventListener("click", async () => {
-      await postCartAction("/pos/cart/clear");
+    async function addBarcode(barcode, allowMissingPrice = false) {
+      const clean = (barcode || "").trim();
+      if (!clean) {
+        setStatus("Type or scan an item first.", "error");
+        focusItemInput(false);
+        return;
+      }
+      try {
+        const response = await fetch("/pos/scan", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({barcode: clean, allow_missing_price: allowMissingPrice}),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          if (response.status === 409 && !allowMissingPrice) {
+            const confirmAdd = window.confirm(`${data.message || "Selling price is missing."}\nAdd this item anyway?`);
+            if (confirmAdd) {
+              await addBarcode(clean, true);
+            } else {
+              setStatus(data.message || "Selling price is missing.", "error");
+              playBeep(false);
+              focusItemInput(true);
+            }
+            return;
+          }
+          if (response.status === 404) {
+            await searchItems(clean);
+            setStatus(`Barcode/item not found: ${clean}`, "error");
+            playBeep(false);
+            focusItemInput(true);
+            return;
+          }
+          throw new Error(data.message || "Could not add item.");
+        }
+        renderCart(data.cart);
+        searchInput.value = "";
+        closeSuggestions();
+        setStatus(`Added: ${data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
+        playBeep(true);
+        focusItemInput(false);
+      } catch (error) {
+        setStatus(error.message || "Could not add item.", "error");
+        playBeep(false);
+        focusItemInput(false);
+      }
+    }
+
+    async function submitItemInput() {
+      if (!suggestionsBox.hidden && state.suggestions.length) {
+        await selectSuggestion(state.suggestionIndex);
+        return;
+      }
+      await addBarcode(searchInput.value);
+    }
+
+    async function changeSelectedQty(delta) {
+      const item = selectedCartItem();
+      if (!item) {
+        setStatus("No cart item selected.", "error");
+        focusItemInput(false);
+        return;
+      }
+      if (delta > 0) {
+        await postCartAction(`/pos/cart/items/${item.id}/increase`, "Quantity increased.");
+        return;
+      }
+      if (item.qty <= 1) {
+        const remove = window.confirm("Quantity is 1. Remove this item from the cart?");
+        if (remove) {
+          await postCartAction(`/pos/cart/items/${item.id}/remove`, "Item removed.");
+        } else {
+          focusItemInput(false);
+        }
+        return;
+      }
+      await postCartAction(`/pos/cart/items/${item.id}/decrease`, "Quantity decreased.");
+    }
+
+    async function removeSelectedItem() {
+      const item = selectedCartItem();
+      if (!item) {
+        setStatus("No cart item selected.", "error");
+        focusItemInput(false);
+        return;
+      }
+      if (!window.confirm(`Remove ${item.item_name || item.barcode} from cart?`)) {
+        focusItemInput(false);
+        return;
+      }
+      await postCartAction(`/pos/cart/items/${item.id}/remove`, "Item removed.");
+    }
+
+    function checkoutNow() {
+      if (checkoutButton.disabled) {
+        setStatus("Cart is empty. Add an item before checkout.", "error");
+        playBeep(false);
+        focusItemInput(false);
+        return;
+      }
+      checkoutForm.requestSubmit();
+    }
+
+    searchInput.addEventListener("input", () => {
+      searchItems(searchInput.value);
     });
 
-    loadCart(false);
+    searchInput.addEventListener("keydown", async event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        await submitItemInput();
+        return;
+      }
+      if (!suggestionsBox.hidden && state.suggestions.length && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        state.suggestionIndex = (state.suggestionIndex + delta + state.suggestions.length) % state.suggestions.length;
+        renderSuggestions();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        searchInput.value = "";
+        closeSuggestions();
+        focusItemInput(false);
+        return;
+      }
+      if (event.key === "Backspace" && !searchInput.value) {
+        event.preventDefault();
+        closeSuggestions();
+        setStatus("Ready. Scan an item or type to search.", "info");
+        focusItemInput(false);
+      }
+    });
+
+    refreshCartButton.addEventListener("click", async () => {
+      await loadCart(false);
+      focusItemInput(false);
+    });
+
+    clearCartButton.addEventListener("click", async () => {
+      if (!state.cart.items || state.cart.items.length === 0) {
+        setStatus("Cart is already empty.", "info");
+        focusItemInput(false);
+        return;
+      }
+      if (window.confirm("Clear the full cart?")) {
+        await postCartAction("/pos/cart/clear", "Cart cleared.");
+      } else {
+        focusItemInput(false);
+      }
+    });
+
+    checkoutForm.addEventListener("submit", event => {
+      if (checkoutButton.disabled) {
+        event.preventDefault();
+        setStatus("Cart is empty. Add an item before checkout.", "error");
+        focusItemInput(false);
+        return;
+      }
+      checkoutButton.disabled = true;
+      checkoutButton.textContent = "Checking out...";
+    });
+
+    document.addEventListener("keydown", async event => {
+      const active = document.activeElement;
+      const isEditingOtherField = ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) && active !== searchInput;
+
+      if (event.key === "F2") {
+        event.preventDefault();
+        focusItemInput(true);
+        return;
+      }
+      if (event.key === "F4") {
+        event.preventDefault();
+        paymentMode.focus();
+        return;
+      }
+      if ((event.ctrlKey && event.key === "Enter") || (event.shiftKey && event.key === "Enter")) {
+        event.preventDefault();
+        checkoutNow();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSuggestions();
+        focusItemInput(false);
+        return;
+      }
+      if (event.key === "F10") {
+        event.preventDefault();
+        setStatus("Open the Sales page for the last receipt.", "info");
+        focusItemInput(false);
+        return;
+      }
+      if (isEditingOtherField) {
+        return;
+      }
+      if (document.activeElement === searchInput && !suggestionsBox.hidden) {
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        selectCartIndex((state.selectedIndex < 0 ? 0 : state.selectedIndex) + delta);
+        focusItemInput(false);
+        return;
+      }
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        await changeSelectedQty(1);
+        return;
+      }
+      if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        await changeSelectedQty(-1);
+        return;
+      }
+      if (event.key === "Delete") {
+        event.preventDefault();
+        await removeSelectedItem();
+      }
+    });
+
+    if (checkoutError) {
+      setStatus(checkoutError, "error");
+    }
+    loadCart(true).then(() => focusItemInput(false));
     window.setInterval(() => loadCart(true), 1000);
   </script>
 {% endblock %}

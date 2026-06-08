@@ -4,19 +4,21 @@ import logging
 import time
 from io import BytesIO
 from decimal import Decimal
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import TEMPLATES_DIR
 from app.db import get_db
-from app.models import PosCart, PosCartItem
+from app.models import LabelVariant, PosCart, PosCartItem, ProductFamily, Sale
 from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
 from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
+from app.services.sales_service import CheckoutError, checkout_cart
 from app.services.template_filters import register_template_filters
 
 
@@ -64,7 +66,11 @@ def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
         "variant_id": item.variant_id,
         "barcode": variant.barcode,
         "item_name": variant.item_display_name,
+        "article_no": variant.article_no or "",
+        "brand": variant.brand or "",
         "category": category or "",
+        "family_name": variant.family.family_name if variant and variant.family else "",
+        "tally_stock_item_name": variant.family.tally_stock_item_name if variant and variant.family else "",
         "template_name": template_name or "",
         "mrp": _money(variant.mrp),
         "selling_price": _money(item.unit_price),
@@ -115,8 +121,27 @@ def _json_error(message: str, *, status_code: int, status: str, **extra: object)
     return JSONResponse(payload, status_code=status_code)
 
 
+def _variant_search_payload(variant: LabelVariant, *, exact_barcode: bool = False) -> dict[str, object]:
+    family = variant.family
+    return {
+        "id": variant.id,
+        "barcode": variant.barcode,
+        "item_name": variant.item_display_name,
+        "article_no": variant.article_no or "",
+        "brand": variant.brand or "",
+        "category": family.category if family else "",
+        "family_name": family.family_name if family else "",
+        "tally_stock_item_name": family.tally_stock_item_name if family else "",
+        "mrp": _money(variant.mrp),
+        "selling_price": _money(variant.selling_price),
+        "coded_price": variant.coded_price or "",
+        "missing_price": variant.selling_price is None,
+        "exact_barcode": exact_barcode,
+    }
+
+
 @router.get("/pos", response_class=HTMLResponse)
-def pos_page(request: Request, db: Session = Depends(get_db)):
+def pos_page(request: Request, checkout_error: str | None = None, db: Session = Depends(get_db)):
     scanner, detected = scanner_url(request.headers.get("host"))
     phone_print, phone_print_detected = phone_print_url(request.headers.get("host"))
     return templates.TemplateResponse(
@@ -130,6 +155,7 @@ def pos_page(request: Request, db: Session = Depends(get_db)):
             "phone_print_url": phone_print,
             "phone_print_qr_url": qr_url_for_phone_print(phone_print),
             "phone_print_ip_detected": phone_print_detected,
+            "error": checkout_error,
         },
     )
 
@@ -178,6 +204,76 @@ def pos_cart(db: Session = Depends(get_db)):
         _pos_cart_heartbeat["signature"] = signature
         _pos_cart_heartbeat["last_log_at"] = now
     return payload
+
+
+@router.get("/pos/search")
+def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)):
+    term = (q or "").strip()
+    if not term:
+        return {"ok": True, "items": []}
+
+    lowered = term.lower()
+    like = f"%{lowered}%"
+    clean_barcode = normalize_barcode(term)
+    variants = db.execute(
+        select(LabelVariant)
+        .outerjoin(LabelVariant.family)
+        .options(joinedload(LabelVariant.family))
+        .where(LabelVariant.status == "active")
+        .where(
+            or_(
+                func.lower(LabelVariant.barcode).like(like),
+                func.lower(LabelVariant.item_display_name).like(like),
+                func.lower(LabelVariant.article_no).like(like),
+                func.lower(LabelVariant.brand).like(like),
+                func.lower(ProductFamily.family_name).like(like),
+                func.lower(ProductFamily.tally_stock_item_name).like(like),
+            )
+        )
+        .order_by(LabelVariant.updated_at.desc(), LabelVariant.id.desc())
+        .limit(40)
+    ).scalars().all()
+
+    def rank(variant: LabelVariant) -> tuple[int, str]:
+        exact_barcode = clean_barcode and variant.barcode == clean_barcode
+        starts = any(
+            (value or "").lower().startswith(lowered)
+            for value in (
+                variant.item_display_name,
+                variant.article_no,
+                variant.brand,
+                variant.family.family_name if variant.family else "",
+            )
+        )
+        return (0 if exact_barcode else 1 if starts else 2, variant.item_display_name.lower())
+
+    variants.sort(key=rank)
+    return {
+        "ok": True,
+        "items": [
+            _variant_search_payload(variant, exact_barcode=bool(clean_barcode and variant.barcode == clean_barcode))
+            for variant in variants[:12]
+        ],
+    }
+
+
+@router.post("/pos/checkout")
+def pos_checkout(
+    payment_mode: str = Form("cash"),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    cart = _find_active_cart(db)
+    if not cart:
+        latest_sale = db.scalar(select(Sale).order_by(Sale.id.desc()))
+        if latest_sale:
+            return RedirectResponse(f"/sales/{latest_sale.id}", status_code=303)
+        return RedirectResponse(f"/pos?{urlencode({'checkout_error': 'No active cart to checkout.'})}", status_code=303)
+    try:
+        sale = checkout_cart(db, cart, payment_mode=payment_mode, notes=notes)
+    except CheckoutError as exc:
+        return RedirectResponse(f"/pos?{urlencode({'checkout_error': str(exc)})}", status_code=303)
+    return RedirectResponse(f"/sales/{sale.id}", status_code=303)
 
 
 @router.post("/pos/scan")

@@ -56,6 +56,11 @@ def _migrate_existing_sqlite() -> None:
     if not DATABASE_URL.startswith("sqlite"):
         return
 
+    from app.models import Sale, SaleItem
+
+    Sale.__table__.create(bind=engine, checkfirst=True)
+    SaleItem.__table__.create(bind=engine, checkfirst=True)
+
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
 

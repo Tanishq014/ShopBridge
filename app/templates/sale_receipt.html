@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ sale.bill_number }} Receipt - ShopBridge</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  </head>
+  <body class="receipt-body">
+    <main class="receipt-page">
+      <div class="receipt-actions no-print">
+        <button class="button primary" type="button" onclick="window.print()">Print</button>
+        <a class="button" href="/sales/{{ sale.id }}">Back</a>
+      </div>
+
+      <section class="receipt">
+        <header class="receipt-header">
+          <h1>Balaji</h1>
+          <p>Local POS Receipt</p>
+        </header>
+
+        <dl class="receipt-meta">
+          <dt>Bill No</dt><dd>{{ sale.bill_number }}</dd>
+          <dt>Date</dt><dd>{{ sale.created_at|local_time }}</dd>
+          <dt>Payment</dt><dd>{{ sale.payment_mode|title }}</dd>
+        </dl>
+
+        <div class="receipt-rule"></div>
+        <table class="receipt-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty x Rate</th>
+              <th>Amt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in sale.items %}
+              <tr>
+                <td>
+                  {{ item.item_name }}
+                  <span>{{ item.barcode }}</span>
+                </td>
+                <td>{{ item.qty }} x {{ "%.2f"|format(item.rate) }}</td>
+                <td>{{ "%.2f"|format(item.amount) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="receipt-rule"></div>
+
+        <dl class="receipt-totals">
+          <dt>Subtotal</dt><dd>{{ "%.2f"|format(sale.subtotal) }}</dd>
+          <dt>Discount</dt><dd>{{ "%.2f"|format(sale.discount_total) }}</dd>
+          <dt>Round Off</dt><dd>{{ "%.2f"|format(sale.round_off) }}</dd>
+          <dt>Total</dt><dd>{{ "%.2f"|format(sale.total) }}</dd>
+        </dl>
+
+        <footer class="receipt-footer">
+          <p>Thank you</p>
+          <span>{{ sale.bill_number }}</span>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Sales - ShopBridge{% endblock %}
+{% block content %}
+  <section class="page-header">
+    <div>
+      <h1>Sales</h1>
+      <p>Saved local POS bills. Tally sync and direct printer status are tracked but not active yet.</p>
+    </div>
+    <div class="form-actions">
+      <a class="button primary" href="/pos">Back to POS</a>
+    </div>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Bill No</th>
+          <th>Date</th>
+          <th>Items</th>
+          <th>Total</th>
+          <th>Payment</th>
+          <th>Print</th>
+          <th>Tally</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sale in sales %}
+          <tr>
+            <td class="mono">{{ sale.bill_number }}</td>
+            <td>{{ sale.created_at|local_time }}</td>
+            <td>{{ sale.items|length }}</td>
+            <td>{{ "%.2f"|format(sale.total) }}</td>
+            <td>{{ sale.payment_mode|title }}</td>
+            <td><span class="badge {{ 'ok' if sale.print_status == 'printed' else 'warn' if sale.print_status == 'failed' else 'muted' }}">{{ sale.print_status }}</span></td>
+            <td><span class="badge {{ 'ok' if sale.tally_sync_status == 'synced' else 'warn' if sale.tally_sync_status in ['failed', 'mismatch'] else 'muted' }}">{{ sale.tally_sync_status }}</span></td>
+            <td class="row-actions">
+              <a class="button small" href="/sales/{{ sale.id }}">Open</a>
+              <a class="button small" href="/sales/{{ sale.id }}/receipt">Receipt</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="empty">
+              <div class="empty-state">
+                <strong>No sales yet.</strong>
+                <span>Checkout the POS cart and saved local bills will appear here.</span>
+                <a class="button primary" href="/pos">Open POS</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

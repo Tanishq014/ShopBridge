@@ -21,8 +21,8 @@ os.environ["SHOPBRIDGE_PRINT_JOBS_DIR"] = str(TMP_DIR / "print_jobs")
 os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 
 from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import LabelVariant, PosCartItem, PrintJob, TemplateMaster  # noqa: E402
-from app.routes import pos, templates as template_routes, workflow  # noqa: E402
+from app.models import LabelVariant, PosCartItem, PrintJob, Sale, SaleItem, TemplateMaster  # noqa: E402
+from app.routes import pos, sales, templates as template_routes, workflow  # noqa: E402
 from app.services.workflow import print_orchestration_service, print_service  # noqa: E402
 from app.services.bartender_service import _named_substring_values  # noqa: E402
 from app.services.barcode_service import assign_barcode  # noqa: E402
@@ -30,6 +30,7 @@ from app.services.billing_service import lookup_saved_price_by_barcode  # noqa: 
 from app.services.price_code_service import extract_candidates_from_field, generate_coded_price  # noqa: E402
 from app.services.settings_service import DEFAULT_BARCODE_ALLOWED_CHARS  # noqa: E402
 from app.services.settings_service import save_barcode_settings, save_price_code_settings  # noqa: E402
+from app.services.sales_service import checkout_cart  # noqa: E402
 from app.services.template_folder_service import template_file_changed_since_extract  # noqa: E402
 from app.services.workflow.form_state_service import variant_payload  # noqa: E402
 
@@ -156,6 +157,9 @@ def main() -> None:
         pos_markup = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
         scanner_markup = (ROOT / "app" / "templates" / "scanner.html").read_text(encoding="utf-8")
         phone_print_markup = (ROOT / "app" / "templates" / "phone_print.html").read_text(encoding="utf-8")
+        sales_markup = (ROOT / "app" / "templates" / "sales.html").read_text(encoding="utf-8")
+        sale_detail_markup = (ROOT / "app" / "templates" / "sale_detail.html").read_text(encoding="utf-8")
+        sale_receipt_markup = (ROOT / "app" / "templates" / "sale_receipt.html").read_text(encoding="utf-8")
         app_css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
         assert_true("familyName.addEventListener(\"click\"" in workflow_markup and "familyName.select();" in workflow_markup, "Billing Item does not select text on click")
@@ -197,6 +201,16 @@ def main() -> None:
         assert_true(".combo-option.active" in app_css and "background: #1f6feb" in app_css, "dropdown active row styling is not high contrast")
         assert_true("data-template-path" in workflow_markup and "templateActionStatus" in workflow_markup, "template disabled action reason is not shown")
         assert_true("selectedTemplateOption" in workflow_markup and "option.dataset.pathExists" in workflow_markup, "template path check does not fall back to selected option data")
+        assert_true(hasattr(sales, "router"), "sales route module is not importable")
+        assert_true("/pos/checkout" in pos_markup and "checkoutButton" in pos_markup, "POS checkout form is not rendered")
+        assert_true("posSearchInput" in pos_markup and "/pos/search" in pos_markup, "POS cashier search input is not wired")
+        assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup, "POS shortcut help bar is missing")
+        assert_true("Phone Scanner QR" in pos_markup and "<details" in pos_markup, "POS QR codes are not tucked into compact sections")
+        assert_true(".pos-suggestion.active" in app_css and ".pos-cart-row.selected" in app_css, "POS keyboard highlight styling is missing")
+        assert_true("Bill No" in sales_markup and "/sales/{{ sale.id }}" in sales_markup, "sales list template is missing bill links")
+        assert_true("Open Receipt" in sale_detail_markup and "Tally Sync Status" in sale_detail_markup, "sale detail template is incomplete")
+        assert_true("window.print()" in sale_receipt_markup and "Thank you" in sale_receipt_markup, "receipt template is missing browser print UI")
+        assert_true("size: 80mm auto" in app_css and ".receipt" in app_css, "80mm receipt print CSS is missing")
 
         alias_settings = save_price_code_settings(
             digit_to_code={
@@ -536,6 +550,10 @@ def main() -> None:
 
         add_response = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(add_response["ok"], "POS scan did not add saved barcode")
+        search_response = pos.pos_search(q=first_barcode, db=db)
+        assert_true(search_response["items"] and search_response["items"][0]["barcode"] == first_barcode, "POS search did not find saved barcode")
+        item_search_response = pos.pos_search(q="Toy", db=db)
+        assert_true(item_search_response["items"], "POS search did not find saved item by name")
         lookup_response = asyncio.run(
             pos.pos_lookup_barcodes(DummyJsonRequest({"candidates": [first_barcode, "NOTREAL"]}), db)
         )
@@ -564,6 +582,18 @@ def main() -> None:
         assert_true(cart_before_clear["count"] >= 3, "POS cart did not keep scanned items")
         pos.clear_pos_cart(db)
         assert_true(db.query(PosCartItem).count() == 0, "POS cart clear did not remove items")
+
+        sale_scan = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
+        assert_true(sale_scan["ok"], "POS scan did not add item before checkout")
+        active_cart = pos._find_active_cart(db)
+        sale = checkout_cart(db, active_cart, payment_mode="cash")
+        assert_true(sale.bill_number.startswith("SB-"), "sale bill number was not generated")
+        assert_true(db.query(Sale).count() == 1, "checkout did not save exactly one sale")
+        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 1, "checkout did not save sale item")
+        assert_true(pos._find_active_cart(db) is None, "checkout did not close the active cart")
+        duplicate_checkout = pos.pos_checkout(payment_mode="cash", notes="", db=db)
+        assert_true(getattr(duplicate_checkout, "status_code", None) == 303, "duplicate checkout did not redirect safely")
+        assert_true(db.query(Sale).count() == 1, "duplicate checkout created another sale")
 
         print("Smoke checks passed")
     finally:
