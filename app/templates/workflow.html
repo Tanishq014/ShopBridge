@@ -1,17 +1,23 @@
 {% extends "base.html" %}
 {% block title %}New Stock / Print Labels - ShopBridge{% endblock %}
 {% block content %}
-  <section class="page-header compact-header">
-    <div>
+  <section class="page-header compact-header workflow-header-shell" style="margin-bottom: 8px; padding-bottom: 8px;">
+    <div class="workflow-header-main" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%;">
       <h1>New Stock / Print Labels</h1>
-      <p>Fast entry, template preview, and direct BarTender printing.</p>
+      <div class="workflow-header-status" aria-live="polite" style="display: flex; justify-content: flex-end; align-items: center; min-height: 30px; min-width: 240px;">
+        {% if workflow_message %}
+          <span class="workflow-inline-status ok" style="display:inline-flex; align-items:center; padding: 6px 10px; border-radius: 999px; font-weight: 600; line-height: 1.1; white-space: nowrap; background: rgba(34, 197, 94, 0.12); color: var(--success);">{{ workflow_message }}</span>
+        {% elif workflow_error %}
+          <span class="workflow-inline-status error" style="display:inline-flex; align-items:center; padding: 6px 10px; border-radius: 999px; font-weight: 600; line-height: 1.1; white-space: nowrap; background: rgba(239, 68, 68, 0.12); color: var(--danger);">{{ workflow_error }}</span>
+        {% elif template_warning %}
+          <span class="workflow-inline-status warn" style="display:inline-flex; align-items:center; padding: 6px 10px; border-radius: 999px; font-weight: 600; line-height: 1.1; white-space: nowrap; background: rgba(245, 158, 11, 0.12); color: var(--warning);">{{ template_warning }}</span>
+        {% else %}
+          <span class="workflow-inline-status workflow-inline-placeholder" style="visibility:hidden; display:inline-flex; align-items:center; padding: 6px 10px; border-radius: 999px; font-weight: 600; line-height: 1.1; white-space: nowrap;">&nbsp;</span>
+        {% endif %}
+      </div>
     </div>
   </section>
-  {% if template_warning %}
-    <div class="error">{{ template_warning }}</div>
-  {% endif %}
-
-  <section class="workflow-grid">
+  <section class="workflow-grid" style="margin-top: 6px;">
     <form class="panel workflow-form" method="post" action="/new-stock/print" id="stockForm">
       <input type="hidden" name="workflow_mode" id="workflowMode" value="print">
       <input type="hidden" name="existing_variant_id" id="existingVariantId" value="">

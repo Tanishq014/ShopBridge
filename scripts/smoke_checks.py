@@ -21,7 +21,7 @@ os.environ["SHOPBRIDGE_PRINT_JOBS_DIR"] = str(TMP_DIR / "print_jobs")
 os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 
 from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import LabelVariant, PosCartItem, PrintJob, Sale, SaleItem, TemplateMaster  # noqa: E402
+from app.models import LabelVariant, PosCartItem, PrintJob, ProductFamily, Sale, SaleItem, TemplateMaster  # noqa: E402
 from app.routes import pos, sales, templates as template_routes, workflow  # noqa: E402
 from app.services.workflow import print_orchestration_service, print_service  # noqa: E402
 from app.services.bartender_service import _named_substring_values  # noqa: E402
@@ -156,11 +156,16 @@ def main() -> None:
         settings_markup = (ROOT / "app" / "templates" / "settings.html").read_text(encoding="utf-8")
         pos_markup = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
         pos_route_source = (ROOT / "app" / "routes" / "pos.py").read_text(encoding="utf-8")
+        model_source = (ROOT / "app" / "models.py").read_text(encoding="utf-8")
+        db_source = (ROOT / "app" / "db.py").read_text(encoding="utf-8")
+        sales_service_source = (ROOT / "app" / "services" / "sales_service.py").read_text(encoding="utf-8")
         scanner_markup = (ROOT / "app" / "templates" / "scanner.html").read_text(encoding="utf-8")
         phone_print_markup = (ROOT / "app" / "templates" / "phone_print.html").read_text(encoding="utf-8")
+        base_markup = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
         sales_markup = (ROOT / "app" / "templates" / "sales.html").read_text(encoding="utf-8")
         sale_detail_markup = (ROOT / "app" / "templates" / "sale_detail.html").read_text(encoding="utf-8")
         sale_receipt_markup = (ROOT / "app" / "templates" / "sale_receipt.html").read_text(encoding="utf-8")
+        sales_route_source = (ROOT / "app" / "routes" / "sales.py").read_text(encoding="utf-8")
         app_css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
         assert_true("familyName.addEventListener(\"click\"" in workflow_markup and "familyName.select();" in workflow_markup, "Billing Item does not select text on click")
@@ -173,11 +178,16 @@ def main() -> None:
         assert_true("event.key === \"Enter\"" in workflow_markup and "printFromInlineQuantity();" in workflow_markup, "Enter on print quantity does not trigger print")
         assert_true("resetPrintSubmissionState" in workflow_markup and "form.addEventListener(\"invalid\"" in workflow_markup, "browser validation can leave print stuck")
         assert_true("restoreVariantForRetry" in workflow_markup and "hasPrintError && initialVariantId" in workflow_markup, "print error retry state is not restored from saved item")
-        assert_true("scanner_qr_url" in pos_markup and "scanner_url" in settings_markup, "scanner QR URL is not rendered")
-        assert_true("phone_print_qr_url" in pos_markup and "phone_print_url" in settings_markup, "phone print QR URL is not rendered")
+        assert_true("uppercaseVisibleFieldValues" in workflow_markup and "uppercaseFieldValue(field)" in workflow_markup, "laptop inputs should uppercase visible text fields")
+        assert_true("scanner_qr_url" not in pos_markup and "phone_print_qr_url" not in pos_markup and "scanner_url" in settings_markup and "phone_print_url" in settings_markup, "POS top QR shortcuts should be removed and URLs should remain in settings")
+        assert_true("topbar-menu-toggle" in base_markup and "topbarMenuPanel" in base_markup and "topbar-menu-panel" in base_markup, "shared mobile hamburger menu is missing")
+        assert_true("navbar_qr_context(request)" in base_markup and "scanner_qr_url is defined" not in base_markup, "shared navbar QR should come from base context on every page")
+        assert_true("topbar-qr-toggle" in base_markup and "Phone QR" in base_markup and "data-navbar-qr-panel" in base_markup and "shopbridge.navbarQrVisible.v1" in base_markup, "shared navbar QR dropdown is missing")
+        assert_true("navbarQrStateBadge" in settings_markup and "showNavbarQrButton" in settings_markup and "hideNavbarQrButton" in settings_markup and "scanner-qr" not in settings_markup, "settings should control navbar QR visibility without showing big QR images")
         assert_true('"qr_code"' in scanner_markup and '"data_matrix"' in scanner_markup, "scanner does not request QR/DataMatrix formats")
-        assert_true("/phone-print/print" in phone_print_markup and "phoneTemplates" in phone_print_markup, "phone print page is not wired to laptop print data")
+        assert_true("/phone-print/print" in phone_print_markup and "phoneTemplates" in phone_print_markup and "Uses this laptop's templates" not in phone_print_markup and "Laptop Print" not in phone_print_markup, "phone print page is not wired to laptop print data")
         assert_true("BarcodeDetector" in phone_print_markup and '"qr_code"' in phone_print_markup and '"data_matrix"' in phone_print_markup, "phone print scanner does not request QR/DataMatrix formats")
+        assert_true("phoneFields.code.value = candidate.raw_value || candidate.code" in phone_print_markup and "phoneUppercaseVisibleFieldValues" in phone_print_markup, "phone code selection should preserve raw text and uppercase visible fields")
         assert_true("shopbridge.phonePrintState.v1" in phone_print_markup and "phoneRestoreState" in phone_print_markup, "phone print state is not persisted")
         assert_true("phoneShowCachedPreview" in phone_print_markup and "/new-stock/preview-image" in phone_print_markup, "phone print preview is not wired")
         assert_true("phoneActualPreviewIsGenerated" in phone_print_markup and "phoneShowCachedPreview();" not in phone_print_markup.split("phoneFields.code.addEventListener", 1)[-1].split("phoneFields.margin.addEventListener", 1)[0], "phone print field edits should not reset actual preview")
@@ -211,23 +221,47 @@ def main() -> None:
         assert_true("posSearchPanel" in pos_markup and "Search Results" in pos_markup and "pos-search-results" in pos_markup, "POS right-panel search results UI is missing")
         assert_true("posSummaryPanel" in pos_markup and "summaryPanel.hidden = true" in pos_markup and "searchPanel.hidden = false" in pos_markup, "POS right panel does not switch modes for search")
         suggestion_render = pos_markup.split("function renderSuggestions()", 1)[-1].split("async function searchItems", 1)[0]
-        assert_true("item.billing_item || item.family_name || item.item_name" in suggestion_render, "POS search result main line should be billing item")
+        assert_true("item.family_name || item.billing_item || item.item_name" in suggestion_render, "POS search result main line should be billing item/family")
+        assert_true("Barcode item" not in suggestion_render, "POS search results should keep item labels compact")
         assert_true("Sticker: ${item.sticker_name}" in suggestion_render and "MRP ${money(item.mrp)}" in suggestion_render, "POS search results should show sticker and MRP details")
         assert_true("item.barcode" not in suggestion_render and "item.category" not in suggestion_render and "item.article_no" not in suggestion_render, "POS search results should not display barcode/category/article noise")
-        assert_true("Sticker:" in pos_markup and "item.billing_item" in pos_markup, "POS bill row should show billing item and sticker labels")
+        assert_true("pos-item-input" in pos_markup and "pos-mrp-input" in pos_markup and "dataset.cartField = \"item\"" in pos_markup and "dataset.cartField = \"mrp\"" in pos_markup, "POS editable item name and MRP cells are missing")
+        assert_true("PgUp/PgDn Bills" in pos_markup and "navigateRecentSale" in pos_markup and "loadSalePreview" in pos_markup, "POS recent bill navigation is missing")
+        assert_true("/pos/cart/load-sale/" in pos_markup and "confirmLoadedSaleEdit" in pos_markup and "Save edited bill" in pos_markup, "POS saved bills should load as editable carts with save confirmation")
+        assert_true("disabled = state.previewMode" not in pos_markup and "Previewing bill - press Esc to return" not in pos_markup, "POS opened bills should not render as disabled preview-only rows")
         assert_true("pos-total-box" in pos_markup and "cartTotal" in pos_markup and "Checkout - Rs. 0.00" in pos_markup, "POS checkout summary/total is missing")
         assert_true("searchPanelTotal" in pos_markup and "Total:" in pos_markup, "POS search mode should keep total visible")
+        assert_true("focusSelectedCartItem" in pos_markup and "focusSelectedCartItem(true);" in pos_markup and "itemInput.select()" in pos_markup, "POS selected line should auto-focus the item name")
+        assert_true("moveCartFieldVertical" in pos_markup and "ArrowDown" in pos_markup and "ArrowUp" in pos_markup, "POS editable cells should support up/down row navigation")
+        assert_true("state.selectedIndex = items.length - 1" in pos_markup, "POS should default to the last bill line")
+        assert_true("pos-rate-input" in pos_markup and "pos-qty-input" in pos_markup and "/pos/cart/items/${itemId}/update" in pos_markup, "POS editable rate/qty cells are missing")
+        assert_true("cartEditActive" in pos_markup and "lineEditIsActive()" in pos_markup and "if (silent &&" in pos_markup, "POS polling should pause while editing rate/qty")
         assert_true("pos-qty-button" in pos_markup and "/increase" in pos_markup and "/decrease" in pos_markup, "POS quantity controls are missing")
+        assert_true("addTallyItem" in pos_markup and "result_type === \"tally_item\"" in pos_markup, "POS UI does not add local Tally catalog search results")
         assert_true("helpToggleButton" in pos_markup and "shopbridge.posHelpVisible.v1" in pos_markup and "id=\"posHelpBar\" hidden" in pos_markup, "POS help row toggle/default hidden state is missing")
         assert_true("fullscreenPosButton" in pos_markup and "requestFullscreen" in pos_markup, "POS fullscreen button is missing")
-        assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup, "POS shortcut help bar is missing")
-        assert_true("Phone Scanner QR" in pos_markup and "<details" in pos_markup, "POS QR codes are not tucked into compact sections")
+        assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup and "Left/Right Cells" in pos_markup, "POS shortcut help bar is missing")
+        assert_true("cartStatus" in pos_markup and "pos-top-actions" in pos_markup and "Fullscreen POS" in pos_markup and "Show Help" in pos_markup and "Refresh" in pos_markup, "POS header status/buttons are missing")
         assert_true(".pos-suggestion.active" in app_css and ".pos-billing-row.selected" in app_css, "POS keyboard highlight styling is missing")
+        assert_true("pos-line-input" in app_css and "pos-rate-input" in app_css and "pos-qty-input" in app_css and "pos-item-input" in app_css and "pos-mrp-input" in app_css, "POS editable line input styling is missing")
+        assert_true("source_type=\"barcode\"" in pos_route_source and "tally_item" in pos_route_source and "/pos/cart/items/{item_id}/update" in pos_route_source and "item_name_snapshot" in pos_route_source, "POS backend snapshot/update routes are missing")
+        assert_true("/pos/cart/load-sale/{sale_id}" in pos_route_source and "source_sale_id" in pos_route_source, "POS backend should load saved bills into editable active cart lines")
+        assert_true("ProductFamily" in pos_route_source and "tally_stock_item_name" in pos_route_source, "POS search should include locally imported ProductFamily/Tally items")
+        assert_true("family_results" in pos_route_source and "results = family_results" in pos_route_source, "POS search should prioritize Tally catalog results")
+        assert_true("item_name_snapshot" in model_source and "rate_snapshot" in model_source and "source_type" in model_source, "POS cart snapshot fields are missing")
+        assert_true("ALTER TABLE pos_cart_items ADD COLUMN" in db_source and "variant_id" in db_source and "nullable" in model_source, "POS cart snapshot migration is missing")
+        assert_true("item.rate_snapshot" in sales_service_source and "item.item_name_snapshot" in sales_service_source, "checkout does not use POS cart snapshots")
         assert_true("tally_voucher" not in pos_route_source and "tally_alias" not in pos_route_source.lower(), "POS route should not add Tally write code")
-        assert_true("Bill No" in sales_markup and "/sales/{{ sale.id }}" in sales_markup, "sales list template is missing bill links")
-        assert_true("Open Receipt" in sale_detail_markup and "Tally Sync Status" in sale_detail_markup, "sale detail template is incomplete")
+        assert_true("Bill No" in sales_markup and "/sales/{{ sale.id }}" in sales_markup and "/pos?sale_id={{ sale.id }}" in sales_markup, "sales list template is missing bill links")
+        assert_true("Open Receipt" in sale_detail_markup and "Tally Sync Status" in sale_detail_markup and "/pos?sale_id={{ sale.id }}" in sale_detail_markup, "sale detail template is incomplete")
+        assert_true("/sales/{sale_id}/data" in sales_route_source and "sale_payload" in sales_route_source, "sales replay data route is missing")
         assert_true("window.print()" in sale_receipt_markup and "Thank you" in sale_receipt_markup, "receipt template is missing browser print UI")
         assert_true("size: 80mm auto" in app_css and ".receipt" in app_css, "80mm receipt print CSS is missing")
+        demo_families = db.query(ProductFamily).filter(ProductFamily.tally_stock_item_name.is_not(None)).all()
+        assert_true(
+            any((family.family_name or "").startswith("Demo Tally") for family in demo_families),
+            "demo Tally catalog items were not seeded",
+        )
 
         alias_settings = save_price_code_settings(
             digit_to_code={
@@ -324,6 +358,27 @@ def main() -> None:
         first_job = db.query(PrintJob).filter_by(variant_id=first.id).one()
         assert_true(variant_payload(first)["mrp"] == "100", "MRP payload should not add .00 for whole numbers")
         assert_true(_named_substring_values(first_job)["mrp"] == "100", "BarTender MRP value should not add .00 for whole numbers")
+        priority_family = ProductFamily(
+            family_name="Priority Tally Item",
+            tally_stock_item_name="Priority Tally Item",
+            category="tally",
+            active_status=True,
+        )
+        db.add(priority_family)
+        db.commit()
+        db.refresh(priority_family)
+        priority_variant = LabelVariant(
+            barcode="PRIORITY1",
+            family_id=priority_family.id,
+            item_display_name="Priority Tally Variant",
+            template_id=template.id,
+            status="active",
+        )
+        db.add(priority_variant)
+        db.commit()
+        db.refresh(priority_variant)
+        priority_search = pos.pos_search(q="Priority Tally Item", db=db)
+        assert_true(priority_search["items"] and priority_search["items"][0]["result_type"] == "tally_item", "POS search does not prioritize Tally catalog items")
 
         print_item(
             db,
@@ -477,6 +532,50 @@ def main() -> None:
         priority_item = db.query(LabelVariant).filter_by(item_display_name="Priority Code").one()
         assert_true(str(priority_item.selling_price) in {"222.00", "222"}, "code/coded_price field did not take priority")
 
+        save_price_code_settings(
+            digit_to_code={
+                "0": "A",
+                "1": "B",
+                "2": "C",
+                "3": "D",
+                "4": "E",
+                "5": "P",
+                "6": "F",
+                "7": "S",
+                "8": "H",
+                "9": "J",
+            },
+            allow_extraction=True,
+        )
+        print_item(
+            db,
+            priority_template,
+            item_display_name="Prefixed Code",
+            coded_price="QSPA",
+            selling_price="",
+            mrp="",
+            size="",
+        )
+        prefixed_item = db.query(LabelVariant).filter_by(item_display_name="Prefixed Code").one()
+        assert_true(prefixed_item.coded_price == "QSPA", "prefixed code should preserve the raw text")
+        assert_true(str(prefixed_item.selling_price) in {"750.00", "750"}, "prefixed code should still decode the selling price")
+
+        save_price_code_settings(
+            digit_to_code={
+                "0": "Z",
+                "1": "A",
+                "2": "D",
+                "3": "C",
+                "4": "E",
+                "5": "F",
+                "6": "G",
+                "7": "J",
+                "8": "K",
+                "9": "L",
+            },
+            allow_extraction=True,
+        )
+
         missing_price_response = print_item(
             db,
             priority_template,
@@ -572,6 +671,20 @@ def main() -> None:
         assert_true(search_response["items"] and search_response["items"][0]["barcode"] == first_barcode, "POS search did not find saved barcode")
         item_search_response = pos.pos_search(q="Toy", db=db)
         assert_true(item_search_response["items"], "POS search did not find saved item by name")
+        tally_family = ProductFamily(
+            family_name="Imported Socks",
+            tally_stock_item_name="Tally Imported Socks",
+            category="tally",
+            active_status=True,
+        )
+        db.add(tally_family)
+        db.commit()
+        db.refresh(tally_family)
+        tally_search_response = pos.pos_search(q="Imported Socks", db=db)
+        assert_true(
+            any(item.get("result_type") == "tally_item" and item.get("id") == tally_family.id for item in tally_search_response["items"]),
+            "POS search did not include local ProductFamily/Tally catalog items",
+        )
         lookup_response = asyncio.run(
             pos.pos_lookup_barcodes(DummyJsonRequest({"candidates": [first_barcode, "NOTREAL"]}), db)
         )
@@ -579,6 +692,17 @@ def main() -> None:
         assert_true(lookup_response["matches"][0]["barcode"] == first_barcode, "POS OCR lookup returned wrong barcode")
         add_again = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(add_again["cart"]["count"] >= 2, "POS scan did not increment quantity")
+        scanned_cart_item = db.query(PosCartItem).filter_by(variant_id=first.id).one()
+        edited_cart = asyncio.run(pos.update_pos_item(scanned_cart_item.id, DummyJsonRequest({"qty": "3", "rate": "77"}), db))
+        assert_true(edited_cart["items"][0]["qty"] == 3 and edited_cart["items"][0]["selling_price"] == "77.00", "POS cart update did not edit qty/rate")
+        db.refresh(first)
+        assert_true(str(first.selling_price) in {"11.00", "11"}, "POS rate edit changed LabelVariant master selling price")
+        tally_add_response = pos.add_tally_item_to_cart(tally_family.id, db=db)
+        assert_true(tally_add_response["ok"] and tally_add_response["item"]["source_type"] == "tally_item", "POS did not add local Tally catalog item")
+        tally_cart_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
+        assert_true(tally_cart_item.variant_id is None and tally_cart_item.barcode_snapshot == "", "Tally catalog cart line should not require a barcode variant")
+        tally_update = asyncio.run(pos.update_pos_item(tally_cart_item.id, DummyJsonRequest({"qty": "2", "rate": "125"}), db))
+        assert_true(tally_update["items"][-1]["selling_price"] == "125.00", "Tally catalog cart line rate was not editable")
 
         no_price_variant = LabelVariant(
             barcode="NOPRICE",
@@ -603,11 +727,21 @@ def main() -> None:
 
         sale_scan = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(sale_scan["ok"], "POS scan did not add item before checkout")
+        active_scan_item = db.query(PosCartItem).filter_by(variant_id=first.id).one()
+        asyncio.run(pos.update_pos_item(active_scan_item.id, DummyJsonRequest({"qty": "2", "rate": "88"}), db))
+        sale_tally_add = pos.add_tally_item_to_cart(tally_family.id, db=db)
+        assert_true(sale_tally_add["ok"], "POS did not add Tally item before checkout")
+        sale_tally_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
+        asyncio.run(pos.update_pos_item(sale_tally_item.id, DummyJsonRequest({"qty": "1", "rate": "125"}), db))
         active_cart = pos._find_active_cart(db)
         sale = checkout_cart(db, active_cart, payment_mode="cash")
         assert_true(sale.bill_number.startswith("SB-"), "sale bill number was not generated")
         assert_true(db.query(Sale).count() == 1, "checkout did not save exactly one sale")
-        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 1, "checkout did not save sale item")
+        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 2, "checkout did not save all sale items")
+        edited_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, label_variant_id=first.id).one()
+        assert_true(str(edited_sale_item.rate) in {"88.00", "88"} and edited_sale_item.qty == 2, "checkout did not use edited barcode-line rate/qty")
+        tally_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, tally_stock_item_name="Tally Imported Socks").one()
+        assert_true(tally_sale_item.label_variant_id is None and tally_sale_item.barcode == "" and str(tally_sale_item.rate) in {"125.00", "125"}, "checkout did not save Tally catalog line snapshot")
         assert_true(pos._find_active_cart(db) is None, "checkout did not close the active cart")
         duplicate_checkout = pos.pos_checkout(payment_mode="cash", notes="", db=db)
         assert_true(getattr(duplicate_checkout, "status_code", None) == 303, "duplicate checkout did not redirect safely")

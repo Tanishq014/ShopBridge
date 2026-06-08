@@ -50,9 +50,11 @@ def workflow_context(
     price_code_settings = get_price_code_settings()
     return {
         "request": request,
-        "message": message,
+        "message": None,
         "warning": warning,
-        "error": error,
+        "error": None,
+        "workflow_message": message,
+        "workflow_error": error,
         "categories": category_choices,
         "families": families,
         "families_json": [family_payload(family) for family in families],

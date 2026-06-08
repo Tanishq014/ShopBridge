@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -25,6 +27,51 @@ def _sale_or_404(db: Session, sale_id: int) -> Sale:
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found.")
     return sale
+
+
+def _money(value: Decimal | int | str | None) -> str:
+    if value is None:
+        return "0.00"
+    return f"{Decimal(str(value)).quantize(Decimal('0.01')):.2f}"
+
+
+def _sale_payload(sale: Sale) -> dict[str, object]:
+    items = []
+    for item in sale.items:
+        items.append(
+            {
+                "id": item.id,
+                "label_variant_id": item.label_variant_id,
+                "barcode": item.barcode or "",
+                "item_name": item.item_name or "",
+                "billing_item": item.item_name or "",
+                "tally_stock_item_name": item.tally_stock_item_name or "",
+                "mrp": _money(item.mrp),
+                "selling_price": _money(item.rate),
+                "rate": _money(item.rate),
+                "qty": item.qty,
+                "amount": _money(item.amount),
+                "discount_amount": _money(item.discount_amount),
+                "source_type": "barcode" if item.label_variant_id else "tally_item",
+                "missing_price": False,
+            }
+        )
+    return {
+        "id": sale.id,
+        "bill_number": sale.bill_number,
+        "status": sale.status,
+        "subtotal": _money(sale.subtotal),
+        "discount_total": _money(sale.discount_total),
+        "round_off": _money(sale.round_off),
+        "total": _money(sale.total),
+        "payment_mode": sale.payment_mode,
+        "notes": sale.notes or "",
+        "print_status": sale.print_status,
+        "tally_sync_status": sale.tally_sync_status,
+        "created_at": sale.created_at.isoformat() if sale.created_at else "",
+        "items": items,
+        "count": sum(item.qty for item in sale.items),
+    }
 
 
 @router.get("/sales", response_class=HTMLResponse)
@@ -67,3 +114,9 @@ def sale_receipt(sale_id: int, request: Request, db: Session = Depends(get_db)):
             "sale": _sale_or_404(db, sale_id),
         },
     )
+
+
+@router.get("/sales/{sale_id}/data")
+def sale_data(sale_id: int, db: Session = Depends(get_db)):
+    sale = _sale_or_404(db, sale_id)
+    return {"ok": True, "sale": _sale_payload(sale)}

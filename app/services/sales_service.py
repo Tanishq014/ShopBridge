@@ -66,23 +66,33 @@ def checkout_cart(
     sale_items: list[SaleItem] = []
     for item in items:
         variant = item.variant
-        if not variant:
-            raise CheckoutError("Cart contains an item that no longer exists.")
-        rate = item.unit_price if item.unit_price is not None else variant.selling_price
-        if rate is None:
-            raise CheckoutError(f"Selling price is missing for {variant.item_display_name}.")
+        rate = item.rate_snapshot if item.rate_snapshot is not None else item.unit_price
+        if rate is None and variant:
+            rate = variant.selling_price
+        item_name = item.item_name_snapshot or (
+            variant.family.family_name if variant and variant.family and variant.family.family_name else variant.item_display_name if variant else ""
+        )
+        if not item_name:
+            raise CheckoutError("Cart contains a line without an item name.")
+        if rate is None or money(rate) <= 0:
+            raise CheckoutError(f"Rate is missing for {item_name}.")
         qty = max(1, int(item.qty or 1))
         amount = money(rate) * qty
         subtotal += amount
+        barcode = item.barcode_snapshot if item.barcode_snapshot is not None else variant.barcode if variant else ""
+        tally_name = item.tally_stock_item_name_snapshot or (
+            variant.family.tally_stock_item_name if variant and variant.family else None
+        )
+        mrp = item.mrp_snapshot if item.mrp_snapshot is not None else variant.mrp if variant else None
         sale_items.append(
             SaleItem(
-                label_variant_id=variant.id,
-                barcode=variant.barcode,
-                item_name=variant.item_display_name,
-                tally_stock_item_name=variant.family.tally_stock_item_name if variant.family else None,
+                label_variant_id=variant.id if variant else None,
+                barcode=barcode or "",
+                item_name=item_name,
+                tally_stock_item_name=tally_name,
                 qty=qty,
                 rate=money(rate),
-                mrp=variant.mrp,
+                mrp=mrp,
                 discount_amount=Decimal("0.00"),
                 amount=amount,
             )

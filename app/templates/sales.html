@@ -37,6 +37,7 @@
             <td><span class="badge {{ 'ok' if sale.tally_sync_status == 'synced' else 'warn' if sale.tally_sync_status in ['failed', 'mismatch'] else 'muted' }}">{{ sale.tally_sync_status }}</span></td>
             <td class="row-actions">
               <a class="button small" href="/sales/{{ sale.id }}">Open</a>
+              <a class="button small" href="/pos?sale_id={{ sale.id }}">Open in POS</a>
               <a class="button small" href="/sales/{{ sale.id }}/receipt">Receipt</a>
             </td>
           </tr>

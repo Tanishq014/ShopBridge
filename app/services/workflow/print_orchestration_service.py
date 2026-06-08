@@ -148,12 +148,14 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
     selected_candidate = find_candidate_by_key(price_code_candidates, data.selected_price_code_key.strip())
     if selected_candidate:
         selling = selected_candidate.selling_price
-        coded = selected_candidate.code
+        if not raw_coded_price:
+            coded = selected_candidate.code
     elif selling is None and price_code_candidates:
         if len(price_code_candidates) == 1:
             selected_candidate = price_code_candidates[0]
             selling = selected_candidate.selling_price
-            coded = selected_candidate.code
+            if not raw_coded_price:
+                coded = selected_candidate.code
         elif price_code_candidates:
             options = "; ".join(candidate["label"] for candidate in map(candidate_payload, price_code_candidates))
             raise WorkflowPrintError("Multiple codes found. Choose one or enter Selling Price manually. " + options)

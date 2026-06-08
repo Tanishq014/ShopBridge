@@ -8,6 +8,7 @@
     const initialDuplicate = {{ 'true' if initial_duplicate else 'false' }};
     const initialBarcode = "{{ initial_barcode or '' }}";
     const mrpRounding = Number({{ pricing_settings.mrp_rounding|tojson }});
+    const mrpTruncateDecimal = Boolean({{ pricing_settings.mrp_truncate_decimal|tojson }});
     const priceCodeSettings = {{ price_code_settings_json|tojson }};
 
     const form = document.getElementById("stockForm");
@@ -213,6 +214,9 @@
       if (!Number.isFinite(number)) {
         return "";
       }
+      if (mrpTruncateDecimal) {
+        return String(Math.trunc(number));
+      }
       return money(number);
     }
 
@@ -224,6 +228,20 @@
       return normalizedText(left) === normalizedText(right);
     }
 
+    function uppercaseFieldValue(field) {
+      if (!field || typeof field.value !== "string") {
+        return;
+      }
+      const upper = field.value.toUpperCase();
+      if (field.value !== upper) {
+        field.value = upper;
+      }
+    }
+
+    function uppercaseVisibleFieldValues() {
+      [familyName, variantSearch, ...Object.values(fields), ...Object.values(customInputByField)].forEach(uppercaseFieldValue);
+    }
+
     function moneyText(value) {
       const clean = String(value || "").trim();
       if (!clean) return "";
@@ -232,11 +250,15 @@
     }
 
     function upperRound(value, rounding) {
-      if (!Number.isFinite(value)) {
-        return value;
+      const amount = Number(value);
+      if (!Number.isFinite(amount)) {
+        return amount;
+      }
+      if (mrpTruncateDecimal) {
+        return Math.trunc(amount);
       }
       if (rounding === 9) {
-        const integerValue = Math.ceil(value);
+        const integerValue = Math.ceil(amount);
         const remainder = integerValue % 10;
         return remainder <= 9 ? integerValue + ((9 - remainder) % 10) : integerValue;
       }
@@ -294,19 +316,19 @@
         showPricingMessage("Enter Margin % before calculating MRP.");
         fields.margin.focus();
         fields.margin.select();
-        return;
+        return false;
       }
       if (marginPercent < 0) {
         showPricingMessage("Margin % cannot be negative.");
         fields.margin.focus();
         fields.margin.select();
-        return;
+        return false;
       }
       if (marginPercent >= 100) {
         showPricingMessage("Margin % must be less than 100.");
         fields.margin.focus();
         fields.margin.select();
-        return;
+        return false;
       }
       
       const candidates = currentPriceCodeCandidates();
@@ -321,7 +343,7 @@
         showPricingMessage("Enter a valid price code first.");
         fields.coded.focus();
         fields.coded.select();
-        return;
+        return false;
       }
       
       const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
@@ -332,6 +354,7 @@
       saveWorkflowState();
       fields.mrp.focus();
       fields.mrp.select();
+      return true;
     }
 
     function encodeSellingPrice(value) {
@@ -458,7 +481,7 @@
         selectedPriceCodeKey.value = selectedCandidate.key || candidateKey(selectedCandidate);
         fields.selling.value = selectedCandidate.selling_price;
         if (!String(fields.coded.value || "").trim()) {
-          fields.coded.value = selectedCandidate.code;
+          fields.coded.value = selectedCandidate.raw_value || selectedCandidate.code;
         }
         setPriceCodeInlineState(`Rs. ${selectedCandidate.selling_price}`, "ok");
         setCodedPriceManualOverride(true);
@@ -472,7 +495,7 @@
         selectedPriceCodeKey.value = candidate.key || candidateKey(candidate);
         fields.selling.value = candidate.selling_price;
         if (!String(fields.coded.value || "").trim()) {
-          fields.coded.value = candidate.code;
+          fields.coded.value = candidate.raw_value || candidate.code;
         }
         setPriceCodeInlineState(`Rs. ${candidate.selling_price}`, "ok");
         setCodedPriceManualOverride(true);
@@ -515,7 +538,7 @@
         button.addEventListener("click", () => {
           selectedPriceCodeKey.value = candidate.key || candidateKey(candidate);
           fields.selling.value = candidate.selling_price;
-          fields.coded.value = candidate.code;
+          fields.coded.value = candidate.raw_value || candidate.code;
           printWithoutBillingPrice.checked = false;
           priceCodeInlineChoices.hidden = true;
           priceCodeInlineChoices.innerHTML = "";
@@ -671,9 +694,9 @@
       }
       return [
         familyName,
-        fields.brand,
         fields.item,
         fields.article,
+        fields.brand,
         fields.size,
         fields.batch,
         fields.expiry,
@@ -754,16 +777,23 @@
       if (!visibleEntryFields().includes(target) || target === printQuantityInput || target === printButton) {
         return;
       }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       if (target === fields.margin) {
-        event.preventDefault();
-        event.stopPropagation();
-        calculateMrpFromMargin();
+        if (calculateMrpFromMargin()) {
+          window.setTimeout(() => {
+            fields.mrp.focus();
+            if (typeof fields.mrp.select === "function") {
+              fields.mrp.select();
+            }
+          }, 0);
+        }
         return;
       }
       if ((target === familyName && billingItemCombo.classList.contains("open")) || (target === variantSearch && variantCombo.classList.contains("open"))) {
         return;
       }
-      event.preventDefault();
       moveEntryFocus(target, 1);
     }
 
@@ -791,9 +821,9 @@
 
     function firstFieldAfterBillingItem() {
       return [
-        fields.brand,
         fields.item,
         fields.article,
+        fields.brand,
         fields.size,
         fields.batch,
         fields.expiry,
@@ -1377,6 +1407,7 @@
     function setCustomFieldValues(values) {
       Object.entries(customInputByField).forEach(([fieldName, input]) => {
         input.value = values && values[fieldName] ? values[fieldName] : "";
+        uppercaseFieldValue(input);
       });
       syncExtraFieldValues();
     }
@@ -1491,6 +1522,7 @@
       }
       applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
       fields.copies.value = saved.copies || "1";
+      uppercaseVisibleFieldValues();
       printQuantityInput.value = fields.copies.value;
 
       if ((initialVariantId && !hasPrintError) || initialBarcode) {
@@ -2095,6 +2127,7 @@
       variantSearch.value = variantLabel(variant);
       applyCategory(variant.template_id || "", {resetCustomValues: false});
       setCustomFieldValues(variant.extra_field_values || {});
+      uppercaseVisibleFieldValues();
       setMode(duplicate ? "new_barcode" : "print", duplicate ? "Creating new barcode from previous item" : "Updating selected item");
       if (duplicate) {
         requestGeneratedBarcode(false);
@@ -2143,9 +2176,13 @@
     }
 
     variantSearch.addEventListener("focus", openVariantMenu);
-    variantSearch.addEventListener("input", openVariantMenu);
-    variantSearch.addEventListener("input", saveWorkflowState);
+    variantSearch.addEventListener("input", () => {
+      uppercaseFieldValue(variantSearch);
+      openVariantMenu();
+      saveWorkflowState();
+    });
     variantSearch.addEventListener("change", () => {
+      uppercaseFieldValue(variantSearch);
       const variant = filteredVariants()[0] || variants.find(item => sameText(variantLabel(item), variantSearch.value));
       commitVariantSearchSelection(variant);
     });
@@ -2220,7 +2257,10 @@
     familyName.addEventListener("click", () => {
       familyName.select();
     });
-    familyName.addEventListener("input", handleBillingItemTyping);
+    familyName.addEventListener("input", () => {
+      uppercaseFieldValue(familyName);
+      handleBillingItemTyping();
+    });
     familyName.addEventListener("keyup", event => {
       if (["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab"].includes(event.key)) {
         return;
@@ -2230,6 +2270,7 @@
       }
     });
     familyName.addEventListener("change", () => {
+      uppercaseFieldValue(familyName);
       if (!familyName.value.trim()) {
         familyId.value = "";
       }
@@ -2325,6 +2366,7 @@
         return;
       }
       field.addEventListener("input", () => {
+        uppercaseFieldValue(field);
         clearActualPreview();
         showPricingMessage("");
         selectedPriceCodeKey.value = "";
@@ -2333,6 +2375,7 @@
         saveWorkflowState();
       });
       field.addEventListener("change", () => {
+        uppercaseFieldValue(field);
         clearActualPreview();
         showPricingMessage("");
         selectedPriceCodeKey.value = "";
@@ -2381,7 +2424,7 @@
         if (sellingPrice && Number.isFinite(sellingPrice) && sellingPrice > 0) {
           const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
           // Show the unrounded, actual value to 2 decimal places as preview
-          marginInlineMessage.textContent = `Rs. ${calculatedMrp.toFixed(2)}`;
+        marginInlineMessage.textContent = `Rs. ${calculatedMrp.toFixed(2)}`;
           marginInlinePanel.hidden = false;
           return;
         }
@@ -2499,11 +2542,11 @@
       }
     }, true);
     form.addEventListener("keydown", event => {
+      const active = document.activeElement;
       if (event.key !== "Tab" && !(event.key === "Enter" && active !== printQuantityInput && active !== printButton)) {
         return;
       }
       const entries = visibleEntryFields();
-      const active = document.activeElement;
       const index = entries.indexOf(active);
       if (index === -1) {
         return;

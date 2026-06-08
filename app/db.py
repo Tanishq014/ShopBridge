@@ -24,7 +24,7 @@ def ensure_directories() -> None:
 
 def init_db() -> None:
     ensure_directories()
-    from app.models import TemplateMaster
+    from app.models import ProductFamily, TemplateMaster
     from app.services.template_folder_service import scan_bartender_template_folder
 
     Base.metadata.create_all(bind=engine)
@@ -49,6 +49,7 @@ def init_db() -> None:
             )
             db.commit()
 
+        _seed_demo_tally_items(db, ProductFamily)
         scan_bartender_template_folder(db)
 
 
@@ -56,7 +57,7 @@ def _migrate_existing_sqlite() -> None:
     if not DATABASE_URL.startswith("sqlite"):
         return
 
-    from app.models import Sale, SaleItem
+    from app.models import PosCartItem, Sale, SaleItem
 
     Sale.__table__.create(bind=engine, checkfirst=True)
     SaleItem.__table__.create(bind=engine, checkfirst=True)
@@ -87,6 +88,104 @@ def _migrate_existing_sqlite() -> None:
         if "fields_extracted_file_mtime" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE template_masters ADD COLUMN fields_extracted_file_mtime VARCHAR(80)"))
+
+    if "pos_cart_items" in table_names:
+        columns_info = inspector.get_columns("pos_cart_items")
+        columns = {column["name"] for column in columns_info}
+        additive_columns = {
+            "item_name_snapshot": "VARCHAR(250)",
+            "barcode_snapshot": "VARCHAR(80)",
+            "tally_stock_item_name_snapshot": "VARCHAR(250)",
+            "mrp_snapshot": "NUMERIC(10, 2)",
+            "rate_snapshot": "NUMERIC(10, 2)",
+            "source_type": "VARCHAR(40)",
+            "is_manual_line": "BOOLEAN NOT NULL DEFAULT 0",
+        }
+        for column_name, column_type in additive_columns.items():
+            if column_name not in columns:
+                with engine.begin() as connection:
+                    connection.execute(text(f"ALTER TABLE pos_cart_items ADD COLUMN {column_name} {column_type}"))
+
+        inspector = inspect(engine)
+        variant_column = next(
+            (column for column in inspector.get_columns("pos_cart_items") if column["name"] == "variant_id"),
+            None,
+        )
+        manual_line_column = next(
+            (column for column in inspector.get_columns("pos_cart_items") if column["name"] == "is_manual_line"),
+            None,
+        )
+        manual_line_default = str((manual_line_column or {}).get("default") or "").strip().strip("'\"")
+        needs_cart_rebuild = bool(variant_column and not variant_column.get("nullable", True)) or manual_line_default not in {"0", "False", "false"}
+        if needs_cart_rebuild:
+            with engine.begin() as connection:
+                connection.execute(text("PRAGMA foreign_keys=OFF"))
+                connection.execute(text("ALTER TABLE pos_cart_items RENAME TO pos_cart_items_old"))
+                connection.execute(text("DROP INDEX IF EXISTS ix_pos_cart_items_cart_id"))
+                connection.execute(text("DROP INDEX IF EXISTS ix_pos_cart_items_id"))
+                connection.execute(text("DROP INDEX IF EXISTS ix_pos_cart_items_variant_id"))
+                PosCartItem.__table__.create(bind=connection)
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO pos_cart_items (
+                            id, cart_id, variant_id, qty, unit_price,
+                            item_name_snapshot, barcode_snapshot, tally_stock_item_name_snapshot,
+                            mrp_snapshot, rate_snapshot, source_type, is_manual_line,
+                            created_at, updated_at
+                        )
+                        SELECT
+                            old.id,
+                            old.cart_id,
+                            old.variant_id,
+                            old.qty,
+                            old.unit_price,
+                            COALESCE(old.item_name_snapshot, families.family_name, variants.item_display_name),
+                            COALESCE(old.barcode_snapshot, variants.barcode),
+                            COALESCE(old.tally_stock_item_name_snapshot, families.tally_stock_item_name),
+                            COALESCE(old.mrp_snapshot, variants.mrp),
+                            COALESCE(old.rate_snapshot, old.unit_price, variants.selling_price),
+                            COALESCE(old.source_type, 'barcode'),
+                            COALESCE(old.is_manual_line, 0),
+                            old.created_at,
+                            old.updated_at
+                        FROM pos_cart_items_old old
+                        LEFT JOIN label_variants variants ON variants.id = old.variant_id
+                        LEFT JOIN product_families families ON families.id = variants.family_id
+                        """
+                    )
+                )
+                connection.execute(text("DROP TABLE pos_cart_items_old"))
+                connection.execute(text("PRAGMA foreign_keys=ON"))
+
+
+def _seed_demo_tally_items(db, ProductFamily) -> None:
+    demo_names = [
+        ("Demo Tally Shirt", "Demo Tally Shirt"),
+        ("Demo Tally Pant", "Demo Tally Pant"),
+        ("Demo Tally Socks", "Demo Tally Socks"),
+    ]
+    existing_names = {
+        (family.family_name or "").strip().lower()
+        for family in db.query(ProductFamily).all()
+    }
+    added = False
+    for family_name, tally_name in demo_names:
+        if family_name.strip().lower() in existing_names:
+            continue
+        db.add(
+            ProductFamily(
+                family_name=family_name,
+                tally_stock_item_name=tally_name,
+                category="Demo",
+                default_tax_rate=0,
+                default_unit="PCS",
+                active_status=True,
+            )
+        )
+        added = True
+    if added:
+        db.commit()
 
 
 def get_db():

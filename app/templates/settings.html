@@ -73,10 +73,29 @@
           <option value="9" {% if pricing_settings.mrp_rounding == 9 %}selected{% endif %}>Upper price ending 9</option>
         </select>
       </label>
+      <label>
+        MRP display after margin
+        <select name="mrp_truncate_decimal">
+          <option value="false" {% if not pricing_settings.mrp_truncate_decimal %}selected{% endif %}>Use rounding option above</option>
+          <option value="true" {% if pricing_settings.mrp_truncate_decimal %}selected{% endif %}>Don't round off, truncate decimal</option>
+        </select>
+      </label>
       <div class="form-actions">
         <button class="button primary" type="submit">Save Settings</button>
       </div>
     </form>
+  </section>
+
+  <section class="panel setup-panel">
+    <div class="section-line">
+      <h2>Navbar QR</h2>
+      <span class="badge muted" id="navbarQrStateBadge">hidden</span>
+    </div>
+    <p>Show the scanner and print QR codes in the top-right navbar.</p>
+    <div class="form-actions">
+      <button class="button" type="button" id="showNavbarQrButton">Show QR in navbar</button>
+      <button class="button" type="button" id="hideNavbarQrButton">Hide QR in navbar</button>
+    </div>
   </section>
 
   <section class="panel setup-panel scanner-link-panel">
@@ -87,7 +106,6 @@
         <p class="muted-text">LAN IP was not detected. Start with <span class="mono">uvicorn app.main:app --host 0.0.0.0 --port 8001</span>, then use the laptop IP from Windows Wi-Fi settings.</p>
       {% endif %}
     </div>
-    <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
   </section>
 
   <section class="panel setup-panel scanner-link-panel">
@@ -98,7 +116,6 @@
         <p class="muted-text">LAN IP was not detected. Start with <span class="mono">uvicorn app.main:app --host 0.0.0.0 --port 8001</span>, then use the laptop IP from Windows Wi-Fi settings.</p>
       {% endif %}
     </div>
-    <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
   </section>
 
   <section class="panel setup-panel">
@@ -115,6 +132,7 @@
       <input type="hidden" name="default_barcode_length" value="{{ barcode_settings.default_length }}">
       <input type="hidden" name="barcode_allowed_chars" value="{{ barcode_settings.allowed_chars }}">
       <input type="hidden" name="mrp_rounding" value="{{ pricing_settings.mrp_rounding }}">
+      <input type="hidden" name="mrp_truncate_decimal" value="{{ 'true' if pricing_settings.mrp_truncate_decimal else 'false' }}">
 
       <div class="digit-map-grid">
         {% for digit in range(10) %}
@@ -292,5 +310,33 @@
         input.value = aliases(input.value).join(",");
       });
     });
+  </script>
+  <script>
+    (() => {
+      const storageKey = "shopbridge.navbarQrVisible.v1";
+      const showButton = document.getElementById("showNavbarQrButton");
+      const hideButton = document.getElementById("hideNavbarQrButton");
+      const stateBadge = document.getElementById("navbarQrStateBadge");
+      if (!showButton || !hideButton || !stateBadge) {
+        return;
+      }
+
+      const setVisible = visible => {
+        localStorage.setItem(storageKey, visible ? "1" : "0");
+        if (typeof window.shopbridgeSetNavbarQrVisible === "function") {
+          window.shopbridgeSetNavbarQrVisible(visible);
+        }
+        stateBadge.textContent = visible ? "visible" : "hidden";
+      };
+
+      const syncState = () => {
+        stateBadge.textContent = localStorage.getItem(storageKey) === "1" ? "visible" : "hidden";
+      };
+
+      showButton.addEventListener("click", () => setVisible(true));
+      hideButton.addEventListener("click", () => setVisible(false));
+      window.addEventListener("storage", syncState);
+      syncState();
+    })();
   </script>
 {% endblock %}

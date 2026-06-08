@@ -9,8 +9,10 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
   </head>
   <body>
+    {% set navbar_qr = navbar_qr_context(request) %}
     <header class="topbar">
       <a class="brand" href="/new-stock">ShopBridge</a>
+      <button class="topbar-menu-toggle" type="button" data-topbar-menu-toggle aria-expanded="false" aria-controls="topbarMenuPanel" aria-label="Open navigation menu">☰</button>
       <nav class="nav">
         {% set path = request.url.path %}
         <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">New Stock / Print Labels</a>
@@ -21,6 +23,31 @@
         <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
         <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/families') or path.startswith('/print-jobs') or path.startswith('/tally') else '' }}" href="/settings">Settings</a>
       </nav>
+      <div class="topbar-right">
+        <button class="topbar-qr-toggle" type="button" data-navbar-qr-toggle aria-expanded="false">Phone QR</button>
+        <div class="topbar-qr-links" data-navbar-qr-panel hidden aria-label="Scanner and print QR codes">
+          <a class="topbar-qr-link" href="{{ navbar_qr.scanner_url }}" aria-label="Open POS scanner QR">
+            <img src="{{ navbar_qr.scanner_qr_url }}" alt="POS scanner QR code">
+            <span>POS</span>
+          </a>
+          <a class="topbar-qr-link" href="{{ navbar_qr.phone_print_url }}" aria-label="Open print QR">
+            <img src="{{ navbar_qr.phone_print_qr_url }}" alt="Phone print QR code">
+            <span>Print</span>
+          </a>
+        </div>
+      </div>
+      <div class="topbar-menu-panel" id="topbarMenuPanel" hidden>
+        <nav class="nav topbar-menu-nav">
+          {% set path = request.url.path %}
+          <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">New Stock / Print Labels</a>
+          <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS Shadow</a>
+          <a class="{{ 'active' if path.startswith('/sales') else '' }}" href="/sales">Sales</a>
+          <a class="{{ 'active' if path == '/scan' else '' }}" href="/scan">Scan / Lookup</a>
+          <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
+          <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
+          <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/families') or path.startswith('/print-jobs') or path.startswith('/tally') else '' }}" href="/settings">Settings</a>
+        </nav>
+      </div>
     </header>
     <main class="page">
       {% if message %}
@@ -33,6 +60,72 @@
         <div class="error">{{ error }}</div>
       {% endif %}
       {% block content %}{% endblock %}
-    </main>
-  </body>
+  </main>
+  <script>
+    (() => {
+      const storageKey = "shopbridge.navbarQrVisible.v1";
+      const toggle = document.querySelector("[data-navbar-qr-toggle]");
+      const panel = document.querySelector("[data-navbar-qr-panel]");
+
+      if (toggle && panel) {
+        const setVisible = visible => {
+          panel.hidden = !visible;
+          toggle.setAttribute("aria-expanded", visible ? "true" : "false");
+          toggle.textContent = visible ? "Hide QR" : "Phone QR";
+          localStorage.setItem(storageKey, visible ? "1" : "0");
+        };
+
+        setVisible(localStorage.getItem(storageKey) === "1");
+
+        toggle.addEventListener("click", () => {
+          setVisible(panel.hidden);
+        });
+
+        window.shopbridgeSetNavbarQrVisible = visible => {
+          setVisible(Boolean(visible));
+        };
+
+        window.addEventListener("storage", event => {
+          if (event.key === storageKey) {
+            setVisible(event.newValue === "1");
+          }
+        });
+      }
+
+      const menuToggle = document.querySelector("[data-topbar-menu-toggle]");
+      const menuPanel = document.getElementById("topbarMenuPanel");
+      if (!menuToggle || !menuPanel) {
+        return;
+      }
+
+      const setMenuVisible = visible => {
+        menuPanel.hidden = !visible;
+        menuToggle.setAttribute("aria-expanded", visible ? "true" : "false");
+        document.body.classList.toggle("topbar-menu-open", visible);
+      };
+
+      setMenuVisible(false);
+
+      menuToggle.addEventListener("click", () => {
+        setMenuVisible(menuPanel.hidden);
+      });
+
+      menuPanel.querySelectorAll("a").forEach(link => {
+        link.addEventListener("click", () => {
+          setMenuVisible(false);
+        });
+      });
+
+      document.addEventListener("click", event => {
+        if (menuPanel.hidden) {
+          return;
+        }
+        if (menuPanel.contains(event.target) || menuToggle.contains(event.target)) {
+          return;
+        }
+        setMenuVisible(false);
+      });
+    })();
+  </script>
+</body>
 </html>

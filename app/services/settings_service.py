@@ -22,6 +22,7 @@ LEGACY_BARCODE_ALLOWED_CHARS = "23456789BFGJKLMNQRUVWXY"
 BARCODE_DEFAULTS_VERSION = "2"
 VALID_BARCODE_MODES = {BARCODE_GENERATION_MODE}
 MRP_ROUNDING_KEY = "mrp_rounding"
+MRP_TRUNCATE_DECIMAL_KEY = "mrp_truncate_decimal"
 DEFAULT_MRP_ROUNDING = 9
 VALID_MRP_ROUNDING = {1, 5, 10, 9}
 PRICE_CODE_DIGIT_MAP_KEY = "price_code_digit_map"
@@ -53,6 +54,7 @@ class BarcodeSettings:
 @dataclass(frozen=True)
 class PricingSettings:
     mrp_rounding: int
+    mrp_truncate_decimal: bool
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,9 @@ def ensure_default_settings() -> None:
         changed = True
     if MRP_ROUNDING_KEY not in settings:
         settings[MRP_ROUNDING_KEY] = str(DEFAULT_MRP_ROUNDING)
+        changed = True
+    if MRP_TRUNCATE_DECIMAL_KEY not in settings:
+        settings[MRP_TRUNCATE_DECIMAL_KEY] = "false"
         changed = True
     if PRICE_CODE_DIGIT_MAP_KEY not in settings:
         settings[PRICE_CODE_DIGIT_MAP_KEY] = json.dumps(EMPTY_PRICE_CODE_DIGIT_MAP, ensure_ascii=True, sort_keys=True)
@@ -276,7 +281,10 @@ def get_barcode_settings() -> BarcodeSettings:
 def get_pricing_settings() -> PricingSettings:
     ensure_default_settings()
     settings = _read_settings()
-    return PricingSettings(mrp_rounding=_mrp_rounding(settings.get(MRP_ROUNDING_KEY)))
+    return PricingSettings(
+        mrp_rounding=_mrp_rounding(settings.get(MRP_ROUNDING_KEY)),
+        mrp_truncate_decimal=_parse_bool(settings.get(MRP_TRUNCATE_DECIMAL_KEY), default=False),
+    )
 
 
 def get_price_code_settings() -> PriceCodeSettings:
@@ -306,9 +314,10 @@ def save_barcode_settings(
     return get_barcode_settings()
 
 
-def save_pricing_settings(*, mrp_rounding: int) -> PricingSettings:
+def save_pricing_settings(*, mrp_rounding: int, mrp_truncate_decimal: bool) -> PricingSettings:
     settings = _read_settings()
     settings[MRP_ROUNDING_KEY] = str(_mrp_rounding(mrp_rounding))
+    settings[MRP_TRUNCATE_DECIMAL_KEY] = _bool_text(mrp_truncate_decimal)
     _write_settings(settings)
     return get_pricing_settings()
 

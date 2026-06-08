@@ -9,6 +9,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -116,9 +117,16 @@ class PosCartItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     cart_id = Column(Integer, ForeignKey("pos_carts.id"), nullable=False, index=True)
-    variant_id = Column(Integer, ForeignKey("label_variants.id"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("label_variants.id"), nullable=True, index=True)
     qty = Column(Integer, nullable=False, default=1)
     unit_price = Column(Numeric(10, 2), nullable=True)
+    item_name_snapshot = Column(String(250), nullable=True)
+    barcode_snapshot = Column(String(80), nullable=True)
+    tally_stock_item_name_snapshot = Column(String(250), nullable=True)
+    mrp_snapshot = Column(Numeric(10, 2), nullable=True)
+    rate_snapshot = Column(Numeric(10, 2), nullable=True)
+    source_type = Column(String(40), nullable=True)
+    is_manual_line = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

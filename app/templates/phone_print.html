@@ -5,11 +5,9 @@
   <section class="page-header compact-header phone-print-header">
     <div>
       <h1>Phone Print</h1>
-      <p>Uses this laptop's templates, settings, barcode records, and BarTender print path.</p>
     </div>
     <div class="form-actions">
       <a class="button" href="/scanner">Scanner</a>
-      <a class="button" href="/new-stock">Laptop Print</a>
     </div>
   </section>
 
@@ -26,9 +24,9 @@
       <input type="hidden" name="force_new_barcode" id="phoneForceNewBarcode" value="{{ 'true' if submitted.get('force_new_barcode') else 'false' }}">
       <input type="hidden" name="manual_barcode_override" id="phoneManualBarcodeOverride" value="{{ 'true' if submitted.get('manual_barcode_override') else 'false' }}">
 
-      <div class="scanner-status {% if error %}error{% elif message %}ok{% else %}ready{% endif %}" id="phonePrintStatus">
-        <strong>{% if error %}Print error{% elif message %}Print status{% else %}Ready{% endif %}</strong>
-        <span>{{ error or message or "Select a template, enter item details, then print from this laptop." }}</span>
+      <div class="scanner-status {% if workflow_error %}error{% elif workflow_message %}ok{% else %}ready{% endif %}" id="phonePrintStatus">
+        <strong>{% if workflow_error %}Print error{% elif workflow_message %}Print status{% else %}Ready{% endif %}</strong>
+        <span>{{ workflow_error or workflow_message or "" }}</span>
       </div>
 
       <details class="phone-secondary-tools" id="phoneSecondaryTools">
@@ -174,7 +172,10 @@
       </div>
       <div class="phone-print-dialog-backdrop" id="phonePrintCopiesBackdrop" hidden></div>
       <div class="phone-print-dialog" id="phonePrintCopiesDialog" role="dialog" aria-modal="true" aria-labelledby="phonePrintCopiesTitle" hidden>
-        <h2 id="phonePrintCopiesTitle">Print Copies</h2>
+        <div class="section-line phone-print-dialog-header">
+          <h2 id="phonePrintCopiesTitle">Print Copies</h2>
+          <button class="button primary print-button" type="button" id="phoneConfirmCopiesButton">Print</button>
+        </div>
         <label>
           Copies
           <input name="copies" id="phoneCopies" value="{{ submitted.get('copies', 1) }}" inputmode="numeric" required>
@@ -187,7 +188,6 @@
         </div>
         <div class="form-actions phone-action-row">
           <button class="button" type="button" id="phoneCancelCopiesButton">Cancel</button>
-          <button class="button primary print-button" type="button" id="phoneConfirmCopiesButton">Print</button>
         </div>
       </div>
       <button type="submit" id="phoneSubmitPrintButton" hidden></button>
@@ -195,6 +195,7 @@
   </section>
 
   <script>
+    {% set phone_initial_notice = workflow_error|default('', true) or workflow_message|default('', true) %}
     const phoneTemplates = {{ templates_json|tojson }};
     const phoneVariants = {{ variants_json|tojson }};
     const phoneFamilies = {{ families_json|default([], true)|tojson }};
@@ -202,7 +203,9 @@
     const phonePriceCodeSettings = {{ price_code_settings_json|tojson }};
     const phoneSubmittedValues = {{ submitted|tojson }};
     const phoneInitialVariantId = "{{ initial_variant_id or '' }}";
+    const phoneHasServerNotice = Boolean({{ phone_initial_notice|tojson }});
     const phoneMrpRounding = Number({{ pricing_settings.mrp_rounding|tojson }});
+    const phoneMrpTruncateDecimal = Boolean({{ pricing_settings.mrp_truncate_decimal|tojson }});
 
     const phoneForm = document.getElementById("phonePrintForm");
     const phoneStatus = document.getElementById("phonePrintStatus");
@@ -316,6 +319,34 @@
 
     function phoneSameText(left, right) {
       return phoneNormalizeText(left) === phoneNormalizeText(right);
+    }
+
+    function phoneUppercaseFieldValue(field) {
+      if (!field || typeof field.value !== "string") {
+        return;
+      }
+      const upper = field.value.toUpperCase();
+      if (field.value !== upper) {
+        field.value = upper;
+      }
+    }
+
+    function phoneUppercaseVisibleFieldValues() {
+      [
+        phoneVariantSearch,
+        phoneFamilyName,
+        phoneBarcode,
+        phoneFields.brand,
+        phoneFields.item,
+        phoneFields.article,
+        phoneFields.size,
+        phoneFields.batch,
+        phoneFields.expiry,
+        phoneFields.mrp,
+        phoneFields.margin,
+        phoneFields.code,
+        ...Object.values(phoneCustomInputs),
+      ].forEach(phoneUppercaseFieldValue);
     }
 
     function phoneMoneyNumber(value) {
@@ -598,6 +629,7 @@
       phoneFields.margin.value = saved.margin_percent || "";
       phoneFields.code.value = saved.coded_price || "";
       phoneFields.copies.value = saved.copies || "1";
+      phoneUppercaseVisibleFieldValues();
       if (phoneShowPricingFieldsToggle) {
         phoneShowPricingFieldsToggle.checked = phonePricingFieldsPreferenceVisible;
       }
@@ -890,6 +922,7 @@
     function phoneApplyCustomValues(values) {
       Object.entries(phoneCustomInputs).forEach(([fieldName, input]) => {
         input.value = values && values[fieldName] ? values[fieldName] : "";
+        phoneUppercaseFieldValue(input);
       });
       phoneSyncExtraValues();
     }
@@ -1040,11 +1073,14 @@
       phoneSellingPrice.value = variant.selling_price || "";
       phoneFields.code.value = variant.coded_price || "";
       phoneVariantSearch.value = phoneVariantLabel(variant);
+      phoneUppercaseVisibleFieldValues();
       phoneApplyCategory(variant.template_id || "");
       phoneApplyCustomValues(variant.extra_field_values || {});
       phoneRefreshPriceState();
       phoneRefreshReadyState();
-      phoneSetStatus("ready", "Ready", "Saved item details loaded.");
+      if (!phoneHasServerNotice) {
+        phoneSetStatus("ready", "Ready", "Saved item details loaded.");
+      }
       phoneSaveState();
     }
 
@@ -1141,7 +1177,7 @@
           button.addEventListener("click", () => {
             phoneSelectedPriceCodeKey.value = candidate.key;
             phoneSellingPrice.value = candidate.selling_price;
-            phoneFields.code.value = candidate.code;
+            phoneFields.code.value = candidate.raw_value || candidate.code;
             phoneRefreshPriceState();
             phoneRefreshReadyState();
             phoneSaveState();
@@ -1165,6 +1201,9 @@
     }
 
     function phoneUpperRound(value, step) {
+      if (phoneMrpTruncateDecimal) {
+        return Math.trunc(Number(value));
+      }
       if (step === 9) {
         const whole = Math.ceil(Number(value));
         if (whole <= 9) {
@@ -1329,6 +1368,7 @@
       phoneSaveState();
     });
     phoneVariantSearch.addEventListener("input", () => {
+      phoneUppercaseFieldValue(phoneVariantSearch);
       phoneRenderVariantResults();
       phoneSaveState();
     });
@@ -1343,15 +1383,18 @@
       }
     });
     phoneFamilyName.addEventListener("input", () => {
+      phoneUppercaseFieldValue(phoneFamilyName);
       phoneRefreshReadyState();
       phoneSaveState();
     });
     phoneFamilyName.addEventListener("change", () => {
+      phoneUppercaseFieldValue(phoneFamilyName);
       phoneApplyFamilyMatch();
       phoneRefreshReadyState();
       phoneSaveState();
     });
     phoneFields.code.addEventListener("input", () => {
+      phoneUppercaseFieldValue(phoneFields.code);
       phoneSelectedPriceCodeKey.value = "";
       phoneRefreshPriceState();
       phoneRefreshReadyState();
@@ -1373,6 +1416,8 @@
       });
     }
     [
+      phoneVariantSearch,
+      phoneFamilyName,
       phoneFields.brand,
       phoneFields.item,
       phoneFields.article,
@@ -1381,12 +1426,15 @@
       phoneFields.expiry,
       phoneFields.margin,
       phoneFields.mrp,
+      phoneFields.code,
     ].forEach(field => {
       field.addEventListener("input", () => {
+        phoneUppercaseFieldValue(field);
         phoneRefreshReadyState();
         phoneSaveState();
       });
       field.addEventListener("change", () => {
+        phoneUppercaseFieldValue(field);
         phoneRefreshReadyState();
         phoneSaveState();
       });
@@ -1509,6 +1557,11 @@
     }
     phoneRefreshPriceState();
     phoneRefreshReadyState();
+    if (phoneHasServerNotice && phoneCategory) {
+      window.requestAnimationFrame(() => {
+        phoneCategory.scrollIntoView({block: "start", inline: "nearest"});
+      });
+    }
     phoneHydrating = false;
     phoneSaveState();
   </script>

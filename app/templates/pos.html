@@ -10,36 +10,12 @@
         </div>
       </div>
       <div class="pos-top-actions">
-        <a class="button" href="/sales">Sales</a>
-        <details class="pos-qr-popover">
-          <summary class="button">Phone Scanner QR</summary>
-          <div class="pos-qr-card">
-            <strong>Phone Scanner</strong>
-            <p class="mono">{{ scanner_url }}</p>
-            {% if not scanner_ip_detected %}
-              <p class="muted-text">LAN IP was not detected. Use the laptop IP with port 8001 if needed.</p>
-            {% endif %}
-            <img class="scanner-qr" src="{{ scanner_qr_url }}" alt="Phone scanner QR code">
-          </div>
-        </details>
-        <details class="pos-qr-popover">
-          <summary class="button">Phone Print QR</summary>
-          <div class="pos-qr-card">
-            <strong>Phone Print</strong>
-            <p class="mono">{{ phone_print_url }}</p>
-            {% if not phone_print_ip_detected %}
-              <p class="muted-text">LAN IP was not detected. Use the laptop IP with port 8001 if needed.</p>
-            {% endif %}
-            <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
-          </div>
-        </details>
+        <div class="pos-status pos-status-info pos-status-compact" id="cartStatus" role="status">Ready</div>
         <button class="button" type="button" id="fullscreenPosButton">Fullscreen POS</button>
         <button class="button" type="button" id="helpToggleButton" aria-controls="posHelpBar" aria-expanded="false">Show Help</button>
         <button class="button" type="button" id="refreshCartButton">Refresh</button>
       </div>
     </header>
-
-    <div class="pos-status pos-status-info" id="cartStatus" role="status">Ready</div>
 
     <section class="pos-workspace pos-grid-workspace">
       <div class="pos-grid-panel">
@@ -147,7 +123,7 @@
     </section>
 
     <footer class="pos-help-bar" id="posHelpBar" hidden>
-      F2 Item | Enter Add | Up/Down Select | +/- Qty | Del Remove | F4 Pay | Ctrl+Enter Checkout | Esc Back | F10 Receipt
+      F2 Item | Enter Add | Up/Down Select | Left/Right Cells | +/- Qty | Del Remove | F4 Pay | PgUp/PgDn Bills | Ctrl+Enter Checkout | Esc Back | F10 Receipt
     </footer>
   </section>
 
@@ -178,7 +154,9 @@
     const summaryLines = document.getElementById("summaryLines");
     const summarySubtotal = document.getElementById("summarySubtotal");
 
-    const checkoutError = {{ error|tojson }};
+    const checkoutError = {{ error|default(None)|tojson }};
+    const initialSaleId = {{ initial_sale_id|default(None)|tojson }};
+    const recentSales = {{ recent_sales|default([])|tojson }};
     const helpPreferenceKey = "shopbridge.posHelpVisible.v1";
     const state = {
       cart: {items: [], count: 0, total: "0.00"},
@@ -187,6 +165,14 @@
       suggestionIndex: -1,
       searchTimer: null,
       searchRequestId: 0,
+      cartEditActive: false,
+      previewMode: false,
+      previewSaleId: null,
+      previewSaleIndex: -1,
+      loadedSaleBillNumber: "",
+      loadedSaleDirty: false,
+      loadedSaleCheckoutConfirmed: false,
+      recentSales: recentSales || [],
     };
 
     function money(value) {
@@ -200,6 +186,15 @@
           searchInput.select();
         }
       });
+    }
+
+    function lineEditIsActive() {
+      const active = document.activeElement;
+      return Boolean(active && active.classList && active.classList.contains("pos-line-input"));
+    }
+
+    function setLineEditActive(active) {
+      state.cartEditActive = Boolean(active);
     }
 
     function setStatus(message, type = "info") {
@@ -230,7 +225,14 @@
     }
 
     function itemDescription(item) {
-      return item.sticker_name ? `Sticker: ${item.sticker_name}` : "";
+      const parts = [];
+      if (item.source_type === "tally_item") {
+        parts.push("Tally item");
+      }
+      if (item.sticker_name) {
+        parts.push(`Sticker: ${item.sticker_name}`);
+      }
+      return parts.join(" | ");
     }
 
     function selectedCartItem() {
@@ -238,6 +240,227 @@
         return null;
       }
       return state.cart.items[state.selectedIndex] || null;
+    }
+
+    function previewItemLabel(item) {
+      return item.billing_item || item.family_name || item.item_name || item.sticker_name || item.item_display_name || "";
+    }
+
+    function saleToCartPayload(sale) {
+      const items = (sale.items || []).map((item, index) => ({
+        id: item.id || `${sale.id}-${index}`,
+        variant_id: item.label_variant_id,
+        barcode: item.barcode || "",
+        billing_item: item.billing_item || item.item_name || "",
+        family_name: item.item_name || "",
+        item_name: item.item_name || "",
+        sticker_name: "",
+        item_display_name: "",
+        article_no: "",
+        brand: "",
+        category: "",
+        tally_stock_item_name: item.tally_stock_item_name || "",
+        template_name: "",
+        mrp: item.mrp || "",
+        selling_price: item.rate || "",
+        coded_price: "",
+        qty: item.qty || 1,
+        amount: item.amount || "0.00",
+        missing_price: false,
+        source_type: item.source_type || (item.label_variant_id ? "barcode" : "tally_item"),
+        is_manual_line: false,
+        preview_only: true,
+      }));
+      const total = sale.total || "0.00";
+      return {
+        cart_id: sale.id,
+        status: sale.status || "completed",
+        items,
+        total,
+        count: items.reduce((sum, item) => sum + Number(item.qty || 0), 0),
+      };
+    }
+
+    function setPreviewState(active, saleId = null) {
+      state.previewMode = Boolean(active);
+      state.previewSaleId = saleId;
+      if (!state.previewMode) {
+        state.loadedSaleBillNumber = "";
+        state.loadedSaleDirty = false;
+        state.loadedSaleCheckoutConfirmed = false;
+      }
+      searchInput.placeholder = "Scan / type item...";
+    }
+
+    function markLoadedSaleDirty() {
+      if (state.previewMode) {
+        state.loadedSaleDirty = true;
+      }
+    }
+
+    function confirmLoadedSaleEdit() {
+      if (!state.previewMode || state.loadedSaleDirty) {
+        return true;
+      }
+      const billLabel = state.loadedSaleBillNumber || `#${state.previewSaleId}`;
+      const confirmed = window.confirm(`Edit saved bill ${billLabel}? The original saved bill will stay unchanged, and checkout will save the edited lines as a new bill.`);
+      if (confirmed) {
+        state.loadedSaleDirty = true;
+      }
+      return confirmed;
+    }
+
+    function confirmLoadedSaleReplacement() {
+      if (!state.previewMode || !state.loadedSaleDirty) {
+        return true;
+      }
+      return window.confirm("This opened bill has edits that are not checked out yet. Discard these edits and open another bill?");
+    }
+
+    function findRecentSaleIndex(saleId) {
+      return state.recentSales.findIndex(sale => sale.id === saleId);
+    }
+
+    async function loadSalePreview(saleId) {
+      if (!saleId) {
+        return;
+      }
+      if (!confirmLoadedSaleReplacement()) {
+        focusSelectedCartItem(true);
+        return;
+      }
+      if (!state.previewMode && state.cart.items && state.cart.items.length) {
+        const replaceCurrent = window.confirm("Load this saved bill into POS? This will replace the current active bill.");
+        if (!replaceCurrent) {
+          focusSelectedCartItem(true);
+          return;
+        }
+      }
+      try {
+        const response = await fetch(`/pos/cart/load-sale/${saleId}`, {method: "POST"});
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || data.message || "Could not load bill.");
+        }
+        closeSuggestions();
+        searchInput.value = "";
+        state.previewSaleIndex = findRecentSaleIndex(saleId);
+        setPreviewState(true, saleId);
+        state.loadedSaleBillNumber = data.bill_number || "";
+        state.loadedSaleDirty = false;
+        state.selectedIndex = -1;
+        renderCart(data.cart);
+        setStatus(`Loaded bill ${state.loadedSaleBillNumber || saleId} for editing. Checkout saves a new bill.`, "info");
+        focusSelectedCartItem(true);
+      } catch (error) {
+        setStatus(error.message || "Could not load bill.", "error");
+      }
+    }
+
+    async function exitPreview(refresh = true) {
+      if (!state.previewMode) {
+        return;
+      }
+      if (state.loadedSaleDirty && !window.confirm("Discard edits to this opened bill and return to the active bill?")) {
+        return;
+      }
+      setPreviewState(false, null);
+      state.previewSaleIndex = -1;
+      state.previewSaleId = null;
+      if (refresh) {
+        await loadCart(false);
+      }
+    }
+
+    async function navigateRecentSale(delta) {
+      if (!state.recentSales.length) {
+        setStatus("No recent bills found.", "info");
+        return;
+      }
+      let index = state.previewSaleIndex;
+      if (index < 0) {
+        index = 0;
+      } else {
+        index = (index + delta + state.recentSales.length) % state.recentSales.length;
+      }
+      await loadSalePreview(state.recentSales[index].id);
+    }
+
+    function scrollSelectedCartRowIntoView() {
+      const row = cartRows.querySelector(`tr[data-cart-row-index="${state.selectedIndex}"]`);
+      if (row) {
+        row.scrollIntoView({block: "nearest", inline: "nearest"});
+      }
+    }
+
+    function scrollActiveSuggestionIntoView() {
+      const active = suggestionsBox.querySelector(".pos-suggestion.active");
+      if (active) {
+        active.scrollIntoView({block: "nearest", inline: "nearest"});
+      }
+    }
+
+    function markSelectedCartRow(rowIndex) {
+      state.selectedIndex = rowIndex;
+      cartRows.querySelectorAll(".pos-billing-row").forEach(row => {
+        row.classList.toggle("selected", Number(row.dataset.cartRowIndex) === rowIndex);
+      });
+      scrollSelectedCartRowIntoView();
+    }
+
+    function focusCartField(rowIndex, fieldName, selectText = true) {
+      const input = cartRows.querySelector(`[data-cart-row-index="${rowIndex}"][data-cart-field="${fieldName}"]`);
+      if (input) {
+        markSelectedCartRow(rowIndex);
+        input.focus();
+        if (selectText && typeof input.select === "function") {
+          input.select();
+        }
+      }
+    }
+
+    function focusSelectedCartItem(selectText = true) {
+      if (state.selectedIndex < 0) {
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        focusCartField(state.selectedIndex, "item", selectText);
+      });
+    }
+
+    function moveCartField(rowIndex, fieldName, delta) {
+      const order = ["item", "mrp", "rate", "qty"];
+      const current = order.indexOf(fieldName);
+      if (current < 0) {
+        return;
+      }
+      let nextRow = rowIndex;
+      let nextField = current + delta;
+      if (nextField < 0) {
+        if (rowIndex <= 0) {
+          focusItemInput(true);
+          return;
+        }
+        nextRow = Math.max(0, rowIndex - 1);
+        nextField = order.length - 1;
+      } else if (nextField >= order.length) {
+        if (rowIndex >= (state.cart.items || []).length - 1) {
+          focusItemInput(false);
+          return;
+        }
+        nextRow = Math.min((state.cart.items || []).length - 1, rowIndex + 1);
+        nextField = 0;
+      }
+      focusCartField(nextRow, order[nextField], true);
+    }
+
+    function moveCartFieldVertical(rowIndex, fieldName, delta) {
+      const items = state.cart.items || [];
+      if (!items.length) {
+        return;
+      }
+      const nextRow = Math.max(0, Math.min(rowIndex + delta, items.length - 1));
+      focusCartField(nextRow, fieldName, true);
     }
 
     function selectCartIndex(index) {
@@ -248,6 +471,7 @@
         state.selectedIndex = Math.max(0, Math.min(index, items.length - 1));
       }
       renderCart(state.cart);
+      focusSelectedCartItem(true);
     }
 
     function closeSuggestions() {
@@ -277,12 +501,12 @@
           <span></span>
           <em></em>
         `;
-          option.querySelector("strong").textContent = item.family_name || item.billing_item || item.item_name || item.sticker_name || item.item_display_name || "";
+        option.querySelector("strong").textContent = item.family_name || item.billing_item || item.item_name || item.sticker_name || item.item_display_name || "";
         option.querySelector("span").textContent = [
           item.mrp ? `MRP ${money(item.mrp)}` : "",
           item.sticker_name ? `Sticker: ${item.sticker_name}` : "",
         ].filter(Boolean).join(" | ");
-        option.querySelector("em").textContent = item.missing_price ? "Missing price" : money(item.selling_price);
+        option.querySelector("em").textContent = item.missing_price ? "Set rate" : money(item.selling_price);
         option.addEventListener("mousedown", event => event.preventDefault());
         option.addEventListener("click", () => selectSuggestion(index));
         suggestionsBox.appendChild(option);
@@ -291,6 +515,7 @@
       summaryPanel.hidden = true;
       searchPanel.hidden = false;
       suggestionsBox.hidden = false;
+      window.requestAnimationFrame(scrollActiveSuggestionIntoView);
     }
 
     function setHelpVisible(visible, persist = true) {
@@ -335,8 +560,12 @@
       if (!item) {
         return;
       }
-      searchInput.value = item.barcode;
       closeSuggestions();
+      if (item.result_type === "tally_item") {
+        await addTallyItem(item.id);
+        return;
+      }
+      searchInput.value = item.barcode;
       await addBarcode(item.barcode);
     }
 
@@ -356,8 +585,10 @@
       cartTotal.textContent = money(state.cart.total || "0.00");
       searchPanelTotal.textContent = money(state.cart.total || "0.00");
       summarySubtotal.textContent = money(state.cart.total || "0.00");
-      checkoutButton.disabled = items.length === 0;
+      state.hasMissingRate = items.some(item => item.missing_price);
+      checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
       checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
+      clearCartButton.disabled = false;
       cartRows.innerHTML = "";
 
       if (!items.length) {
@@ -375,10 +606,11 @@
         const row = document.createElement("tr");
         row.className = `pos-billing-row${index === state.selectedIndex ? " selected" : ""}${item.missing_price ? " warn" : ""}`;
         row.dataset.itemId = item.id;
+        row.dataset.cartRowIndex = index;
         row.addEventListener("click", () => {
           state.selectedIndex = index;
           renderCart(state.cart);
-          focusItemInput(false);
+          focusSelectedCartItem(true);
         });
 
         const no = document.createElement("td");
@@ -387,11 +619,63 @@
 
         const itemCell = document.createElement("td");
         itemCell.className = "pos-item-cell";
-        const name = document.createElement("strong");
-        name.textContent = item.family_name || item.billing_item || item.item_name || item.sticker_name || item.item_display_name || "";
+        const itemInput = document.createElement("input");
+        itemInput.className = "pos-line-input pos-item-input";
+        itemInput.inputMode = "text";
+        itemInput.placeholder = "Item";
+        itemInput.value = previewItemLabel(item);
+        itemInput.dataset.cartRowIndex = index;
+        itemInput.dataset.cartField = "item";
+        itemInput.addEventListener("click", event => event.stopPropagation());
+        itemInput.addEventListener("focus", () => {
+          setLineEditActive(true);
+          state.selectedIndex = index;
+          itemInput.select();
+        });
+        itemInput.addEventListener("input", () => setLineEditActive(true));
+        itemInput.addEventListener("blur", () => {
+          window.setTimeout(() => {
+            if (!lineEditIsActive()) {
+              setLineEditActive(false);
+            }
+          }, 50);
+        });
+        const itemValue = () => ({
+          item_name: itemInput.value,
+          mrp: mrpInput.value,
+        });
+        const saveItemFields = async () => updateCartItem(item.id, itemValue(), "Item updated.", false);
+        itemInput.addEventListener("change", saveItemFields);
+        itemInput.addEventListener("keydown", async event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (await saveItemFields()) {
+              focusCartField(index, "mrp", true);
+            }
+            return;
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            focusCartField(index, "mrp", true);
+            return;
+          }
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            moveCartField(index, "item", -1);
+            return;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveCartFieldVertical(index, "item", event.key === "ArrowDown" ? 1 : -1);
+          }
+        });
         const meta = document.createElement("span");
-        meta.textContent = itemDescription(item);
-        itemCell.append(name, meta);
+        const description = itemDescription(item);
+        meta.textContent = description;
+        itemCell.appendChild(itemInput);
+        if (description) {
+          itemCell.appendChild(meta);
+        }
 
         const barcode = document.createElement("td");
         barcode.className = "mono pos-barcode-cell";
@@ -399,11 +683,109 @@
 
         const mrp = document.createElement("td");
         mrp.className = "pos-money-cell";
-        mrp.textContent = money(item.mrp);
+        const mrpInput = document.createElement("input");
+        mrpInput.className = "pos-line-input pos-mrp-input";
+        mrpInput.inputMode = "decimal";
+        mrpInput.placeholder = "MRP";
+        mrpInput.value = item.mrp || "";
+        mrpInput.dataset.cartRowIndex = index;
+        mrpInput.dataset.cartField = "mrp";
+        mrpInput.addEventListener("click", event => event.stopPropagation());
+        mrpInput.addEventListener("focus", () => {
+          setLineEditActive(true);
+          state.selectedIndex = index;
+          mrpInput.select();
+        });
+        mrpInput.addEventListener("input", () => setLineEditActive(true));
+        mrpInput.addEventListener("blur", () => {
+          window.setTimeout(() => {
+            if (!lineEditIsActive()) {
+              setLineEditActive(false);
+            }
+          }, 50);
+        });
+        mrpInput.addEventListener("change", () => updateCartItem(item.id, {item_name: itemInput.value, mrp: mrpInput.value}, "MRP updated.", false));
+        mrpInput.addEventListener("keydown", async event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (await updateCartItem(item.id, {item_name: itemInput.value, mrp: mrpInput.value}, "MRP updated.", false)) {
+              focusCartField(index, "rate", true);
+            }
+            return;
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            focusCartField(index, "rate", true);
+            return;
+          }
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            focusCartField(index, "item", true);
+            return;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveCartFieldVertical(index, "mrp", event.key === "ArrowDown" ? 1 : -1);
+          }
+        });
+        mrp.appendChild(mrpInput);
 
         const rate = document.createElement("td");
         rate.className = "pos-money-cell";
-        rate.textContent = item.missing_price ? "Missing" : money(item.selling_price);
+        const rateInput = document.createElement("input");
+        rateInput.className = "pos-line-input pos-rate-input";
+        rateInput.inputMode = "decimal";
+        rateInput.value = item.selling_price || "";
+        rateInput.placeholder = "Rate";
+        rateInput.setAttribute("aria-label", "Rate");
+        rateInput.dataset.cartRowIndex = index;
+        rateInput.dataset.cartField = "rate";
+        rateInput.addEventListener("click", event => event.stopPropagation());
+        rateInput.addEventListener("focus", () => {
+          setLineEditActive(true);
+          state.selectedIndex = index;
+          rateInput.select();
+        });
+        rateInput.addEventListener("input", () => setLineEditActive(true));
+        rateInput.addEventListener("blur", () => {
+          window.setTimeout(() => {
+            if (!lineEditIsActive()) {
+              setLineEditActive(false);
+            }
+          }, 50);
+        });
+        rateInput.addEventListener("change", () => updateCartItem(item.id, {rate: rateInput.value}, "Rate updated.", false));
+        rateInput.addEventListener("keydown", async event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const updated = await updateCartItem(item.id, {rate: rateInput.value}, "Rate updated.", false);
+            if (updated) {
+              focusCartField(index, "qty", true);
+            }
+            return;
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            focusCartField(index, "qty", true);
+            return;
+          }
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            focusCartField(index, "mrp", true);
+            return;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            rateInput.value = item.selling_price || "";
+            focusItemInput(false);
+            return;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveCartFieldVertical(index, "rate", event.key === "ArrowDown" ? 1 : -1);
+          }
+        });
+        rate.appendChild(rateInput);
 
         const qty = document.createElement("td");
         qty.className = "pos-qty-cell";
@@ -417,8 +799,59 @@
           state.selectedIndex = index;
           changeSelectedQty(-1);
         });
-        const qtyValue = document.createElement("strong");
-        qtyValue.textContent = item.qty;
+        const qtyValue = document.createElement("input");
+        qtyValue.className = "pos-line-input pos-qty-input";
+        qtyValue.inputMode = "numeric";
+        qtyValue.value = item.qty;
+        qtyValue.setAttribute("aria-label", "Quantity");
+        qtyValue.dataset.cartQtyInput = item.id;
+        qtyValue.dataset.cartRowIndex = index;
+        qtyValue.dataset.cartField = "qty";
+        qtyValue.addEventListener("click", event => event.stopPropagation());
+        qtyValue.addEventListener("focus", () => {
+          setLineEditActive(true);
+          state.selectedIndex = index;
+          qtyValue.select();
+        });
+        qtyValue.addEventListener("input", () => setLineEditActive(true));
+        qtyValue.addEventListener("blur", () => {
+          window.setTimeout(() => {
+            if (!lineEditIsActive()) {
+              setLineEditActive(false);
+            }
+          }, 50);
+        });
+        qtyValue.addEventListener("change", () => updateCartItem(item.id, {qty: qtyValue.value}, "Quantity updated.", false));
+        qtyValue.addEventListener("keydown", async event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const updated = await updateCartItem(item.id, {qty: qtyValue.value}, "Quantity updated.", false);
+            if (updated) {
+              focusSelectedCartItem(true);
+            }
+            return;
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            focusSelectedCartItem(true);
+            return;
+          }
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            focusCartField(index, "rate", true);
+            return;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            qtyValue.value = item.qty;
+            focusItemInput(false);
+            return;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveCartFieldVertical(index, "qty", event.key === "ArrowDown" ? 1 : -1);
+          }
+        });
         const inc = document.createElement("button");
         inc.type = "button";
         inc.className = "button small pos-qty-button";
@@ -452,9 +885,14 @@
         row.append(no, itemCell, barcode, mrp, rate, qty, amount, action);
         cartRows.appendChild(row);
       });
+
+      window.requestAnimationFrame(scrollSelectedCartRowIntoView);
     }
 
     async function loadCart(silent = false) {
+      if (silent && (state.cartEditActive || lineEditIsActive())) {
+        return;
+      }
       try {
         const response = await fetch("/pos/cart", {cache: "no-store"});
         if (!response.ok) {
@@ -470,6 +908,10 @@
     }
 
     async function postCartAction(url, successMessage) {
+      if (!confirmLoadedSaleEdit()) {
+        focusSelectedCartItem(true);
+        return;
+      }
       try {
         const response = await fetch(url, {method: "POST"});
         const cart = await response.json();
@@ -477,10 +919,75 @@
           throw new Error(cart.message || "Cart action failed.");
         }
         renderCart(cart);
+        markLoadedSaleDirty();
         setStatus(successMessage || "Cart updated.", "success");
-        focusItemInput(false);
+        focusSelectedCartItem(true);
       } catch (error) {
         setStatus(error.message || "Cart action failed.", "error");
+        playBeep(false);
+        focusSelectedCartItem(true);
+      }
+    }
+
+    async function updateCartItem(itemId, values, successMessage, focusAfter = true) {
+      if (!confirmLoadedSaleEdit()) {
+        if (focusAfter) {
+          focusSelectedCartItem(true);
+        }
+        return false;
+      }
+      try {
+        const response = await fetch(`/pos/cart/items/${itemId}/update`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(values),
+        });
+        const cart = await response.json();
+        if (!response.ok) {
+          throw new Error(cart.message || "Cart update failed.");
+        }
+        renderCart(cart);
+        markLoadedSaleDirty();
+        setStatus(successMessage || "Cart updated.", "success");
+        if (focusAfter) {
+          focusSelectedCartItem(true);
+        }
+        return true;
+      } catch (error) {
+        setStatus(error.message || "Cart update failed.", "error");
+        playBeep(false);
+        if (focusAfter) {
+          focusSelectedCartItem(true);
+        }
+        return false;
+      }
+    }
+
+    async function addTallyItem(familyId) {
+      if (!familyId) {
+        setStatus("Tally item was not found.", "error");
+        focusItemInput(false);
+        return;
+      }
+      if (!confirmLoadedSaleEdit()) {
+        focusSelectedCartItem(true);
+        return;
+      }
+      try {
+        const response = await fetch(`/pos/cart/tally-items/${familyId}/add`, {method: "POST"});
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || "Could not add Tally item.");
+        }
+        renderCart(data.cart);
+        markLoadedSaleDirty();
+        searchInput.value = "";
+        closeSuggestions();
+        setStatus(`Added: ${data.item.billing_item || data.item.item_name || "Tally item"} - enter rate`, "success");
+        playBeep(true);
+        focusItemInput(false);
+      } catch (error) {
+        setStatus(error.message || "Could not add Tally item.", "error");
         playBeep(false);
         focusItemInput(false);
       }
@@ -491,6 +998,10 @@
       if (!clean) {
         setStatus("Type or scan an item first.", "error");
         focusItemInput(false);
+        return;
+      }
+      if (!confirmLoadedSaleEdit()) {
+        focusSelectedCartItem(true);
         return;
       }
       try {
@@ -522,6 +1033,7 @@
           throw new Error(data.message || "Could not add item.");
         }
         renderCart(data.cart);
+        markLoadedSaleDirty();
         searchInput.value = "";
         closeSuggestions();
         setStatus(`Added: ${data.item.billing_item || data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
@@ -581,10 +1093,19 @@
 
     function checkoutNow() {
       if (checkoutButton.disabled) {
-        setStatus("Bill is empty. Add an item before checkout.", "error");
+        setStatus(state.hasMissingRate ? "Enter rate for every bill line before checkout." : "Bill is empty. Add an item before checkout.", "error");
         playBeep(false);
         focusItemInput(false);
         return;
+      }
+      if (state.previewMode) {
+        const billLabel = state.loadedSaleBillNumber || `#${state.previewSaleId}`;
+        const confirmed = window.confirm(`Save edited bill ${billLabel} as a new bill? The original saved bill will stay unchanged.`);
+        if (!confirmed) {
+          focusSelectedCartItem(true);
+          return;
+        }
+        state.loadedSaleCheckoutConfirmed = true;
       }
       checkoutForm.requestSubmit();
     }
@@ -647,8 +1168,14 @@
     });
 
     refreshCartButton.addEventListener("click", async () => {
-      await loadCart(false);
-      focusItemInput(false);
+      if (state.previewMode) {
+        if (!state.loadedSaleDirty || window.confirm("Reload the active bill and discard edits to this opened bill?")) {
+          await exitPreview(true);
+        }
+      } else {
+        await loadCart(false);
+      }
+      focusSelectedCartItem(true);
     });
 
     clearCartButton.addEventListener("click", async () => {
@@ -660,17 +1187,27 @@
       if (window.confirm("Clear the full bill?")) {
         await postCartAction("/pos/cart/clear", "Bill cleared.");
       } else {
-        focusItemInput(false);
+        focusSelectedCartItem(true);
       }
     });
 
     checkoutForm.addEventListener("submit", event => {
       if (checkoutButton.disabled) {
         event.preventDefault();
-        setStatus("Bill is empty. Add an item before checkout.", "error");
+        setStatus(state.hasMissingRate ? "Enter rate for every bill line before checkout." : "Bill is empty. Add an item before checkout.", "error");
         focusItemInput(false);
         return;
       }
+      if (state.previewMode && !state.loadedSaleCheckoutConfirmed) {
+        const billLabel = state.loadedSaleBillNumber || `#${state.previewSaleId}`;
+        const confirmed = window.confirm(`Save edited bill ${billLabel} as a new bill? The original saved bill will stay unchanged.`);
+        if (!confirmed) {
+          event.preventDefault();
+          focusSelectedCartItem(true);
+          return;
+        }
+      }
+      state.loadedSaleCheckoutConfirmed = false;
       checkoutButton.disabled = true;
       checkoutButton.textContent = "Checking out...";
     });
@@ -694,8 +1231,18 @@
         checkoutNow();
         return;
       }
+      if (event.key === "PageUp" || event.key === "PageDown") {
+        event.preventDefault();
+        await navigateRecentSale(event.key === "PageUp" ? 1 : -1);
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
+        if (state.previewMode) {
+          closeSuggestions();
+          focusSelectedCartItem(true);
+          return;
+        }
         closeSuggestions();
         focusItemInput(false);
         return;
@@ -716,7 +1263,6 @@
         event.preventDefault();
         const delta = event.key === "ArrowDown" ? 1 : -1;
         selectCartIndex((state.selectedIndex < 0 ? 0 : state.selectedIndex) + delta);
-        focusItemInput(false);
         return;
       }
       if (event.key === "+" || event.key === "=") {
@@ -739,7 +1285,11 @@
       setStatus(checkoutError, "error");
     }
     restoreHelpVisibility();
-    loadCart(true).then(() => focusItemInput(false));
+    if (initialSaleId) {
+      loadCart(true).then(() => loadSalePreview(initialSaleId));
+    } else {
+      loadCart(true).then(() => focusItemInput(false));
+    }
     window.setInterval(() => loadCart(true), 1000);
   </script>
 {% endblock %}

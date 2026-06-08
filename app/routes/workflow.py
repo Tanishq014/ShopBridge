@@ -626,6 +626,7 @@ def update_bartender_settings(
     default_barcode_length: int = Form(7),
     barcode_allowed_chars: str = Form("23456789BFGJKLMQRUVWXY"),
     mrp_rounding: int = Form(9),
+    mrp_truncate_decimal: bool = Form(False),
     allow_price_code_extraction: bool = Form(False),
     digit_0_code: str = Form(""),
     digit_1_code: str = Form(""),
@@ -666,5 +667,5 @@ def update_bartender_settings(
         default_length=default_barcode_length,
         allowed_chars=barcode_allowed_chars,
     )
-    save_pricing_settings(mrp_rounding=mrp_rounding)
+    save_pricing_settings(mrp_rounding=mrp_rounding, mrp_truncate_decimal=mrp_truncate_decimal)
     return RedirectResponse("/settings?settings_saved=1", status_code=303)
