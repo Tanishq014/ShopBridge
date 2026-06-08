@@ -1,14 +1,13 @@
 {% extends "base.html" %}
 {% block title %}ShopBridge POS{% endblock %}
 {% block content %}
-  <section class="pos-shell">
-    <header class="pos-header">
+  <section class="pos-shell pos-grid-shell" id="posRoot">
+    <header class="pos-header pos-compact-header">
       <div>
         <div class="pos-title-row">
           <h1>ShopBridge POS</h1>
           <span class="pos-mode-badge">Local Mode / Tally Off</span>
         </div>
-        <p>Scan or type, press Enter, then keep billing. Prices come only from saved barcode records.</p>
       </div>
       <div class="pos-top-actions">
         <a class="button" href="/sales">Sales</a>
@@ -34,83 +33,126 @@
             <img class="scanner-qr" src="{{ phone_print_qr_url }}" alt="Phone print QR code">
           </div>
         </details>
+        <button class="button" type="button" id="fullscreenPosButton">Fullscreen POS</button>
+        <button class="button" type="button" id="helpToggleButton" aria-controls="posHelpBar" aria-expanded="false">Show Help</button>
         <button class="button" type="button" id="refreshCartButton">Refresh</button>
       </div>
     </header>
 
-    <section class="pos-entry-panel">
-      <label for="posSearchInput">Scan / Search / Article</label>
-      <div class="pos-search-wrap">
-        <input
-          id="posSearchInput"
-          autocomplete="off"
-          inputmode="text"
-          placeholder="Scan barcode or type item name/article"
-          spellcheck="false"
-        >
-        <div class="pos-suggestions" id="posSuggestions" role="listbox" hidden></div>
-      </div>
-      <div class="pos-status pos-status-info" id="cartStatus" role="status">
-        Ready. Scan an item or press F2 to focus here.
-      </div>
-    </section>
+    <div class="pos-status pos-status-info" id="cartStatus" role="status">Ready</div>
 
-    <section class="pos-workspace">
-      <div class="pos-cart-panel">
-        <div class="pos-section-title">
-          <h2>Current Bill</h2>
+    <section class="pos-workspace pos-grid-workspace">
+      <div class="pos-grid-panel">
+        <div class="pos-grid-title">
+          <h2>Bill Lines</h2>
           <span id="cartLineCount">0 lines</span>
         </div>
-        <div class="pos-cart-list" id="cartRows">
-          <div class="pos-empty-cart">Cart is empty. Scan or search an item to start.</div>
+
+        <div class="pos-table-wrap">
+          <table class="pos-billing-grid">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Item / Article</th>
+                <th>Barcode</th>
+                <th>MRP</th>
+                <th>Rate</th>
+                <th>Qty</th>
+                <th>Amount</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="cartRows">
+              <tr class="pos-empty-row">
+                <td colspan="8">Cart is empty.</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="pos-add-row">
+                <td class="pos-line-no">+</td>
+                <td class="pos-add-cell">
+                  <div class="pos-search-wrap">
+                    <input
+                      id="posSearchInput"
+                      autocomplete="off"
+                      inputmode="text"
+                      placeholder="Scan / type item..."
+                      spellcheck="false"
+                    >
+                  </div>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="pos-add-qty">1</td>
+                <td></td>
+                <td><button class="button small" type="button" id="addItemButton">Add</button></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
 
-      <aside class="pos-bill-panel">
-        <form method="post" action="/pos/checkout" id="checkoutForm">
-          <div class="pos-summary-grid">
-            <span>Lines</span>
-            <strong id="summaryLines">0</strong>
-            <span>Qty</span>
-            <strong id="cartCount">0</strong>
-            <span>Subtotal</span>
-            <strong id="summarySubtotal">Rs. 0.00</strong>
+      <aside class="pos-bill-panel pos-grid-summary">
+        <div class="pos-summary-mode" id="posSummaryPanel">
+          <form method="post" action="/pos/checkout" id="checkoutForm">
+            <div class="pos-summary-grid">
+              <span>Lines</span>
+              <strong id="summaryLines">0</strong>
+              <span>Qty</span>
+              <strong id="cartCount">0</strong>
+              <span>Subtotal</span>
+              <strong id="summarySubtotal">Rs. 0.00</strong>
+            </div>
+
+            <div class="pos-total-box">
+              <span>Total</span>
+              <strong id="cartTotal">Rs. 0.00</strong>
+            </div>
+
+            <label class="pos-summary-field">
+              Payment
+              <select name="payment_mode" id="paymentMode">
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </label>
+            <label class="pos-summary-field">
+              Notes
+              <input name="notes" id="checkoutNotes" placeholder="Optional">
+            </label>
+
+            <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
+              Checkout - Rs. 0.00
+            </button>
+          </form>
+
+          <button class="button pos-clear-button" type="button" id="clearCartButton">Clear Cart</button>
+        </div>
+
+        <div class="pos-search-mode" id="posSearchPanel" hidden>
+          <div class="pos-search-panel-head">
+            <div>
+              <h2>Search Results</h2>
+              <span id="searchResultCount">0 items</span>
+            </div>
+            <button class="button small" type="button" id="closeSearchPanelButton">Esc</button>
           </div>
-
-          <div class="pos-total-box">
-            <span>Total</span>
-            <strong id="cartTotal">Rs. 0.00</strong>
-          </div>
-
-          <label class="pos-summary-field">
-            Payment Mode
-            <select name="payment_mode" id="paymentMode">
-              <option value="cash">Cash</option>
-              <option value="upi">UPI</option>
-              <option value="card">Card</option>
-              <option value="mixed">Mixed</option>
-            </select>
-          </label>
-          <label class="pos-summary-field">
-            Notes
-            <input name="notes" id="checkoutNotes" placeholder="Optional">
-          </label>
-
-          <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
-            Checkout - Rs. 0.00
-          </button>
-        </form>
-
-        <button class="button pos-clear-button" type="button" id="clearCartButton">Clear Cart</button>
+          <div class="pos-search-total">Total: <strong id="searchPanelTotal">Rs. 0.00</strong></div>
+          <div class="pos-search-results" id="posSuggestions" role="listbox" hidden></div>
+        </div>
       </aside>
     </section>
 
-    <footer class="pos-help-bar">
+    <footer class="pos-help-bar" id="posHelpBar" hidden>
       F2 Item | Enter Add | Up/Down Select | +/- Qty | Del Remove | F4 Pay | Ctrl+Enter Checkout | Esc Back | F10 Receipt
     </footer>
   </section>
 
   <script>
+    const addItemButton = document.getElementById("addItemButton");
     const cartRows = document.getElementById("cartRows");
     const cartCount = document.getElementById("cartCount");
     const cartLineCount = document.getElementById("cartLineCount");
@@ -119,15 +161,25 @@
     const checkoutButton = document.getElementById("checkoutButton");
     const checkoutForm = document.getElementById("checkoutForm");
     const checkoutNotes = document.getElementById("checkoutNotes");
+    const closeSearchPanelButton = document.getElementById("closeSearchPanelButton");
     const clearCartButton = document.getElementById("clearCartButton");
+    const fullscreenPosButton = document.getElementById("fullscreenPosButton");
+    const helpBar = document.getElementById("posHelpBar");
+    const helpToggleButton = document.getElementById("helpToggleButton");
     const paymentMode = document.getElementById("paymentMode");
+    const posRoot = document.getElementById("posRoot");
     const refreshCartButton = document.getElementById("refreshCartButton");
     const searchInput = document.getElementById("posSearchInput");
+    const searchPanel = document.getElementById("posSearchPanel");
+    const searchPanelTotal = document.getElementById("searchPanelTotal");
+    const searchResultCount = document.getElementById("searchResultCount");
     const suggestionsBox = document.getElementById("posSuggestions");
+    const summaryPanel = document.getElementById("posSummaryPanel");
     const summaryLines = document.getElementById("summaryLines");
     const summarySubtotal = document.getElementById("summarySubtotal");
 
     const checkoutError = {{ error|tojson }};
+    const helpPreferenceKey = "shopbridge.posHelpVisible.v1";
     const state = {
       cart: {items: [], count: 0, total: "0.00"},
       selectedIndex: -1,
@@ -178,7 +230,7 @@
     }
 
     function itemDescription(item) {
-      return [item.article_no, item.brand, item.category].filter(Boolean).join(" | ");
+      return item.sticker_name ? `Sticker: ${item.sticker_name}` : "";
     }
 
     function selectedCartItem() {
@@ -203,12 +255,14 @@
       state.suggestionIndex = -1;
       suggestionsBox.hidden = true;
       suggestionsBox.innerHTML = "";
+      searchPanel.hidden = true;
+      summaryPanel.hidden = false;
     }
 
     function renderSuggestions() {
       suggestionsBox.innerHTML = "";
       if (!state.suggestions.length) {
-        suggestionsBox.hidden = true;
+        closeSuggestions();
         return;
       }
       state.suggestionIndex = Math.max(0, Math.min(state.suggestionIndex, state.suggestions.length - 1));
@@ -223,18 +277,33 @@
           <span></span>
           <em></em>
         `;
-        option.querySelector("strong").textContent = item.item_name || item.family_name || item.barcode;
+          option.querySelector("strong").textContent = item.family_name || item.billing_item || item.item_name || item.sticker_name || item.item_display_name || "";
         option.querySelector("span").textContent = [
-          item.barcode,
-          item.article_no,
-          item.tally_stock_item_name || item.category,
+          item.mrp ? `MRP ${money(item.mrp)}` : "",
+          item.sticker_name ? `Sticker: ${item.sticker_name}` : "",
         ].filter(Boolean).join(" | ");
         option.querySelector("em").textContent = item.missing_price ? "Missing price" : money(item.selling_price);
         option.addEventListener("mousedown", event => event.preventDefault());
         option.addEventListener("click", () => selectSuggestion(index));
         suggestionsBox.appendChild(option);
       });
+      searchResultCount.textContent = `${state.suggestions.length} ${state.suggestions.length === 1 ? "item" : "items"}`;
+      summaryPanel.hidden = true;
+      searchPanel.hidden = false;
       suggestionsBox.hidden = false;
+    }
+
+    function setHelpVisible(visible, persist = true) {
+      helpBar.hidden = !visible;
+      helpToggleButton.textContent = visible ? "Hide Help" : "Show Help";
+      helpToggleButton.setAttribute("aria-expanded", visible ? "true" : "false");
+      if (persist) {
+        window.localStorage.setItem(helpPreferenceKey, visible ? "1" : "0");
+      }
+    }
+
+    function restoreHelpVisibility() {
+      setHelpVisible(window.localStorage.getItem(helpPreferenceKey) === "1", false);
     }
 
     async function searchItems(query) {
@@ -285,23 +354,26 @@
       summaryLines.textContent = items.length;
       cartCount.textContent = state.cart.count || 0;
       cartTotal.textContent = money(state.cart.total || "0.00");
+      searchPanelTotal.textContent = money(state.cart.total || "0.00");
       summarySubtotal.textContent = money(state.cart.total || "0.00");
       checkoutButton.disabled = items.length === 0;
       checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
       cartRows.innerHTML = "";
 
       if (!items.length) {
-        const empty = document.createElement("div");
-        empty.className = "pos-empty-cart";
-        empty.textContent = "Cart is empty. Scan or search an item to start.";
-        cartRows.appendChild(empty);
+        const row = document.createElement("tr");
+        row.className = "pos-empty-row";
+        const cell = document.createElement("td");
+        cell.colSpan = 8;
+        cell.textContent = "Cart is empty.";
+        row.appendChild(cell);
+        cartRows.appendChild(row);
         return;
       }
 
       items.forEach((item, index) => {
-        const row = document.createElement("article");
-        row.className = `pos-cart-row${index === state.selectedIndex ? " selected" : ""}${item.missing_price ? " warn" : ""}`;
-        row.tabIndex = -1;
+        const row = document.createElement("tr");
+        row.className = `pos-billing-row${index === state.selectedIndex ? " selected" : ""}${item.missing_price ? " warn" : ""}`;
         row.dataset.itemId = item.id;
         row.addEventListener("click", () => {
           state.selectedIndex = index;
@@ -309,63 +381,75 @@
           focusItemInput(false);
         });
 
-        const details = document.createElement("div");
-        details.className = "pos-cart-main";
+        const no = document.createElement("td");
+        no.className = "pos-line-no";
+        no.textContent = index + 1;
+
+        const itemCell = document.createElement("td");
+        itemCell.className = "pos-item-cell";
         const name = document.createElement("strong");
-        name.textContent = item.item_name || "";
+        name.textContent = item.family_name || item.billing_item || item.item_name || item.sticker_name || item.item_display_name || "";
         const meta = document.createElement("span");
         meta.textContent = itemDescription(item);
-        const barcode = document.createElement("small");
-        barcode.className = "mono";
+        itemCell.append(name, meta);
+
+        const barcode = document.createElement("td");
+        barcode.className = "mono pos-barcode-cell";
         barcode.textContent = item.barcode || "";
-        details.append(name, meta, barcode);
 
-        const prices = document.createElement("div");
-        prices.className = "pos-cart-prices";
-        prices.innerHTML = `
-          <span>MRP <strong></strong></span>
-          <span>Rate <strong></strong></span>
-        `;
-        prices.children[0].querySelector("strong").textContent = money(item.mrp);
-        prices.children[1].querySelector("strong").textContent = item.missing_price ? "Missing" : money(item.selling_price);
+        const mrp = document.createElement("td");
+        mrp.className = "pos-money-cell";
+        mrp.textContent = money(item.mrp);
 
-        const qty = document.createElement("div");
-        qty.className = "pos-cart-qty";
-        qty.innerHTML = `
-          <button type="button" class="button small" aria-label="Decrease quantity">-</button>
-          <strong></strong>
-          <button type="button" class="button small" aria-label="Increase quantity">+</button>
-        `;
-        qty.querySelector("strong").textContent = item.qty;
-        qty.children[0].addEventListener("click", event => {
+        const rate = document.createElement("td");
+        rate.className = "pos-money-cell";
+        rate.textContent = item.missing_price ? "Missing" : money(item.selling_price);
+
+        const qty = document.createElement("td");
+        qty.className = "pos-qty-cell";
+        const dec = document.createElement("button");
+        dec.type = "button";
+        dec.className = "button small pos-qty-button";
+        dec.textContent = "-";
+        dec.setAttribute("aria-label", "Decrease quantity");
+        dec.addEventListener("click", event => {
           event.stopPropagation();
           state.selectedIndex = index;
           changeSelectedQty(-1);
         });
-        qty.children[2].addEventListener("click", event => {
+        const qtyValue = document.createElement("strong");
+        qtyValue.textContent = item.qty;
+        const inc = document.createElement("button");
+        inc.type = "button";
+        inc.className = "button small pos-qty-button";
+        inc.textContent = "+";
+        inc.setAttribute("aria-label", "Increase quantity");
+        inc.addEventListener("click", event => {
           event.stopPropagation();
           state.selectedIndex = index;
           changeSelectedQty(1);
         });
+        qty.append(dec, qtyValue, inc);
 
-        const amount = document.createElement("div");
-        amount.className = "pos-cart-amount";
-        const amountLabel = document.createElement("span");
-        amountLabel.textContent = "Amount";
-        const amountValue = document.createElement("strong");
-        amountValue.textContent = item.missing_price ? "" : money(item.amount);
+        const amount = document.createElement("td");
+        amount.className = "pos-money-cell pos-amount-cell";
+        amount.textContent = item.missing_price ? "" : money(item.amount);
+
+        const action = document.createElement("td");
+        action.className = "pos-action-cell";
         const remove = document.createElement("button");
         remove.type = "button";
-        remove.className = "button small";
-        remove.textContent = "Remove";
+        remove.className = "button small pos-remove-button";
+        remove.textContent = "X";
+        remove.setAttribute("aria-label", "Remove item");
         remove.addEventListener("click", event => {
           event.stopPropagation();
           state.selectedIndex = index;
           removeSelectedItem();
         });
-        amount.append(amountLabel, amountValue, remove);
+        action.appendChild(remove);
 
-        row.append(details, prices, qty, amount);
+        row.append(no, itemCell, barcode, mrp, rate, qty, amount, action);
         cartRows.appendChild(row);
       });
     }
@@ -430,7 +514,7 @@
           }
           if (response.status === 404) {
             await searchItems(clean);
-            setStatus(`Barcode/item not found: ${clean}`, "error");
+            setStatus(`Not found: ${clean}`, "error");
             playBeep(false);
             focusItemInput(true);
             return;
@@ -440,7 +524,7 @@
         renderCart(data.cart);
         searchInput.value = "";
         closeSuggestions();
-        setStatus(`Added: ${data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
+        setStatus(`Added: ${data.item.billing_item || data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
         playBeep(true);
         focusItemInput(false);
       } catch (error) {
@@ -461,7 +545,7 @@
     async function changeSelectedQty(delta) {
       const item = selectedCartItem();
       if (!item) {
-        setStatus("No cart item selected.", "error");
+        setStatus("No row selected.", "error");
         focusItemInput(false);
         return;
       }
@@ -470,7 +554,7 @@
         return;
       }
       if (item.qty <= 1) {
-        const remove = window.confirm("Quantity is 1. Remove this item from the cart?");
+        const remove = window.confirm("Quantity is 1. Remove this item from the bill?");
         if (remove) {
           await postCartAction(`/pos/cart/items/${item.id}/remove`, "Item removed.");
         } else {
@@ -484,11 +568,11 @@
     async function removeSelectedItem() {
       const item = selectedCartItem();
       if (!item) {
-        setStatus("No cart item selected.", "error");
+        setStatus("No row selected.", "error");
         focusItemInput(false);
         return;
       }
-      if (!window.confirm(`Remove ${item.item_name || item.barcode} from cart?`)) {
+      if (!window.confirm(`Remove ${item.billing_item || item.item_name || item.barcode} from bill?`)) {
         focusItemInput(false);
         return;
       }
@@ -497,7 +581,7 @@
 
     function checkoutNow() {
       if (checkoutButton.disabled) {
-        setStatus("Cart is empty. Add an item before checkout.", "error");
+        setStatus("Bill is empty. Add an item before checkout.", "error");
         playBeep(false);
         focusItemInput(false);
         return;
@@ -532,9 +616,34 @@
       if (event.key === "Backspace" && !searchInput.value) {
         event.preventDefault();
         closeSuggestions();
-        setStatus("Ready. Scan an item or type to search.", "info");
+        setStatus("Ready", "info");
         focusItemInput(false);
       }
+    });
+
+    addItemButton.addEventListener("click", submitItemInput);
+
+    closeSearchPanelButton.addEventListener("click", () => {
+      closeSuggestions();
+      focusItemInput(false);
+    });
+
+    fullscreenPosButton.addEventListener("click", async () => {
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else if (posRoot.requestFullscreen) {
+          await posRoot.requestFullscreen();
+        }
+      } catch (error) {
+        setStatus("Fullscreen is not available in this browser.", "error");
+      }
+      focusItemInput(false);
+    });
+
+    helpToggleButton.addEventListener("click", () => {
+      setHelpVisible(helpBar.hidden);
+      focusItemInput(false);
     });
 
     refreshCartButton.addEventListener("click", async () => {
@@ -544,12 +653,12 @@
 
     clearCartButton.addEventListener("click", async () => {
       if (!state.cart.items || state.cart.items.length === 0) {
-        setStatus("Cart is already empty.", "info");
+        setStatus("Bill is already empty.", "info");
         focusItemInput(false);
         return;
       }
-      if (window.confirm("Clear the full cart?")) {
-        await postCartAction("/pos/cart/clear", "Cart cleared.");
+      if (window.confirm("Clear the full bill?")) {
+        await postCartAction("/pos/cart/clear", "Bill cleared.");
       } else {
         focusItemInput(false);
       }
@@ -558,7 +667,7 @@
     checkoutForm.addEventListener("submit", event => {
       if (checkoutButton.disabled) {
         event.preventDefault();
-        setStatus("Cart is empty. Add an item before checkout.", "error");
+        setStatus("Bill is empty. Add an item before checkout.", "error");
         focusItemInput(false);
         return;
       }
@@ -593,7 +702,7 @@
       }
       if (event.key === "F10") {
         event.preventDefault();
-        setStatus("Open the Sales page for the last receipt.", "info");
+        setStatus("Open Sales for the last receipt.", "info");
         focusItemInput(false);
         return;
       }
@@ -629,6 +738,7 @@
     if (checkoutError) {
       setStatus(checkoutError, "error");
     }
+    restoreHelpVisibility();
     loadCart(true).then(() => focusItemInput(false));
     window.setInterval(() => loadCart(true), 1000);
   </script>

@@ -2219,3 +2219,408 @@ tbody tr:last-child td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Compact Tally-style POS grid overrides. Keep this late so older POS card styles do not win. */
+.pos-grid-shell {
+  gap: 8px;
+  padding-bottom: 0;
+}
+
+.pos-compact-header {
+  margin-bottom: 0;
+}
+
+.pos-compact-header h1 {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.pos-compact-header .pos-top-actions .button,
+.pos-compact-header .pos-top-actions summary.button {
+  min-height: 32px;
+  padding: 5px 10px;
+}
+
+.pos-grid-shell .pos-status {
+  font-size: 15px;
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.pos-grid-workspace {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 286px;
+}
+
+.pos-grid-panel {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pos-grid-title {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 7px 10px;
+}
+
+.pos-grid-title h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.pos-grid-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pos-table-wrap {
+  max-height: calc(100vh - 214px);
+  min-height: 386px;
+  overflow: auto;
+}
+
+.pos-billing-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  min-width: 850px;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.pos-billing-grid th,
+.pos-billing-grid td {
+  border-bottom: 1px solid #e6ebf2;
+  padding: 4px 8px;
+  vertical-align: middle;
+}
+
+.pos-billing-grid th {
+  background: #eef2f7;
+  color: #344054;
+  font-size: 11px;
+  height: 30px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.pos-billing-grid th:nth-child(1),
+.pos-billing-grid td:nth-child(1) {
+  text-align: center;
+  width: 42px;
+}
+
+.pos-billing-grid th:nth-child(2),
+.pos-billing-grid td:nth-child(2) {
+  width: 31%;
+}
+
+.pos-billing-grid th:nth-child(3),
+.pos-billing-grid td:nth-child(3) {
+  width: 110px;
+}
+
+.pos-billing-grid th:nth-child(4),
+.pos-billing-grid td:nth-child(4),
+.pos-billing-grid th:nth-child(5),
+.pos-billing-grid td:nth-child(5),
+.pos-billing-grid th:nth-child(7),
+.pos-billing-grid td:nth-child(7) {
+  text-align: right;
+  width: 90px;
+}
+
+.pos-billing-grid th:nth-child(6),
+.pos-billing-grid td:nth-child(6) {
+  text-align: center;
+  width: 118px;
+}
+
+.pos-billing-grid th:nth-child(8),
+.pos-billing-grid td:nth-child(8) {
+  text-align: center;
+  width: 70px;
+}
+
+.pos-billing-row {
+  height: 42px;
+}
+
+.pos-billing-row:hover td {
+  background: #f8fbff;
+}
+
+.pos-billing-row.selected td {
+  background: #dceaff;
+  box-shadow: inset 0 1px 0 #9dc1ff, inset 0 -1px 0 #9dc1ff;
+}
+
+.pos-billing-row.selected td:first-child {
+  box-shadow: inset 4px 0 0 var(--primary), inset 0 1px 0 #9dc1ff, inset 0 -1px 0 #9dc1ff;
+}
+
+.pos-billing-row.warn td {
+  background: #fff8e8;
+}
+
+.pos-item-cell strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-item-cell span {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-barcode-cell {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-money-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.pos-qty-cell {
+  align-items: center;
+  display: inline-grid;
+  gap: 4px;
+  grid-template-columns: 26px 30px 26px;
+  justify-content: center;
+}
+
+.pos-qty-cell strong {
+  font-size: 15px;
+  text-align: center;
+}
+
+.pos-qty-button,
+.pos-remove-button,
+.pos-add-row .button {
+  min-height: 26px;
+  padding: 2px 7px;
+}
+
+.pos-remove-button {
+  color: var(--danger);
+}
+
+.pos-empty-row td {
+  color: var(--muted);
+  font-weight: 700;
+  height: 44px;
+  text-align: center;
+}
+
+.pos-add-row td {
+  background: #fbfcff;
+  border-bottom: 0;
+  border-top: 2px solid #cdd6e5;
+  height: 42px;
+}
+
+.pos-add-row .pos-line-no {
+  color: var(--primary);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.pos-add-cell {
+  overflow: visible;
+  position: relative;
+}
+
+.pos-add-qty {
+  color: #344054;
+  font-weight: 800;
+  text-align: center;
+}
+
+.pos-grid-shell #posSearchInput {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
+.pos-grid-shell #posSearchInput:focus {
+  border-color: var(--primary);
+  outline: 2px solid rgba(31, 111, 235, 0.16);
+}
+
+.pos-grid-shell .pos-suggestion {
+  min-height: 44px;
+  padding: 6px 8px;
+}
+
+.pos-grid-summary {
+  gap: 10px;
+  padding: 10px;
+  position: sticky;
+  top: 10px;
+}
+
+.pos-summary-mode,
+.pos-grid-summary form,
+.pos-search-mode {
+  display: grid;
+  gap: 10px;
+}
+
+.pos-search-mode[hidden],
+.pos-summary-mode[hidden] {
+  display: none !important;
+}
+
+.pos-grid-summary form {
+  gap: 10px;
+}
+
+.pos-grid-summary .pos-summary-grid {
+  gap: 6px;
+}
+
+.pos-grid-summary .pos-summary-grid strong {
+  font-size: 16px;
+}
+
+.pos-grid-summary .pos-total-box {
+  padding: 12px;
+}
+
+.pos-grid-summary .pos-total-box strong {
+  font-size: 30px;
+}
+
+.pos-grid-summary select,
+.pos-grid-summary input {
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.pos-grid-summary .pos-checkout-button {
+  font-size: 18px;
+  min-height: 54px;
+}
+
+.pos-grid-summary .pos-clear-button {
+  min-height: 32px;
+}
+
+.pos-search-panel-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pos-search-panel-head h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.pos-search-panel-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pos-search-total {
+  background: #0f172a;
+  border-radius: 7px;
+  color: #ffffff;
+  display: flex;
+  font-size: 15px;
+  font-weight: 800;
+  justify-content: space-between;
+  padding: 9px 10px;
+}
+
+.pos-search-results {
+  display: grid;
+  gap: 6px;
+  max-height: calc(100vh - 330px);
+  min-height: 230px;
+  overflow-y: auto;
+}
+
+.pos-search-results[hidden] {
+  display: none !important;
+}
+
+.pos-search-results .pos-suggestion {
+  min-height: 58px;
+}
+
+.pos-search-results .pos-suggestion strong {
+  font-size: 15px;
+}
+
+.pos-search-results .pos-suggestion span {
+  white-space: normal;
+}
+
+.pos-grid-shell .pos-help-bar {
+  position: sticky;
+  bottom: 0;
+  left: auto;
+  right: auto;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-top: 0;
+  padding: 6px 10px;
+}
+
+#posRoot:fullscreen {
+  background: var(--bg);
+  max-width: none;
+  overflow: auto;
+  padding: 12px;
+}
+
+#posRoot:fullscreen .pos-table-wrap {
+  max-height: calc(100vh - 180px);
+}
+
+#posRoot:fullscreen .pos-search-results {
+  max-height: calc(100vh - 295px);
+}
+
+@media (max-width: 900px) {
+  .pos-grid-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-table-wrap {
+    max-height: none;
+  }
+
+  .pos-grid-summary {
+    position: static;
+  }
+}

@@ -58,6 +58,7 @@ def _active_cart(db: Session) -> PosCart:
 
 def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
     variant = item.variant
+    billing_item = variant.family.family_name if variant and variant.family else ""
     category = variant.family.category if variant and variant.family else ""
     template_name = variant.template.template_name if variant and variant.template else ""
     amount = item.unit_price * item.qty if item.unit_price is not None else None
@@ -65,7 +66,9 @@ def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
         "id": item.id,
         "variant_id": item.variant_id,
         "barcode": variant.barcode,
-        "item_name": variant.item_display_name,
+        "billing_item": billing_item,
+        "sticker_name": variant.item_display_name,
+        "item_name": billing_item or variant.item_display_name,
         "article_no": variant.article_no or "",
         "brand": variant.brand or "",
         "category": category or "",
@@ -126,7 +129,10 @@ def _variant_search_payload(variant: LabelVariant, *, exact_barcode: bool = Fals
     return {
         "id": variant.id,
         "barcode": variant.barcode,
-        "item_name": variant.item_display_name,
+        "billing_item": family.family_name if family else "",
+        "sticker_name": variant.item_display_name,
+        "family_name": family.family_name if family else "",
+        "item_name": family.family_name if family else variant.item_display_name,
         "article_no": variant.article_no or "",
         "brand": variant.brand or "",
         "category": family.category if family else "",
