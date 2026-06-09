@@ -34,6 +34,7 @@ HELD_CART_STATUS = "held"
 DISCARDED_CART_STATUS = "discarded"
 NORMAL_CART_MODE = "normal"
 SALE_COPY_CART_MODE = "sale_copy"
+SALE_EDIT_CART_MODE = "sale_edit"
 ALLOWED_PAYMENT_MODES = {"cash", "upi", "card"}
 
 
@@ -144,10 +145,19 @@ def _park_active_cart(db: Session, *, discard_empty: bool = True) -> PosCart | N
 
 def _held_cart_payload(db: Session, cart: PosCart) -> dict[str, object]:
     payload = _cart_payload(db, cart)
+    bill_number = None
+    if cart.cart_mode == SALE_EDIT_CART_MODE and cart.source_sale_id:
+        source_sale = db.get(Sale, cart.source_sale_id)
+        if source_sale:
+            bill_number = source_sale.bill_number
+            
     return {
         "id": cart.id,
         "label": f"Held #{cart.id}",
         "status": cart.status,
+        "cart_mode": cart.cart_mode,
+        "source_sale_id": cart.source_sale_id,
+        "bill_number": bill_number,
         "updated_at": cart.updated_at.isoformat() if cart.updated_at else "",
         "created_at": cart.created_at.isoformat() if cart.created_at else "",
         "count": payload["count"],
@@ -159,11 +169,14 @@ def _held_cart_payload(db: Session, cart: PosCart) -> dict[str, object]:
 def _held_carts_payload(db: Session) -> list[dict[str, object]]:
     carts = db.execute(
         select(PosCart)
-        .where(PosCart.status == HELD_CART_STATUS)
-        .where(PosCart.cart_mode == NORMAL_CART_MODE)
-        .order_by(PosCart.updated_at.desc(), PosCart.id.desc())
+        .where(
+            (PosCart.status == HELD_CART_STATUS) | 
+            ((PosCart.status == ACTIVE_CART_STATUS) & (PosCart.cart_mode == NORMAL_CART_MODE))
+        )
+        .order_by(PosCart.id.desc())
     ).scalars().all()
-    return [_held_cart_payload(db, cart) for cart in carts]
+    valid_carts = [c for c in carts if c.status == HELD_CART_STATUS or (c.status == ACTIVE_CART_STATUS and len(c.items) > 0)]
+    return [_held_cart_payload(db, cart) for cart in valid_carts]
 
 
 def _active_cart_item_or_error(db: Session, item_id: int) -> PosCartItem | JSONResponse:
@@ -290,11 +303,18 @@ def _cart_payload(db: Session, cart: PosCart | None = None) -> dict[str, object]
         rate = _line_rate(item)
         if rate is not None:
             total += rate * item.qty
+    source_bill_number = None
+    if cart.source_sale_id:
+        sale = db.get(Sale, cart.source_sale_id)
+        if sale:
+            source_bill_number = sale.bill_number
+
     return {
         "cart_id": cart.id,
         "status": cart.status,
         "cart_mode": cart.cart_mode or NORMAL_CART_MODE,
         "source_sale_id": cart.source_sale_id,
+        "source_bill_number": source_bill_number,
         "items": rows,
         "total": _money(total),
         "count": sum(item.qty for item in items),
@@ -426,7 +446,33 @@ def pos_cart(db: Session = Depends(get_db)):
 
 @router.get("/pos/cart/held")
 def list_held_carts(db: Session = Depends(get_db)):
-    return {"ok": True, "items": _held_carts_payload(db)}
+    items = _held_carts_payload(db)
+    for item in items:
+        item["type"] = "held"
+    return {"ok": True, "items": items}
+
+
+@router.get("/pos/recent-sales")
+def list_recent_sales(limit: int = 20, db: Session = Depends(get_db)):
+    sales = db.scalars(
+        select(Sale)
+        .options(selectinload(Sale.items))
+        .order_by(Sale.id.desc())
+        .limit(limit)
+    ).all()
+    
+    items = []
+    for sale in sales:
+        items.append({
+            "type": "sale",
+            "id": sale.id,
+            "bill_number": sale.bill_number,
+            "total": str(sale.total),
+            "item_count": len(sale.items),
+            "total_qty": sum(item.qty for item in sale.items),
+            "created_at": sale.created_at.isoformat() if sale.created_at else "",
+        })
+    return {"ok": True, "items": items}
 
 
 @router.post("/pos/cart/hold")
@@ -434,8 +480,8 @@ def hold_active_cart(db: Session = Depends(get_db)):
     cart = _find_active_cart(db)
     if not cart or not _cart_has_items(db, cart):
         return _json_error("No active bill to hold.", status_code=400, status="empty")
-    if cart.cart_mode == SALE_COPY_CART_MODE or cart.source_sale_id:
-        return _json_error("Opened saved bills cannot be held. Checkout or discard this copy.", status_code=400, status="sale_copy")
+    if cart.cart_mode == SALE_COPY_CART_MODE:
+        return _json_error("Opened saved bill copies cannot be held.", status_code=400, status="sale_copy")
     cart.status = HELD_CART_STATUS
     db.add(cart)
     db.commit()
@@ -763,6 +809,37 @@ def pos_checkout(
     except CheckoutError as exc:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': str(exc)})}", status_code=303)
     return RedirectResponse(f"/sales/{sale.id}", status_code=303)
+
+
+@router.post("/pos/checkout/json")
+async def pos_checkout_json(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    payment = (payload.get("payment_mode") or "cash").strip().lower() or "cash"
+    notes = str(payload.get("notes") or "").strip()
+    if payment not in ALLOWED_PAYMENT_MODES:
+        return _json_error("Choose Cash, UPI, or Card payment.", status_code=400, status="invalid_payment")
+    cart = _find_active_cart(db)
+    if not cart:
+        return _json_error("No active cart to checkout.", status_code=400, status="empty_cart")
+    try:
+        if cart.cart_mode == "sale_edit":
+            from app.services.sales_service import save_sale_edit_cart
+            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes)
+        else:
+            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
+    except CheckoutError as exc:
+        return _json_error(str(exc), status_code=400, status="checkout_error")
+    return {
+        "ok": True,
+        "sale_id": sale.id,
+        "bill_number": sale.bill_number
+    }
 
 
 @router.post("/pos/scan")
@@ -1117,3 +1194,20 @@ def clear_pos_cart(db: Session = Depends(get_db)):
         db.delete(item)
     db.commit()
     return _cart_payload(db, cart)
+
+@router.post("/pos/cart/active/discard")
+def discard_active_pos_cart(db: Session = Depends(get_db)):
+    cart = _find_active_cart(db)
+    if not cart:
+        return {"ok": True, "cart": _empty_cart_payload()}
+    
+    cart.status = DISCARDED_CART_STATUS
+    db.add(cart)
+    db.commit()
+    
+    # Create a fresh normal cart to return
+    new_cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=NORMAL_CART_MODE)
+    db.add(new_cart)
+    db.commit()
+    
+    return {"ok": True, "cart": _cart_payload(db, new_cart)}

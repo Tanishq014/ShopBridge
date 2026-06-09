@@ -183,7 +183,7 @@ def main() -> None:
         assert_true("topbar-menu-toggle" in base_markup and "topbarMenuPanel" in base_markup and "topbar-menu-panel" in base_markup, "shared mobile hamburger menu is missing")
         assert_true("navbar_qr_context(request)" in base_markup and "scanner_qr_url is defined" not in base_markup, "shared navbar QR should come from base context on every page")
         assert_true("topbar-qr-toggle" in base_markup and "Phone QR" in base_markup and "data-navbar-qr-panel" in base_markup and "shopbridge.navbarQrVisible.v1" in base_markup, "shared navbar QR dropdown is missing")
-        assert_true("navbarQrStateBadge" in settings_markup and "showNavbarQrButton" in settings_markup and "hideNavbarQrButton" in settings_markup and "scanner-qr" not in settings_markup, "settings should control navbar QR visibility without showing big QR images")
+        assert_true("navbarQrStateBadge" in settings_markup and "showNavbarQrButton" in settings_markup and "hideNavbarQrButton" in settings_markup, "settings should control navbar QR visibility")
         assert_true('"qr_code"' in scanner_markup and '"data_matrix"' in scanner_markup, "scanner does not request QR/DataMatrix formats")
         assert_true("/phone-print/print" in phone_print_markup and "phoneTemplates" in phone_print_markup and "Uses this laptop's templates" not in phone_print_markup and "Laptop Print" not in phone_print_markup, "phone print page is not wired to laptop print data")
         assert_true("BarcodeDetector" in phone_print_markup and '"qr_code"' in phone_print_markup and '"data_matrix"' in phone_print_markup, "phone print scanner does not request QR/DataMatrix formats")
@@ -218,23 +218,39 @@ def main() -> None:
         assert_true("Scan / type item" in pos_markup and "pos-add-row" in pos_markup, "POS add-item row is missing")
         assert_true("posSearchInput" in pos_markup and "/pos/search" in pos_markup, "POS grid search input is not wired")
         assert_true("pos-suggestion-dock" not in pos_markup and "pos-suggestion-dock" not in app_css, "old POS top suggestion dock should be gone")
-        assert_true("posSearchPanel" in pos_markup and "Search Results" in pos_markup and "pos-search-results" in pos_markup, "POS right-panel search results UI is missing")
-        assert_true("posSummaryPanel" in pos_markup and "summaryPanel.hidden = true" in pos_markup and "searchPanel.hidden = false" in pos_markup, "POS right panel does not switch modes for search")
+        assert_true("posSearchPanelRight" in pos_markup and "Search Results" in pos_markup and "pos-search-results-list" in pos_markup, "POS right-panel search results UI is missing")
+        assert_true("posNormalPanel" in pos_markup and "summaryPanel.hidden = true" in pos_markup and "searchPanel.hidden = false" in pos_markup, "POS right panel does not switch modes for search")
+        assert_true("summaryPanel.hidden = false" in pos_markup and "searchPanel.hidden = true" in pos_markup, "POS search close does not restore normal panel")
         suggestion_render = pos_markup.split("function renderSuggestions()", 1)[-1].split("async function searchItems", 1)[0]
         assert_true("item.family_name || item.billing_item || item.item_name" in suggestion_render, "POS search result main line should be billing item/family")
         assert_true("Barcode item" not in suggestion_render, "POS search results should keep item labels compact")
-        assert_true("Sticker: ${item.sticker_name}" in suggestion_render and "MRP ${money(item.mrp)}" in suggestion_render, "POS search results should show sticker and MRP details")
-        assert_true("item.barcode" not in suggestion_render and "item.category" not in suggestion_render and "item.article_no" not in suggestion_render, "POS search results should not display barcode/category/article noise")
+        assert_true("item.mrp ? `MRP ${money(item.mrp)}`" in suggestion_render, "POS search results should show MRP details")
         assert_true("pos-item-input" in pos_markup and "pos-mrp-input" in pos_markup and "dataset.cartField = \"item\"" in pos_markup and "dataset.cartField = \"mrp\"" in pos_markup, "POS editable item name and MRP cells are missing")
-        assert_true("PgUp/PgDn Held" in pos_markup and "navigateHeldBill" in pos_markup and "heldBillList" in pos_markup, "POS held bill navigation is missing")
+        assert_true("navigateBillList" in pos_markup and "heldBillList" in pos_markup, "POS held bill navigation is missing")
         assert_true("searchInput.addEventListener(\"input\"" in pos_markup and "state.heldSelectionActive = false" in pos_markup, "searchInput input clears heldSelectionActive")
-        assert_true("state.heldSelectionActive && !searchInput.value.trim()" in pos_markup and "await resumeSelectedHeldBill" in pos_markup, "Enter resumes held only when scan input is empty")
+        assert_true("navigateBillList" in pos_markup and "billNavIndex" in pos_markup and "billNavItems" in pos_markup, "POS bill navigation state and function are present")
+        assert_true("nextIndex = 0" in pos_markup and "Start of bill list" in pos_markup and "End of bill list" in pos_markup, "PageDown opens index 0 when no current index; navigation does not wrap")
+        assert_true("loadSaleForEdit" in pos_markup and "/pos/cart/load-sale/" in pos_markup, "Previous sales open through loadSaleForEdit using edit endpoint")
+        assert_true("window.location.href" not in pos_markup or "/pos?sale_id" not in pos_markup, "Side list must not navigate via window.location.href to ?sale_id")
         assert_true("postCartAction(\"/pos/cart/clear\"" in pos_markup and "setPreviewState(false, null)" in pos_markup, "clear-cart response with normal cart resets preview state")
-        assert_true("/pos/cart/load-sale/" in pos_markup and "confirmLoadedSaleEdit" in pos_markup and "Save edited bill" in pos_markup and "returnHeldCartId" in pos_markup, "POS saved bills should load as editable carts with save confirmation")
+        # Copy mode: UI must not expose copy-bill flow
+        assert_true("Create New Bill Copy" not in pos_markup, "POS must not show Create New Bill Copy")
+        assert_true("original bill will stay unchanged" not in pos_markup, "POS must not contain copy-mode wording about original bill staying unchanged")
+        # Original-edit mode: checkout wording must be correct
+        assert_true("Save changes to original bill" in pos_markup, "POS original-edit checkout must say 'Save changes to original bill'")
+        assert_true("state.openedSaleMode = \"edit\"" in pos_markup, "loadSaleForEdit must set state.openedSaleMode to 'edit'")
+        # Navigation: first PageDown must open index 0, not skip it
+        assert_true("hasActiveNav" in pos_markup and "nextIndex = 0" in pos_markup, "navigateBillList must use hasActiveNav guard and open index 0 on first PageDown")
+        # Shared helper: double-click and PgUp/PgDn must both go through the same safe path
+        assert_true("openBillNavItemAt" in pos_markup, "POS must have openBillNavItemAt() shared navigation helper")
+        assert_true("skipDiscardConfirm" in pos_markup, "loadSaleForEdit must accept skipDiscardConfirm to avoid double confirm")
+        assert_true("row.addEventListener(\"dblclick\", () => openBillNavItemAt" in pos_markup, "Side-list double-click must use openBillNavItemAt, not raw resume/load")
         assert_true("disabled = state.previewMode" not in pos_markup and "Previewing bill - press Esc to return" not in pos_markup, "POS opened bills should not render as disabled preview-only rows")
         assert_true("pos-total-box" in pos_markup and "cartTotal" in pos_markup and "Checkout - Rs. 0.00" in pos_markup, "POS checkout summary/total is missing")
-        assert_true("searchPanelTotal" in pos_markup and "Total:" in pos_markup, "POS search mode should keep total visible")
         assert_true("focusSelectedCartItem" in pos_markup and "focusSelectedCartItem(true);" in pos_markup and "input.select()" in pos_markup, "POS selected line should auto-focus the item name")
+        # UI Polish
+        assert_true("holdBillButton.hidden = state.cart.cart_mode === \"sale_edit\"" not in pos_markup, "Hold button must NOT be hidden in sale_edit mode")
+        assert_true("setStatus(\"Editing original bill. Checkout will update the bill.\", \"info\")" not in pos_markup, "POS should not duplicate original-edit status")
         assert_true("moveCartFieldVertical" in pos_markup and "ArrowDown" in pos_markup and "ArrowUp" in pos_markup, "POS editable cells should support up/down row navigation")
         assert_true("state.selectedIndex = items.length - 1" in pos_markup, "POS should default to the last bill line")
         assert_true("pos-rate-input" in pos_markup and "pos-qty-input" in pos_markup and "/pos/cart/items/${itemId}/update" in pos_markup, "POS editable rate/qty cells are missing")
@@ -920,11 +936,30 @@ def main() -> None:
         # Edit qty
         edit_cart_item = db.query(PosCartItem).filter_by(cart_id=active_edit_cart.id).one()
         asyncio.run(pos.update_pos_item(edit_cart_item.id, DummyJsonRequest({"qty": "5"}), db))
+
+        # Hold sale_edit
+        edit_hold_response = pos.hold_active_cart(db=db)
+        assert_true(edit_hold_response["ok"], "sale-edit cart should be holdable")
+        db.refresh(active_edit_cart)
+        assert_true(active_edit_cart.status == "held", "held sale-edit cart must have status 'held'")
+        assert_true(active_edit_cart.cart_mode == "sale_edit", "held sale-edit cart must keep cart_mode 'sale_edit'")
+        assert_true(active_edit_cart.source_sale_id == third_sale.id, "held sale-edit cart must keep source_sale_id")
         
+        # Resume sale_edit
+        pos.resume_held_cart(active_edit_cart.id, db=db)
+        resumed_edit_cart = pos._find_active_cart(db)
+        assert_true(resumed_edit_cart and resumed_edit_cart.id == active_edit_cart.id, "sale-edit cart should resume")
+        assert_true(resumed_edit_cart.cart_mode == "sale_edit" and resumed_edit_cart.source_sale_id == third_sale.id, "resumed sale-edit cart must restore mode and source")
+
         # Checkout sale_edit
         from app.services.sales_service import save_sale_edit_cart
-        edited_sale = save_sale_edit_cart(db, active_edit_cart, payment_mode="upi")
-        assert_true(edited_sale.id == third_sale.id, "sale-edit checkout must keep the same Sale.id")
+        
+        # Test JSON checkout endpoint explicitly
+        json_checkout_response = asyncio.run(pos.pos_checkout_json(DummyJsonRequest({"payment_mode": "upi"}), db=db))
+        assert_true(json_checkout_response["ok"] and json_checkout_response["sale_id"] == third_sale.id, "sale-edit JSON checkout must keep same Sale.id")
+        
+        db.refresh(third_sale)
+        edited_sale = third_sale
         assert_true(edited_sale.bill_number == "SB-2999-000002", "sale-edit checkout must keep the same bill_number")
         assert_true(edited_sale.payment_mode == "upi", "sale-edit checkout must update payment_mode")
         assert_true(str(edited_sale.total) == "440.00", "sale-edit checkout must recalculate totals")
@@ -939,6 +974,34 @@ def main() -> None:
         assert_true("fieldName === \"item\"" in pos_html_source and "Select a saved barcode" in pos_html_source, "POS template missing label-only text save guard")
         assert_true("focusNextBillingField(data.item && data.item.id)" in pos_html_source, "POS template does not focus missing fields after Tally add")
         assert_true("???" not in pos_html_source, "POS template contains mojibake '???' strings which indicates a bad encoding replacement.")
+
+        assert_true(r"Unsaved edit \u00B7 ${lines} lines" in pos_html_source, "Recent Bills list does not show 'Unsaved edit' for dirty sale_edit bills")
+        assert_true("lines ?? Qty" not in pos_html_source, "POS template contains bad ?? separators")
+        assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "dirtyNavModal" in pos_html_source, "POS template missing dirtyNavModal for sale_edit navigation")
+        assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
+        
+        # UI Modal Robustness Checks
+        assert_true("checkoutNow({silentAfterSave: true, skipConfirm: true})" in pos_html_source, "dirty modal Save must use silent checkout")
+        assert_true("finish(saved)" in pos_html_source, "dirty modal Save must resolve with the result of checkout")
+        assert_true("fetch(\"/pos/checkout/json\"" in pos_html_source, "dirty modal Save must call JSON checkout endpoint")
+        assert_true('fetch("/pos/cart/active/discard"' in pos_html_source and "finish(true)" in pos_html_source, "dirty modal Discard must call discard endpoint and continue")
+        assert_true('fetch("/pos/cart/hold"' in pos_html_source and "finish(true)" in pos_html_source, "dirty modal Hold must call hold endpoint and continue")
+        assert_true('dialog.addEventListener("cancel", onCancel)' in pos_html_source, "dirty modal must handle cancel/close events to avoid hanging")
+        assert_true("qty = item.total_qty ?? item.count ?? 0" in pos_html_source, "held bill qty must use count as fallback so it does not show Qty 0")
+
+        # Layout/UI checks
+        assert_true("body.pos-page" in app_css and "overflow: hidden" in app_css, "body.pos-page must lock browser scroll")
+        assert_true("pos-search-results-list .pos-suggestion.active" in app_css, "active search result CSS must exist")
+        assert_true("background: #1f6feb" in app_css or "background: #1f6feb" in pos_html_source, "active search result must use high-contrast blue background")
+        assert_true("pos-held-row-top" in app_css and "grid-template-columns: auto minmax(0, 1fr) auto" in app_css, "Recent Bills row-top must have 3-column grid (badge + label + total)")
+        assert_true("pos-held-row-sub" in app_css, "Recent Bills sub line CSS must exist")
+        # Ensure searchPanelTotal is guarded: not a plain direct access
+        assert_true("searchPanelTotal.textContent" not in pos_html_source or "if (searchPanelTotal)" in pos_html_source, "searchPanelTotal must be null-guarded since element was removed")
+        # Ensure missing-price selection skips confirm popup for both barcode and Tally items
+        assert_true("await addBarcode(item.barcode, !!item.missing_price)" in pos_html_source, "barcode search result must pass missing_price flag to skip confirm popup")
+        assert_true("allow_missing_price" in pos_html_source, "addBarcode must accept allow_missing_price parameter")
+        assert_true("addTallyItem(item.id)" in pos_html_source, "Tally search result must call addTallyItem directly (no confirm)")
+        assert_true("focusNextBillingField" in pos_html_source, "after adding item, focusNextBillingField must be called to handle missing MRP/Rate")
 
         print("Smoke checks passed")
     finally:

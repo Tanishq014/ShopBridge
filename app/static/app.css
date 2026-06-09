@@ -1744,6 +1744,7 @@ tbody tr:last-child td {
   gap: 6px;
   max-height: 150px;
   overflow-y: auto;
+  position: relative;
 }
 
 .pos-held-list p {
@@ -1787,6 +1788,11 @@ tbody tr:last-child td {
   background: #dceaff;
   border-color: var(--primary);
   outline: none;
+}
+
+.pos-held-row.opened {
+  background: #f0f7ff;
+  border-left: 4px solid var(--primary);
 }
 
 .pos-help-bar {
@@ -2997,3 +3003,202 @@ tbody tr:last-child td {
 #posRoot:fullscreen .pos-search-results {
   max-height: calc(100vh - 295px);
 }
+
+
+.pos-modal {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 20px;
+}
+.pos-modal::backdrop {
+  background: rgba(0,0,0,0.4);
+}
+.pos-modal-content h2 {
+  margin-top: 0;
+}
+.pos-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+
+/* POS Page Enhancements */
+body.pos-page {
+  overflow: hidden;
+}
+
+body.pos-page .page {
+  max-width: none;
+  height: calc(100vh - 58px);
+  overflow: hidden;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+body.pos-page .topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  transform: translateY(-100%);
+  transition: transform 0.2s ease-out;
+  background: var(--surface);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+body.pos-page .topbar::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 15px;
+  background: transparent;
+}
+
+body.pos-page .topbar:hover {
+  transform: translateY(0);
+}
+
+body.pos-page #posRoot,
+body.pos-page .pos-grid-shell,
+body.pos-page .pos-grid-workspace,
+body.pos-page .pos-cart-panel,
+body.pos-page .pos-table-wrap,
+body.pos-page .pos-bill-panel,
+body.pos-page .pos-search-mode,
+body.pos-page .pos-normal-mode {
+  min-height: 0;
+}
+
+.pos-grid-workspace {
+  grid-template-columns: minmax(0, 1fr) 400px;
+  min-height: 0;
+}
+
+.pos-bill-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pos-normal-mode {
+  display: contents;
+}
+
+.pos-search-mode {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.pos-search-results-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pos-search-results-list .pos-suggestion {
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.pos-search-results-list .pos-suggestion:hover {
+  background: #f5f9ff;
+}
+
+.pos-search-results-list .pos-suggestion.active {
+  background: #1f6feb;
+  border-left: 4px solid #0f3d8f;
+  color: #ffffff;
+}
+
+.pos-search-results-list .pos-suggestion.active .pos-search-item-name,
+.pos-search-results-list .pos-suggestion.active .pos-search-item-rate,
+.pos-search-results-list .pos-suggestion.active .pos-search-item-meta {
+  color: #ffffff;
+}
+
+.pos-search-results-list .pos-suggestion.active .pos-search-item-rate.missing {
+  color: #ffd88a;
+}
+
+.pos-search-item-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.pos-search-item-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pos-search-item-rate {
+  font-weight: 700;
+  white-space: nowrap;
+  padding-left: 8px;
+}
+
+.pos-search-item-rate.missing {
+  color: #d97706;
+}
+
+.pos-search-item-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pos-cart-row.active {
+  background-color: #f0f7ff;
+  box-shadow: inset 3px 0 0 #1f6feb;
+}
+
+.pos-cart-row.active input {
+  outline: 2px solid #1f6feb;
+  outline-offset: -1px;
+}
+
+/* Recent Bills card layout: badge + label (flex-1) + total (fixed right) */
+.pos-held-row-top {
+  align-items: center;
+  display: grid;
+  gap: 4px 6px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.pos-held-row-label {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.pos-held-row-total {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.pos-held-row-sub {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
