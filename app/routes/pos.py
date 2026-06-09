@@ -173,20 +173,28 @@ def _active_cart_item_or_error(db: Session, item_id: int) -> PosCartItem | JSONR
     return item
 
 
-def _apply_variant_to_cart_item(item: PosCartItem, variant: LabelVariant) -> None:
+def _apply_variant_to_cart_item(item: PosCartItem, variant: LabelVariant, preserve_values: bool = False) -> None:
     item.variant = variant
     item.variant_id = variant.id
     item.unit_price = variant.selling_price
     item.item_name_snapshot = variant.family.family_name if variant.family else variant.item_display_name
     item.barcode_snapshot = variant.barcode
     item.tally_stock_item_name_snapshot = variant.family.tally_stock_item_name if variant.family else None
-    item.mrp_snapshot = variant.mrp
-    item.rate_snapshot = variant.selling_price
+    
+    if not preserve_values:
+        item.mrp_snapshot = variant.mrp
+        item.rate_snapshot = variant.selling_price
+    else:
+        if variant.mrp is not None:
+            item.mrp_snapshot = variant.mrp
+        if variant.selling_price is not None:
+            item.rate_snapshot = variant.selling_price
+            
     item.source_type = "barcode"
     item.is_manual_line = False
 
 
-def _apply_family_to_cart_item(item: PosCartItem, family: ProductFamily) -> None:
+def _apply_family_to_cart_item(item: PosCartItem, family: ProductFamily, preserve_values: bool = False) -> None:
     item_name = family.family_name or family.tally_stock_item_name or "Tally item"
     tally_name = family.tally_stock_item_name or item_name
     item.variant = None
@@ -195,8 +203,11 @@ def _apply_family_to_cart_item(item: PosCartItem, family: ProductFamily) -> None
     item.item_name_snapshot = item_name
     item.barcode_snapshot = ""
     item.tally_stock_item_name_snapshot = tally_name
-    item.mrp_snapshot = None
-    item.rate_snapshot = None
+    
+    if not preserve_values:
+        item.mrp_snapshot = None
+        item.rate_snapshot = None
+        
     item.source_type = "tally_item"
     item.is_manual_line = False
 
@@ -569,6 +580,74 @@ def load_sale_into_pos_cart(sale_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/pos/cart/load-sale/{sale_id}/edit")
+def load_sale_for_edit_in_pos_cart(sale_id: int, db: Session = Depends(get_db)):
+    sale = db.scalar(
+        select(Sale)
+        .options(selectinload(Sale.items))
+        .where(Sale.id == sale_id)
+    )
+    if not sale:
+        return _json_error("Saved bill was not found.", status_code=404, status="not_found")
+
+    active = _find_active_cart(db)
+    if (
+        active
+        and active.cart_mode == "sale_edit"
+        and active.source_sale_id == sale.id
+    ):
+        return {
+            "ok": True,
+            "status": "loaded",
+            "message": "Saved bill is already open for editing.",
+            "source_sale_id": sale.id,
+            "bill_number": sale.bill_number,
+            "held_active_cart_id": None,
+            "cart": _cart_payload(db, active),
+            "held_carts": _held_carts_payload(db),
+        }
+
+    held_active = _park_active_cart(db)
+    cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode="sale_edit", source_sale_id=sale.id)
+    db.add(cart)
+    db.flush()
+
+    for sale_item in sale.items:
+        rate = sale_item.rate
+        source_type = "barcode" if sale_item.label_variant_id else "tally_item"
+        is_manual_line = False
+        if not sale_item.label_variant_id and not (sale_item.tally_stock_item_name or "").strip():
+            source_type = "manual"
+            is_manual_line = True
+        cart_item = PosCartItem(
+            cart_id=cart.id,
+            variant_id=sale_item.label_variant_id,
+            qty=sale_item.qty,
+            unit_price=rate,
+            item_name_snapshot=sale_item.item_name,
+            barcode_snapshot=sale_item.barcode or "",
+            tally_stock_item_name_snapshot=sale_item.tally_stock_item_name,
+            mrp_snapshot=sale_item.mrp,
+            rate_snapshot=rate,
+            source_type=source_type,
+            is_manual_line=is_manual_line,
+        )
+        db.add(cart_item)
+
+    db.commit()
+    db.refresh(cart)
+    return {
+        "ok": True,
+        "status": "loaded",
+        "message": "Original bill loaded for editing.",
+        "source_sale_id": sale.id,
+        "bill_number": sale.bill_number,
+        "held_active_cart_id": held_active.id if held_active else None,
+        "cart": _cart_payload(db, cart),
+        "held_carts": _held_carts_payload(db),
+    }
+
+
 @router.get("/pos/search")
 def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)):
     term = (q or "").strip()
@@ -676,7 +755,11 @@ def pos_checkout(
     if not cart:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': 'No active cart to checkout.'})}", status_code=303)
     try:
-        sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
+        if cart.cart_mode == "sale_edit":
+            from app.services.sales_service import save_sale_edit_cart
+            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes)
+        else:
+            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
     except CheckoutError as exc:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': str(exc)})}", status_code=303)
     return RedirectResponse(f"/sales/{sale.id}", status_code=303)
@@ -714,6 +797,7 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
         )
 
     cart = _active_cart(db)
+    is_update = False
     item = db.scalar(
         select(PosCartItem)
         .where(PosCartItem.cart_id == cart.id)
@@ -721,6 +805,7 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
     )
     if item:
         item.qty += 1
+        is_update = True
         item.item_name_snapshot = item.item_name_snapshot or (variant.family.family_name if variant.family else variant.item_display_name)
         item.barcode_snapshot = item.barcode_snapshot or variant.barcode
         item.tally_stock_item_name_snapshot = item.tally_stock_item_name_snapshot or (
@@ -748,8 +833,8 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
     db.refresh(item)
     return {
         "ok": True,
-        "status": "added",
-        "message": "Added to cart.",
+        "status": "updated" if is_update else "added",
+        "message": "Quantity updated." if is_update else "Added to cart.",
         "barcode": barcode,
         "item": _cart_item_payload(item),
         "cart": _cart_payload(db, cart),
@@ -797,29 +882,19 @@ def add_tally_item_to_cart(family_id: int, db: Session = Depends(get_db)):
     item_name = family.family_name or family.tally_stock_item_name or "Tally item"
     tally_name = family.tally_stock_item_name or item_name
     cart = _active_cart(db)
-    item = db.scalar(
-        select(PosCartItem)
-        .where(PosCartItem.cart_id == cart.id)
-        .where(PosCartItem.variant_id.is_(None))
-        .where(PosCartItem.source_type == "tally_item")
-        .where(PosCartItem.tally_stock_item_name_snapshot == tally_name)
+    item = PosCartItem(
+        cart_id=cart.id,
+        variant_id=None,
+        qty=1,
+        unit_price=None,
+        item_name_snapshot=item_name,
+        barcode_snapshot="",
+        tally_stock_item_name_snapshot=tally_name,
+        mrp_snapshot=None,
+        rate_snapshot=None,
+        source_type="tally_item",
+        is_manual_line=False,
     )
-    if item:
-        item.qty += 1
-    else:
-        item = PosCartItem(
-            cart_id=cart.id,
-            variant_id=None,
-            qty=1,
-            unit_price=None,
-            item_name_snapshot=item_name,
-            barcode_snapshot="",
-            tally_stock_item_name_snapshot=tally_name,
-            mrp_snapshot=None,
-            rate_snapshot=None,
-            source_type="tally_item",
-            is_manual_line=False,
-        )
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -857,10 +932,7 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
         item.qty = qty
 
     if "item_name" in payload:
-        item_name = str(payload.get("item_name", "")).strip()
-        if not item_name:
-            return _json_error("Item name cannot be empty.", status_code=400, status="invalid_item_name")
-        item.item_name_snapshot = item_name
+        return _json_error("Use item replacement to change the product.", status_code=400, status="invalid_item_name")
 
     if "mrp" in payload:
         try:
@@ -923,9 +995,16 @@ def _duplicate_tally_item(
 def _merge_replaced_item(db: Session, *, target: PosCartItem, duplicate: PosCartItem, replacement_rate: Decimal | None = None) -> PosCartItem:
     duplicate.qty = max(1, int(duplicate.qty or 1)) + max(1, int(target.qty or 1))
     rate = duplicate.rate_snapshot if duplicate.rate_snapshot is not None else duplicate.unit_price
-    if (rate is None or rate <= 0) and replacement_rate is not None and replacement_rate > 0:
-        duplicate.rate_snapshot = replacement_rate
-        duplicate.unit_price = replacement_rate
+    target_rate = target.rate_snapshot if target.rate_snapshot is not None else target.unit_price
+    
+    if rate is None or rate <= 0:
+        if replacement_rate is not None and replacement_rate > 0:
+            duplicate.rate_snapshot = replacement_rate
+            duplicate.unit_price = replacement_rate
+        elif target_rate is not None and target_rate > 0:
+            duplicate.rate_snapshot = target_rate
+            duplicate.unit_price = target_rate
+            
     db.add(duplicate)
     db.delete(target)
     return duplicate
@@ -955,7 +1034,7 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
             if duplicate:
                 merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate, replacement_rate=variant.selling_price)
             else:
-                _apply_variant_to_cart_item(item, variant)
+                _apply_variant_to_cart_item(item, variant, preserve_values=True)
     elif result_type == "tally_item":
         family = db.get(ProductFamily, result_id)
         if not family or not family.active_status:
@@ -964,11 +1043,7 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
         if item.source_type == "tally_item" and item.tally_stock_item_name_snapshot == tally_name:
             pass
         else:
-            duplicate = _duplicate_tally_item(db, cart_id=item.cart_id, tally_name=tally_name, exclude_item_id=item.id)
-            if duplicate:
-                merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate)
-            else:
-                _apply_family_to_cart_item(item, family)
+            _apply_family_to_cart_item(item, family, preserve_values=True)
     else:
         return _json_error("Choose a valid item to replace this line.", status_code=400, status="invalid_item")
 
@@ -1031,7 +1106,7 @@ def clear_pos_cart(db: Session = Depends(get_db)):
     cart = _find_active_cart(db)
     if not cart:
         return _empty_cart_payload()
-    if cart.cart_mode == SALE_COPY_CART_MODE:
+    if cart.cart_mode in (SALE_COPY_CART_MODE, "sale_edit") or cart.source_sale_id is not None:
         cart.cart_mode = NORMAL_CART_MODE
         cart.source_sale_id = None
         db.add(cart)

@@ -1,12 +1,78 @@
 {% extends "base.html" %}
 {% block title %}ShopBridge POS{% endblock %}
+{% block style %}
+<style>
+  .pos-header {
+    border-bottom: 2px solid var(--border-color);
+    border-radius: 0;
+  }
+  .pos-modal {
+    border: none;
+    border-radius: 8px;
+    padding: 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: white;
+    max-width: 400px;
+    width: 100%;
+  }
+  .pos-modal::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .pos-modal-content {
+    padding: 20px;
+  }
+  .pos-modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+  }
+  .pos-modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .pos-modal-btn {
+    padding: 12px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+  }
+  .pos-modal-btn-primary {
+    background: var(--button-bg);
+    color: white;
+    border: none;
+  }
+  .pos-modal-btn-secondary {
+    background: #f5f5f5;
+  }
+  .pos-modal-btn:hover {
+    opacity: 0.9;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
+  <dialog id="openSaleModal" class="pos-modal">
+    <div class="pos-modal-content">
+      <h3>Open Saved Bill</h3>
+      <p>How would you like to open this bill?</p>
+      <div class="pos-modal-actions">
+        <button id="btnCreateCopy" class="pos-modal-btn pos-modal-btn-primary">Create New Bill Copy (Recommended)</button>
+        <button id="btnEditOriginal" class="pos-modal-btn pos-modal-btn-secondary">Edit Original Bill</button>
+        <button id="btnCancelOpen" class="pos-modal-btn pos-modal-btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
   <section class="pos-shell pos-grid-shell" id="posRoot">
     <header class="pos-header pos-compact-header">
       <div>
         <div class="pos-title-row">
           <h1>ShopBridge POS</h1>
           <span class="pos-mode-badge">Local Mode / Tally Off</span>
+          <span class="pos-mode-badge warn" id="saleCopyBadge" hidden>Opened saved bill copy - checkout creates a new bill.</span>
+          <span class="pos-mode-badge warn" id="saleEditBadge" hidden>Editing original bill - save updates this bill.</span>
         </div>
       </div>
       <div class="pos-top-actions">
@@ -198,6 +264,7 @@
       cartEditActive: false,
       previewMode: false,
       previewSaleId: null,
+      openedSaleMode: null,
       previewSaleIndex: -1,
       loadedSaleBillNumber: "",
       loadedSaleDirty: false,
@@ -219,6 +286,12 @@
     }
 
     function focusItemInput(selectText = false) {
+      state.selectedIndex = -1;
+      cartRows.querySelectorAll(".pos-billing-row").forEach(row => {
+        row.classList.remove("selected");
+      });
+      const addRow = document.querySelector(".pos-add-row");
+      if (addRow) addRow.classList.add("selected");
       window.requestAnimationFrame(() => {
         searchInput.focus();
         if (selectText) {
@@ -294,6 +367,7 @@
       state.previewMode = Boolean(active);
       state.previewSaleId = saleId;
       if (!state.previewMode) {
+        state.openedSaleMode = null;
         state.loadedSaleBillNumber = "";
         state.loadedSaleDirty = false;
         state.loadedSaleCheckoutConfirmed = false;
@@ -313,7 +387,11 @@
         return true;
       }
       const billLabel = state.loadedSaleBillNumber || `#${state.previewSaleId}`;
-      const confirmed = window.confirm(`Edit saved bill ${billLabel}? The original saved bill will stay unchanged, and checkout will save the edited lines as a new bill.`);
+      let msg = `Edit saved bill ${billLabel}? The original bill will stay unchanged, and checkout will save the edited lines as a new bill.`;
+      if (state.openedSaleMode === "edit" || state.cart.cart_mode === "sale_edit") {
+        msg = `Edit original bill ${billLabel}? Changes will update the existing bill.`;
+      }
+      const confirmed = window.confirm(msg);
       if (confirmed) {
         state.loadedSaleDirty = true;
       }
@@ -327,30 +405,79 @@
       return window.confirm("This opened bill has edits that are not checked out yet. Discard these edits and open another bill?");
     }
 
+    function showOpenSaleModal() {
+      return new Promise(resolve => {
+        const modal = document.getElementById("openSaleModal");
+        const btnCreateCopy = document.getElementById("btnCreateCopy");
+        const btnEditOriginal = document.getElementById("btnEditOriginal");
+        const btnCancelOpen = document.getElementById("btnCancelOpen");
+        let resolved = false;
+
+        function cleanup() {
+          modal.removeEventListener("close", onClose);
+          if (modal.open) {
+            modal.close();
+          }
+          btnCreateCopy.onclick = null;
+          btnEditOriginal.onclick = null;
+          btnCancelOpen.onclick = null;
+        }
+
+        function onClose() {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(null);
+          }
+        }
+
+        modal.addEventListener("close", onClose);
+
+        btnCreateCopy.onclick = () => { resolved = true; cleanup(); resolve("copy"); };
+        btnEditOriginal.onclick = () => { resolved = true; cleanup(); resolve("edit"); };
+        btnCancelOpen.onclick = () => { resolved = true; cleanup(); resolve(null); };
+
+        modal.showModal();
+      });
+    }
+
     async function loadSalePreview(saleId) {
       if (!saleId) {
         return;
       }
       if (!confirmLoadedSaleReplacement()) {
         focusSelectedCartItem(true);
+        history.replaceState({}, document.title, window.location.pathname);
         return;
       }
       if (!await saveFocusedLineInput()) {
         return;
       }
+      
+      const choice = await showOpenSaleModal();
+      if (!choice) {
+        focusSelectedCartItem(true);
+        history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+      
+      const endpoint = choice === "edit" ? `/pos/cart/load-sale/${saleId}/edit` : `/pos/cart/load-sale/${saleId}`;
+      
       try {
-        const response = await fetch(`/pos/cart/load-sale/${saleId}`, {method: "POST"});
+        const response = await fetch(endpoint, {method: "POST"});
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.detail || data.message || "Could not load bill.");
         }
+        history.replaceState({}, document.title, window.location.pathname);
         closeSuggestions();
         searchInput.value = "";
         setPreviewState(true, saleId);
+        state.openedSaleMode = choice;
         state.loadedSaleBillNumber = data.bill_number || "";
         if (data.held_active_cart_id !== null && data.held_active_cart_id !== undefined) {
           state.returnHeldCartId = data.held_active_cart_id;
-        } else if (data.message !== "Saved bill is already open in POS.") {
+        } else if (data.message !== "Saved bill is already open in POS." && data.message !== "Saved bill is already open for editing.") {
           state.returnHeldCartId = null;
         }
         state.loadedSaleDirty = false;
@@ -361,11 +488,12 @@
         if (hasManual) {
           setStatus("This saved bill has old manual lines. Replace them with barcode/Tally items before checkout.", "warning");
         } else {
-          setStatus(`Loaded bill ${state.loadedSaleBillNumber || saleId} for editing. Checkout saves a new bill.`, "info");
+          setStatus(data.message || `Loaded bill ${state.loadedSaleBillNumber || saleId}.`, "info");
         }
-        focusSelectedCartItem(true);
+        focusItemInput(false);
       } catch (error) {
         setStatus(error.message || "Could not load bill.", "error");
+        history.replaceState({}, document.title, window.location.pathname);
       }
     }
 
@@ -406,6 +534,8 @@
       cartRows.querySelectorAll(".pos-billing-row").forEach(row => {
         row.classList.toggle("selected", Number(row.dataset.cartRowIndex) === rowIndex);
       });
+      const addRow = document.querySelector(".pos-add-row");
+      if (addRow) addRow.classList.remove("selected");
       scrollSelectedCartRowIntoView();
     }
 
@@ -432,33 +562,19 @@
       });
     }
 
-    function focusFirstEditableFieldForRow(rowIndex) {
-      const item = (state.cart.items || [])[rowIndex];
-      if (!item) {
-        focusItemInput(false);
-        return;
-      }
-      const needsRateFirst = item.source_type === "tally_item" || !String(item.selling_price || "").trim();
-      const candidates = needsRateFirst
-        ? [
-            {field: "rate", value: item.selling_price || ""},
-            {field: "item", value: item.billing_item || item.family_name || item.item_name || ""},
-            {field: "mrp", value: item.mrp || ""},
-          ]
-        : [
-            {field: "rate", value: item.selling_price || ""},
-            {field: "item", value: item.billing_item || item.family_name || item.item_name || ""},
-            {field: "mrp", value: item.mrp || ""},
-          ];
-      const next = candidates.find(candidate => !String(candidate.value || "").trim()) || candidates[0];
-      focusCartField(rowIndex, next.field, true);
-    }
-
     function focusNextBillingField(itemId, preferredField = null) {
       const rowIndex = selectCartItemById(itemId);
       const item = cartItemAt(rowIndex);
       if (!item) {
         focusItemInput(false);
+        return;
+      }
+      if (preferredField === "next_row_item") {
+        if (rowIndex >= (state.cart.items || []).length - 1) {
+          focusItemInput(false);
+        } else {
+          focusCartField(rowIndex + 1, "item", true);
+        }
         return;
       }
       if (preferredField) {
@@ -472,7 +588,7 @@
       } else if (!String(item.qty || "").trim() || Number(item.qty) <= 0) {
         focusCartField(rowIndex, "qty", true);
       } else {
-        focusItemInput(true);
+        focusItemInput(false);
       }
     }
 
@@ -524,8 +640,13 @@
       if (!items.length) {
         return;
       }
-      const nextRow = Math.max(0, Math.min(rowIndex + delta, items.length - 1));
-      focusCartField(nextRow, fieldName, true);
+      const nextRow = rowIndex + delta;
+      if (delta === 1 && nextRow >= items.length) {
+        focusItemInput(false);
+        return;
+      }
+      const safeNextRow = Math.max(0, Math.min(nextRow, items.length - 1));
+      focusCartField(safeNextRow, fieldName, true);
     }
 
     function selectCartIndex(index) {
@@ -737,13 +858,14 @@
         if (!response.ok) {
           throw new Error(data.message || "Could not resume held bill.");
         }
+        history.replaceState({}, document.title, window.location.pathname);
         setPreviewState(false, null);
         state.selectedIndex = -1;
         state.heldSelectionActive = false;
         renderCart(data.cart);
         renderHeldCarts(data.held_carts || []);
         setStatus("Held bill resumed.", "success");
-        focusSelectedCartItem(true);
+        focusItemInput(false);
       } catch (error) {
         setStatus(error.message || "Could not resume held bill.", "error");
       }
@@ -789,6 +911,7 @@
         if (!response.ok) {
           throw new Error(data.message || "Could not discard active bill.");
         }
+        history.replaceState({}, document.title, window.location.pathname);
         renderCart(data.cart);
         renderHeldCarts(data.held_carts || []);
       } catch (error) {
@@ -809,7 +932,7 @@
       state.heldIndex = (current + delta + state.heldCarts.length) % state.heldCarts.length;
       state.heldSelectionActive = true;
       renderHeldCarts();
-      setStatus("Held bill selected. Press Enter to resume.", "info");
+      await resumeSelectedHeldBill();
     }
 
     async function searchItems(query) {
@@ -883,18 +1006,38 @@
     }
 
     function renderCart(cart) {
+      state.skipNextChangeSaveFor = null;
       state.cart = cart || {items: [], count: 0, total: "0.00"};
+      const saleCopyBadge = document.getElementById("saleCopyBadge");
+      const saleEditBadge = document.getElementById("saleEditBadge");
+      
+      if (saleCopyBadge) saleCopyBadge.hidden = true;
+      if (saleEditBadge) saleEditBadge.hidden = true;
+
       if (state.cart.cart_mode === "sale_copy" && state.cart.source_sale_id) {
+        if (saleCopyBadge) saleCopyBadge.hidden = false;
         if (!state.previewMode) {
           state.previewMode = true;
+          state.openedSaleMode = "copy";
           state.previewSaleId = state.cart.source_sale_id;
           setStatus("Opened saved bill copy. Checkout saves a new bill.", "info");
         }
+      } else if (state.cart.cart_mode === "sale_edit" && state.cart.source_sale_id) {
+        if (saleEditBadge) saleEditBadge.hidden = false;
+        if (!state.previewMode) {
+          state.previewMode = true;
+          state.openedSaleMode = "edit";
+          state.previewSaleId = state.cart.source_sale_id;
+          setStatus("Editing original bill. Checkout will update the bill.", "info");
+        }
+      } else {
+        state.openedSaleMode = null;
       }
+
       const items = state.cart.items || [];
       if (!items.length) {
         state.selectedIndex = -1;
-      } else if (state.selectedIndex < 0 || state.selectedIndex >= items.length) {
+      } else if (state.selectedIndex >= items.length) {
         state.selectedIndex = items.length - 1;
       }
 
@@ -907,9 +1050,15 @@
       summarySubtotal.textContent = money(state.cart.total || "0.00");
       state.hasMissingRate = items.some(item => item.missing_price);
       checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
-      checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
+      
+      if (state.cart.cart_mode === "sale_edit") {
+        checkoutButton.textContent = `Save Bill Changes - ${money(state.cart.total || "0.00")}`;
+      } else {
+        checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
+      }
+      
       clearCartButton.disabled = items.length === 0;
-      holdBillButton.disabled = items.length === 0 || state.cart.cart_mode === "sale_copy";
+      holdBillButton.disabled = items.length === 0 || state.cart.cart_mode === "sale_copy" || state.cart.cart_mode === "sale_edit";
       cartRows.innerHTML = "";
 
       if (!items.length) {
@@ -1223,23 +1372,31 @@
           await selectSuggestion(state.suggestionIndex);
           return;
         }
+        const itemId = input.dataset.cartItemId;
         if (fieldName === "item") {
-          setStatus("Select a saved barcode/Tally item.", "error");
-          focusCartField(rowIndex, "item", true, true);
+          const item = cartItemAt(rowIndex);
+          const expectedLabel = previewItemLabel(item);
+          if (input.value !== expectedLabel) {
+            input.value = expectedLabel;
+            setStatus("Select a saved barcode/Tally item.", "error");
+            focusCartField(rowIndex, "item", true);
+            return;
+          }
+          focusNextBillingField(itemId, "mrp");
           return;
         }
-        state.skipNextChangeSaveFor = {itemId: input.dataset.cartItemId, fieldName};
+        state.skipNextChangeSaveFor = {itemId: itemId, fieldName};
         const updated = await saveCartField(rowIndex, fieldName);
         if (!updated) {
           state.skipNextChangeSaveFor = null;
           return;
         }
         if (fieldName === "mrp") {
-          focusCartField(rowIndex, "rate", true);
+          focusNextBillingField(itemId, "rate");
         } else if (fieldName === "rate") {
-          focusCartField(rowIndex, "qty", true);
+          focusNextBillingField(itemId, "qty");
         } else if (fieldName === "qty") {
-          focusItemInput(true);
+          focusNextBillingField(itemId, "next_row_item");
         }
         return;
       }
@@ -1293,7 +1450,7 @@
     });
 
     async function loadCart(silent = false) {
-      if (silent && (state.cartEditActive || lineEditIsActive())) {
+      if (silent && (state.cartEditActive || lineEditIsActive() || !suggestionsBox.hidden)) {
         return;
       }
       try {
@@ -1511,7 +1668,8 @@
         markLoadedSaleDirty();
         searchInput.value = "";
         closeSuggestions(false);
-        setStatus(`Added: ${data.item.billing_item || data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
+        const actionText = data.status === "updated" ? `Updated Qty to ${data.item.qty} for:` : "Added:";
+        setStatus(`${actionText} ${data.item.billing_item || data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
         playBeep(true);
         focusNextBillingField(data.item && data.item.id);
       } catch (error) {
@@ -1607,7 +1765,11 @@
       }
       if (state.previewMode) {
         const billLabel = state.loadedSaleBillNumber || `#${state.previewSaleId}`;
-        const confirmed = window.confirm(`Save edited bill ${billLabel} as a new bill? The original saved bill will stay unchanged.`);
+        let msg = `Save edited bill ${billLabel} as a new bill? The original bill will stay unchanged.`;
+        if (state.openedSaleMode === "edit") {
+          msg = `Save changes to original bill ${billLabel}? This will update the existing bill.`;
+        }
+        const confirmed = window.confirm(msg);
         if (!confirmed) {
           focusSelectedCartItem(true);
           return;
@@ -1647,6 +1809,15 @@
         state.suggestionIndex = (state.suggestionIndex + delta + optionCount) % optionCount;
         renderSuggestions();
         return;
+      }
+      if (suggestionsBox.hidden && event.key === "ArrowUp") {
+        const items = state.cart.items || [];
+        if (items.length > 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          focusCartField(items.length - 1, "item", true);
+          return;
+        }
       }
       if (event.key === "Escape") {
         event.preventDefault();
@@ -1709,9 +1880,8 @@
       }
       if (window.confirm("Clear the full bill?")) {
         await postCartAction("/pos/cart/clear", "Bill cleared.");
-        if (state.cart && state.cart.cart_mode === "normal" && !state.cart.source_sale_id) {
-          setPreviewState(false, null);
-        }
+        history.replaceState({}, document.title, window.location.pathname);
+        setPreviewState(false, null);
       } else {
         focusSelectedCartItem(true);
       }
@@ -1796,8 +1966,9 @@
         await resumeSelectedHeldBill();
         return;
       }
-      if (document.activeElement === searchInput && !suggestionsBox.hidden) {
-        return;
+      if (document.activeElement === searchInput) {
+        if (!suggestionsBox.hidden) return;
+        if (["ArrowUp", "ArrowDown", "+", "=", "-", "_", "Delete"].includes(event.key)) return;
       }
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();

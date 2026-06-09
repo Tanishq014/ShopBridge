@@ -739,12 +739,15 @@ def main() -> None:
         scanned_qty_before_merge = scanned_cart_item.qty
         tally_qty_before_merge = tally_cart_item.qty
         replace_response = asyncio.run(pos.replace_pos_item(scanned_cart_item.id, DummyJsonRequest({"result_type": "tally_item", "id": tally_family.id}), db))
-        assert_true(replace_response["merged_item_id"] == tally_cart_item.id, "POS duplicate replacement should merge into the existing Tally line")
-        merged_tally_item = db.get(PosCartItem, tally_cart_item.id)
-        assert_true(merged_tally_item and merged_tally_item.qty == tally_qty_before_merge + scanned_qty_before_merge and db.get(PosCartItem, scanned_cart_item.id) is None, "POS duplicate replacement did not merge quantities and remove duplicate row")
+        assert_true(replace_response.get("merged_item_id") is None, "POS duplicate replacement should NOT merge into the existing Tally line")
+        merged_tally_item = db.get(PosCartItem, scanned_cart_item.id)
+        assert_true(merged_tally_item and merged_tally_item.qty == scanned_qty_before_merge, "POS duplicate replacement should replace in place and keep qty")
         assert_true(replace_response["item"]["source_type"] == "tally_item" and replace_response["item"]["variant_id"] is None and replace_response["item"]["missing_price"] is False, "POS Tally replacement returned stale identity/rate payload")
         invalid_manual_replace = asyncio.run(pos.replace_pos_item(merged_tally_item.id, DummyJsonRequest({"result_type": "manual", "item_name": "Loose"}), db))
-        assert_true(invalid_manual_replace.status_code == 400, "POS replacement should not accept manual results")
+        assert_true(getattr(invalid_manual_replace, "status_code", 200) == 400, "POS replacement should not accept manual results")
+        
+        invalid_rename_update = asyncio.run(pos.update_pos_item(merged_tally_item.id, DummyJsonRequest({"item_name": "Sneaky Rename", "qty": 1}), db))
+        assert_true(getattr(invalid_rename_update, "status_code", 200) == 400, "POS update should block item_name rename vector")
 
         no_price_variant = LabelVariant(
             barcode="NOPRICE",
@@ -871,12 +874,71 @@ def main() -> None:
         resume_again_response = pos.resume_held_cart(held_source_cart.id, db=db)
         assert_true(resume_again_response["ok"] and pos._find_active_cart(db).id == held_source_cart.id, "held bill did not resume after explicit hold")
 
+        # Test sale_edit behavior
+        third_sale = Sale(
+            bill_number="SB-2999-000002",
+            status="completed",
+            subtotal=Decimal("88"),
+            discount_total=Decimal("0"),
+            round_off=Decimal("0"),
+            total=Decimal("88"),
+            payment_mode="cash",
+            print_status="not_printed",
+            tally_sync_status="not_started",
+        )
+        third_sale.items = [
+            SaleItem(
+                label_variant_id=first.id,
+                barcode=first_barcode,
+                item_name="Toy",
+                tally_stock_item_name=first.family.tally_stock_item_name if first.family else None,
+                qty=1,
+                rate=Decimal("88"),
+                mrp=first.mrp,
+                discount_amount=Decimal("0"),
+                amount=Decimal("88"),
+            )
+        ]
+        db.add(third_sale)
+        db.commit()
+        db.refresh(third_sale)
+        
+        # Load into edit cart
+        edit_load_response = pos.load_sale_for_edit_in_pos_cart(third_sale.id, db=db)
+        active_edit_cart = pos._find_active_cart(db)
+        assert_true(edit_load_response["ok"] and active_edit_cart.cart_mode == "sale_edit" and active_edit_cart.source_sale_id == third_sale.id, "completed sale should load into a sale-edit cart")
+        
+        # Verify clear cart resets edit cart
+        clear_cart_response = pos.clear_pos_cart(db=db)
+        db.refresh(active_edit_cart)
+        assert_true(clear_cart_response["items"] == [] and active_edit_cart.cart_mode == "normal" and active_edit_cart.source_sale_id is None, "clearing sale-edit cart should reset to normal mode")
+
+        # Reload into edit cart again for checkout test
+        pos.load_sale_for_edit_in_pos_cart(third_sale.id, db=db)
+        active_edit_cart = pos._find_active_cart(db)
+        
+        # Edit qty
+        edit_cart_item = db.query(PosCartItem).filter_by(cart_id=active_edit_cart.id).one()
+        asyncio.run(pos.update_pos_item(edit_cart_item.id, DummyJsonRequest({"qty": "5"}), db))
+        
+        # Checkout sale_edit
+        from app.services.sales_service import save_sale_edit_cart
+        edited_sale = save_sale_edit_cart(db, active_edit_cart, payment_mode="upi")
+        assert_true(edited_sale.id == third_sale.id, "sale-edit checkout must keep the same Sale.id")
+        assert_true(edited_sale.bill_number == "SB-2999-000002", "sale-edit checkout must keep the same bill_number")
+        assert_true(edited_sale.payment_mode == "upi", "sale-edit checkout must update payment_mode")
+        assert_true(str(edited_sale.total) == "440.00", "sale-edit checkout must recalculate totals")
+        assert_true(db.query(SaleItem).filter_by(sale_id=third_sale.id).count() == 1, "sale-edit checkout must recreate SaleItems")
+        assert_true(db.query(SaleItem).filter_by(sale_id=third_sale.id).one().qty == 5, "sale-edit checkout must use new item qty")
+        assert_true(pos._find_active_cart(db) is None, "checkout must close the active edit cart")
+
         pos_html_source = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
         assert_true("focusNextBillingField(" in pos_html_source and 'focusCartField(rowIndex, "mrp", true)' in pos_html_source, "POS template missing focusNextBillingField or does not focus MRP first")
         assert_true("skipNextChangeSaveFor" in pos_html_source, "POS template missing skipNextChangeSaveFor double-save guard")
         assert_true("state.editSearchTerm =" in pos_html_source and "replaceCartItem" in pos_html_source, "POS template missing editSearchTerm or replaceCartItem logic")
         assert_true("fieldName === \"item\"" in pos_html_source and "Select a saved barcode" in pos_html_source, "POS template missing label-only text save guard")
         assert_true("focusNextBillingField(data.item && data.item.id)" in pos_html_source, "POS template does not focus missing fields after Tally add")
+        assert_true("???" not in pos_html_source, "POS template contains mojibake '???' strings which indicates a bad encoding replacement.")
 
         print("Smoke checks passed")
     finally:

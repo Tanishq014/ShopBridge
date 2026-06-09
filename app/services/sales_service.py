@@ -54,6 +54,7 @@ def checkout_cart(
     if not cart or cart.status != "active":
         raise CheckoutError("No active cart to checkout.")
 
+def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decimal]:
     items = db.execute(
         select(PosCartItem)
         .where(PosCartItem.cart_id == cart.id)
@@ -103,9 +104,25 @@ def checkout_cart(
                 amount=amount,
             )
         )
+    return sale_items, subtotal
 
+
+def checkout_cart(
+    db: Session,
+    cart: PosCart | None,
+    *,
+    payment_mode: str = "cash",
+    notes: str | None = None,
+) -> Sale:
+    if not cart or cart.status != "active":
+        raise CheckoutError("No active cart to checkout.")
+    if cart.cart_mode == "sale_edit":
+        raise CheckoutError("Cart is in edit mode. Use save_sale_edit_cart instead.")
+
+    sale_items, subtotal = _build_sale_items(db, cart)
     payment = (payment_mode or "cash").strip().lower() or "cash"
     clean_notes = (notes or "").strip() or None
+
     for _ in range(5):
         sale = Sale(
             bill_number=next_bill_number(db),
@@ -146,3 +163,40 @@ def checkout_cart(
             cart.status = "active"
 
     raise CheckoutError("Could not generate a unique bill number. Try checkout again.")
+
+
+def save_sale_edit_cart(
+    db: Session,
+    cart: PosCart | None,
+    *,
+    payment_mode: str = "cash",
+    notes: str | None = None,
+) -> Sale:
+    if not cart or cart.status != "active":
+        raise CheckoutError("No active cart to checkout.")
+    if cart.cart_mode != "sale_edit" or not cart.source_sale_id:
+        raise CheckoutError("Cart is not in edit mode.")
+
+    sale = db.get(Sale, cart.source_sale_id)
+    if not sale:
+        raise CheckoutError("Original sale was not found.")
+
+    sale_items, subtotal = _build_sale_items(db, cart)
+    payment = (payment_mode or "cash").strip().lower() or "cash"
+    clean_notes = (notes or "").strip() or None
+
+    for existing_item in sale.items:
+        db.delete(existing_item)
+    
+    sale.items = sale_items
+    sale.subtotal = money(subtotal)
+    sale.total = money(subtotal)
+    sale.payment_mode = payment
+    sale.notes = clean_notes
+    cart.status = "discarded"
+    db.add(sale)
+    db.add(cart)
+    db.commit()
+    db.refresh(sale)
+    return sale
+
