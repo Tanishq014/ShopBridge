@@ -106,6 +106,8 @@ class PosCart(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     status = Column(String(40), nullable=False, default="active", index=True)
+    cart_mode = Column(String(40), nullable=False, default="normal", server_default="normal", index=True)
+    source_sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

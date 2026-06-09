@@ -66,6 +66,12 @@ def checkout_cart(
     sale_items: list[SaleItem] = []
     for item in items:
         variant = item.variant
+        is_barcode = bool(variant)
+        is_tally = item.source_type == "tally_item" and bool((item.tally_stock_item_name_snapshot or "").strip())
+        if item.source_type == "manual" or item.is_manual_line:
+            raise CheckoutError("Manual POS lines are not allowed. Select a saved barcode or Tally item.")
+        if not (is_barcode or is_tally):
+            raise CheckoutError("Invalid POS line. Select a saved barcode or Tally item.")
         rate = item.rate_snapshot if item.rate_snapshot is not None else item.unit_price
         if rate is None and variant:
             rate = variant.selling_price

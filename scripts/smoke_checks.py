@@ -21,7 +21,7 @@ os.environ["SHOPBRIDGE_PRINT_JOBS_DIR"] = str(TMP_DIR / "print_jobs")
 os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 
 from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import LabelVariant, PosCartItem, PrintJob, ProductFamily, Sale, SaleItem, TemplateMaster  # noqa: E402
+from app.models import LabelVariant, PosCart, PosCartItem, PrintJob, ProductFamily, Sale, SaleItem, TemplateMaster  # noqa: E402
 from app.routes import pos, sales, templates as template_routes, workflow  # noqa: E402
 from app.services.workflow import print_orchestration_service, print_service  # noqa: E402
 from app.services.bartender_service import _named_substring_values  # noqa: E402
@@ -226,31 +226,44 @@ def main() -> None:
         assert_true("Sticker: ${item.sticker_name}" in suggestion_render and "MRP ${money(item.mrp)}" in suggestion_render, "POS search results should show sticker and MRP details")
         assert_true("item.barcode" not in suggestion_render and "item.category" not in suggestion_render and "item.article_no" not in suggestion_render, "POS search results should not display barcode/category/article noise")
         assert_true("pos-item-input" in pos_markup and "pos-mrp-input" in pos_markup and "dataset.cartField = \"item\"" in pos_markup and "dataset.cartField = \"mrp\"" in pos_markup, "POS editable item name and MRP cells are missing")
-        assert_true("PgUp/PgDn Bills" in pos_markup and "navigateRecentSale" in pos_markup and "loadSalePreview" in pos_markup, "POS recent bill navigation is missing")
-        assert_true("/pos/cart/load-sale/" in pos_markup and "confirmLoadedSaleEdit" in pos_markup and "Save edited bill" in pos_markup, "POS saved bills should load as editable carts with save confirmation")
+        assert_true("PgUp/PgDn Held" in pos_markup and "navigateHeldBill" in pos_markup and "heldBillList" in pos_markup, "POS held bill navigation is missing")
+        assert_true("searchInput.addEventListener(\"input\"" in pos_markup and "state.heldSelectionActive = false" in pos_markup, "searchInput input clears heldSelectionActive")
+        assert_true("state.heldSelectionActive && !searchInput.value.trim()" in pos_markup and "await resumeSelectedHeldBill" in pos_markup, "Enter resumes held only when scan input is empty")
+        assert_true("postCartAction(\"/pos/cart/clear\"" in pos_markup and "setPreviewState(false, null)" in pos_markup, "clear-cart response with normal cart resets preview state")
+        assert_true("/pos/cart/load-sale/" in pos_markup and "confirmLoadedSaleEdit" in pos_markup and "Save edited bill" in pos_markup and "returnHeldCartId" in pos_markup, "POS saved bills should load as editable carts with save confirmation")
         assert_true("disabled = state.previewMode" not in pos_markup and "Previewing bill - press Esc to return" not in pos_markup, "POS opened bills should not render as disabled preview-only rows")
         assert_true("pos-total-box" in pos_markup and "cartTotal" in pos_markup and "Checkout - Rs. 0.00" in pos_markup, "POS checkout summary/total is missing")
         assert_true("searchPanelTotal" in pos_markup and "Total:" in pos_markup, "POS search mode should keep total visible")
-        assert_true("focusSelectedCartItem" in pos_markup and "focusSelectedCartItem(true);" in pos_markup and "itemInput.select()" in pos_markup, "POS selected line should auto-focus the item name")
+        assert_true("focusSelectedCartItem" in pos_markup and "focusSelectedCartItem(true);" in pos_markup and "input.select()" in pos_markup, "POS selected line should auto-focus the item name")
         assert_true("moveCartFieldVertical" in pos_markup and "ArrowDown" in pos_markup and "ArrowUp" in pos_markup, "POS editable cells should support up/down row navigation")
         assert_true("state.selectedIndex = items.length - 1" in pos_markup, "POS should default to the last bill line")
         assert_true("pos-rate-input" in pos_markup and "pos-qty-input" in pos_markup and "/pos/cart/items/${itemId}/update" in pos_markup, "POS editable rate/qty cells are missing")
+        assert_true("saveFocusedLineInput" in pos_markup and "checkoutForm.submit()" in pos_markup and "checkoutSubmitting" in pos_markup, "POS checkout should save focused edits before submit")
+        assert_true("event.stopPropagation()" in pos_markup and "await checkoutNow()" in pos_markup, "POS line editor should stop shortcut bubbling before checkout")
         assert_true("cartEditActive" in pos_markup and "lineEditIsActive()" in pos_markup and "if (silent &&" in pos_markup, "POS polling should pause while editing rate/qty")
         assert_true("pos-qty-button" in pos_markup and "/increase" in pos_markup and "/decrease" in pos_markup, "POS quantity controls are missing")
         assert_true("addTallyItem" in pos_markup and "result_type === \"tally_item\"" in pos_markup, "POS UI does not add local Tally catalog search results")
+        assert_true("addManualItem" not in pos_markup and "/pos/cart/manual/add" not in pos_markup and "pos-suggestion-manual" not in pos_markup, "POS UI must not expose manual free-text bill lines")
+        assert_true("Keep manual text" not in pos_markup and "Add manual item" not in pos_markup and "Enter Add/Manual" not in pos_markup, "POS item search still contains manual-line copy")
+        assert_true("replaceCartItem" in pos_markup and "/pos/cart/items/${itemId}/replace" in pos_markup, "POS item search selection should replace full cart line identity")
+        assert_true("Select a saved barcode/Tally item." in pos_markup and "updateCartItem(editItem.id, {item_name" not in pos_markup, "POS row item editing can still save a label-only product mismatch")
+        assert_true("editSearchTerm" in pos_markup and "searchInput.value = input.value" not in pos_markup, "POS row item search still uses the add-row input as hidden state")
+        assert_true("focusNextBillingField" in pos_markup and "focusNextBillingField(data.item && data.item.id)" in pos_markup, "POS valid barcode scans should return focus to the scan/add input")
         assert_true("helpToggleButton" in pos_markup and "shopbridge.posHelpVisible.v1" in pos_markup and "id=\"posHelpBar\" hidden" in pos_markup, "POS help row toggle/default hidden state is missing")
         assert_true("fullscreenPosButton" in pos_markup and "requestFullscreen" in pos_markup, "POS fullscreen button is missing")
-        assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup and "Left/Right Cells" in pos_markup, "POS shortcut help bar is missing")
+        assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup and "Left/Right Cells" in pos_markup and "F10" not in pos_markup, "POS shortcut help bar is missing or stale")
         assert_true("cartStatus" in pos_markup and "pos-top-actions" in pos_markup and "Fullscreen POS" in pos_markup and "Show Help" in pos_markup and "Refresh" in pos_markup, "POS header status/buttons are missing")
         assert_true(".pos-suggestion.active" in app_css and ".pos-billing-row.selected" in app_css, "POS keyboard highlight styling is missing")
+        assert_true(".pos-held-row.selected" in app_css and "pos-held-panel" in app_css, "POS held bill styling is missing")
         assert_true("pos-line-input" in app_css and "pos-rate-input" in app_css and "pos-qty-input" in app_css and "pos-item-input" in app_css and "pos-mrp-input" in app_css, "POS editable line input styling is missing")
-        assert_true("source_type=\"barcode\"" in pos_route_source and "tally_item" in pos_route_source and "/pos/cart/items/{item_id}/update" in pos_route_source and "item_name_snapshot" in pos_route_source, "POS backend snapshot/update routes are missing")
-        assert_true("/pos/cart/load-sale/{sale_id}" in pos_route_source and "source_sale_id" in pos_route_source, "POS backend should load saved bills into editable active cart lines")
+        assert_true("source_type=\"barcode\"" in pos_route_source and "tally_item" in pos_route_source and "/pos/cart/items/{item_id}/update" in pos_route_source and "/pos/cart/items/{item_id}/replace" in pos_route_source and "item_name_snapshot" in pos_route_source, "POS backend snapshot/update routes are missing")
+        assert_true("/pos/cart/load-sale/{sale_id}" in pos_route_source and "held_active_cart_id" in pos_route_source and "_park_active_cart" in pos_route_source and "SALE_COPY_CART_MODE" in pos_route_source, "POS backend should load saved bills without destroying active carts")
+        assert_true("/pos/cart/hold" in pos_route_source and "/pos/cart/held/{cart_id}/resume" in pos_route_source and "/pos/cart/held/{cart_id}/discard" in pos_route_source, "POS held bill routes are missing")
         assert_true("ProductFamily" in pos_route_source and "tally_stock_item_name" in pos_route_source, "POS search should include locally imported ProductFamily/Tally items")
-        assert_true("family_results" in pos_route_source and "results = family_results" in pos_route_source, "POS search should prioritize Tally catalog results")
-        assert_true("item_name_snapshot" in model_source and "rate_snapshot" in model_source and "source_type" in model_source, "POS cart snapshot fields are missing")
-        assert_true("ALTER TABLE pos_cart_items ADD COLUMN" in db_source and "variant_id" in db_source and "nullable" in model_source, "POS cart snapshot migration is missing")
-        assert_true("item.rate_snapshot" in sales_service_source and "item.item_name_snapshot" in sales_service_source, "checkout does not use POS cart snapshots")
+        assert_true("LabelVariant.barcode == clean_barcode" in pos_route_source and "barcode_like" in pos_route_source and "shown_family_ids" in pos_route_source, "POS search should prioritize exact barcode and de-duplicate families")
+        assert_true("item_name_snapshot" in model_source and "rate_snapshot" in model_source and "source_type" in model_source and "cart_mode" in model_source and "source_sale_id" in model_source, "POS cart snapshot/state fields are missing")
+        assert_true("ALTER TABLE pos_cart_items ADD COLUMN" in db_source and "ALTER TABLE pos_carts ADD COLUMN" in db_source and "source_sale_id" in db_source and "variant_id" in db_source and "nullable" in model_source, "POS cart snapshot/state migration is missing")
+        assert_true("item.rate_snapshot" in sales_service_source and "item.item_name_snapshot" in sales_service_source and "Manual POS lines are not allowed" in sales_service_source, "checkout does not use POS cart snapshots or block manual lines")
         assert_true("tally_voucher" not in pos_route_source and "tally_alias" not in pos_route_source.lower(), "POS route should not add Tally write code")
         assert_true("Bill No" in sales_markup and "/sales/{{ sale.id }}" in sales_markup and "/pos?sale_id={{ sale.id }}" in sales_markup, "sales list template is missing bill links")
         assert_true("Open Receipt" in sale_detail_markup and "Tally Sync Status" in sale_detail_markup and "/pos?sale_id={{ sale.id }}" in sale_detail_markup, "sale detail template is incomplete")
@@ -378,7 +391,7 @@ def main() -> None:
         db.commit()
         db.refresh(priority_variant)
         priority_search = pos.pos_search(q="Priority Tally Item", db=db)
-        assert_true(priority_search["items"] and priority_search["items"][0]["result_type"] == "tally_item", "POS search does not prioritize Tally catalog items")
+        assert_true(priority_search["items"] and priority_search["items"][0]["result_type"] == "barcode", "POS search should de-duplicate Tally catalog rows when an active barcode variant exists")
 
         print_item(
             db,
@@ -669,6 +682,7 @@ def main() -> None:
         assert_true(add_response["item"]["billing_item"] == add_response["item"]["item_name"], "POS cart payload should use billing item as the primary item name")
         search_response = pos.pos_search(q=first_barcode, db=db)
         assert_true(search_response["items"] and search_response["items"][0]["barcode"] == first_barcode, "POS search did not find saved barcode")
+        assert_true(search_response["items"][0].get("exact_barcode"), "POS exact barcode search should be first and marked exact")
         item_search_response = pos.pos_search(q="Toy", db=db)
         assert_true(item_search_response["items"], "POS search did not find saved item by name")
         tally_family = ProductFamily(
@@ -690,6 +704,8 @@ def main() -> None:
         )
         assert_true(len(lookup_response["matches"]) == 1, "POS OCR lookup did not return exactly one saved barcode")
         assert_true(lookup_response["matches"][0]["barcode"] == first_barcode, "POS OCR lookup returned wrong barcode")
+        unknown_scan = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": "NOTREAL"}), db))
+        assert_true(unknown_scan.status_code == 404 and db.query(PosCartItem).count() == 1, "unknown POS barcode should not silently become a manual item")
         add_again = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(add_again["cart"]["count"] >= 2, "POS scan did not increment quantity")
         scanned_cart_item = db.query(PosCartItem).filter_by(variant_id=first.id).one()
@@ -701,8 +717,34 @@ def main() -> None:
         assert_true(tally_add_response["ok"] and tally_add_response["item"]["source_type"] == "tally_item", "POS did not add local Tally catalog item")
         tally_cart_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
         assert_true(tally_cart_item.variant_id is None and tally_cart_item.barcode_snapshot == "", "Tally catalog cart line should not require a barcode variant")
+        try:
+            checkout_cart(db, pos._find_active_cart(db), payment_mode="cash")
+            raise AssertionError("checkout should reject missing Tally rate")
+        except Exception as exc:
+            assert_true("Rate is missing" in str(exc), "checkout did not block Tally catalog line with missing rate")
         tally_update = asyncio.run(pos.update_pos_item(tally_cart_item.id, DummyJsonRequest({"qty": "2", "rate": "125"}), db))
         assert_true(tally_update["items"][-1]["selling_price"] == "125.00", "Tally catalog cart line rate was not editable")
+        replace_barcode_response = asyncio.run(pos.replace_pos_item(tally_cart_item.id, DummyJsonRequest({"result_type": "barcode", "id": changed_detail_variant.id}), db))
+        assert_true(replace_barcode_response["item"]["source_type"] == "barcode" and replace_barcode_response["item"]["variant_id"] == changed_detail_variant.id, "POS Tally-to-barcode replacement did not update full identity")
+        expected_changed_rate = f"{changed_detail_variant.selling_price:.2f}" if changed_detail_variant.selling_price is not None else ""
+        assert_true(replace_barcode_response["item"]["barcode"] == changed_detail_variant.barcode and replace_barcode_response["item"]["selling_price"] == expected_changed_rate, "POS barcode replacement returned stale barcode/rate payload")
+        replaced_barcode_cart_item = db.get(PosCartItem, replace_barcode_response["item"]["id"])
+        assert_true(replaced_barcode_cart_item and replaced_barcode_cart_item.variant_id == changed_detail_variant.id and replaced_barcode_cart_item.source_type == "barcode", "POS barcode replacement did not persist backend identity")
+
+        tally_add_response = pos.add_tally_item_to_cart(tally_family.id, db=db)
+        assert_true(tally_add_response["ok"], "POS did not re-add local Tally catalog item for replacement merge test")
+        tally_cart_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
+        asyncio.run(pos.update_pos_item(tally_cart_item.id, DummyJsonRequest({"qty": "2", "rate": "125"}), db))
+        db.refresh(scanned_cart_item)
+        scanned_qty_before_merge = scanned_cart_item.qty
+        tally_qty_before_merge = tally_cart_item.qty
+        replace_response = asyncio.run(pos.replace_pos_item(scanned_cart_item.id, DummyJsonRequest({"result_type": "tally_item", "id": tally_family.id}), db))
+        assert_true(replace_response["merged_item_id"] == tally_cart_item.id, "POS duplicate replacement should merge into the existing Tally line")
+        merged_tally_item = db.get(PosCartItem, tally_cart_item.id)
+        assert_true(merged_tally_item and merged_tally_item.qty == tally_qty_before_merge + scanned_qty_before_merge and db.get(PosCartItem, scanned_cart_item.id) is None, "POS duplicate replacement did not merge quantities and remove duplicate row")
+        assert_true(replace_response["item"]["source_type"] == "tally_item" and replace_response["item"]["variant_id"] is None and replace_response["item"]["missing_price"] is False, "POS Tally replacement returned stale identity/rate payload")
+        invalid_manual_replace = asyncio.run(pos.replace_pos_item(merged_tally_item.id, DummyJsonRequest({"result_type": "manual", "item_name": "Loose"}), db))
+        assert_true(invalid_manual_replace.status_code == 400, "POS replacement should not accept manual results")
 
         no_price_variant = LabelVariant(
             barcode="NOPRICE",
@@ -734,10 +776,32 @@ def main() -> None:
         sale_tally_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
         asyncio.run(pos.update_pos_item(sale_tally_item.id, DummyJsonRequest({"qty": "1", "rate": "125"}), db))
         active_cart = pos._find_active_cart(db)
+        stale_manual_item = PosCartItem(
+            cart_id=active_cart.id,
+            variant_id=None,
+            qty=1,
+            unit_price=Decimal("15"),
+            item_name_snapshot="Manual Checkout Line",
+            barcode_snapshot="",
+            tally_stock_item_name_snapshot="",
+            mrp_snapshot=Decimal("20"),
+            rate_snapshot=Decimal("15"),
+            source_type="manual",
+            is_manual_line=True,
+        )
+        db.add(stale_manual_item)
+        db.commit()
+        try:
+            checkout_cart(db, active_cart, payment_mode="cash")
+            raise AssertionError("checkout should reject manual POS lines")
+        except Exception as exc:
+            assert_true("Manual POS lines are not allowed" in str(exc), "checkout did not block stale manual POS line")
+        db.delete(stale_manual_item)
+        db.commit()
         sale = checkout_cart(db, active_cart, payment_mode="cash")
         assert_true(sale.bill_number.startswith("SB-"), "sale bill number was not generated")
         assert_true(db.query(Sale).count() == 1, "checkout did not save exactly one sale")
-        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 2, "checkout did not save all sale items")
+        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 2, "checkout did not save expected sale items")
         edited_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, label_variant_id=first.id).one()
         assert_true(str(edited_sale_item.rate) in {"88.00", "88"} and edited_sale_item.qty == 2, "checkout did not use edited barcode-line rate/qty")
         tally_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, tally_stock_item_name="Tally Imported Socks").one()
@@ -745,7 +809,74 @@ def main() -> None:
         assert_true(pos._find_active_cart(db) is None, "checkout did not close the active cart")
         duplicate_checkout = pos.pos_checkout(payment_mode="cash", notes="", db=db)
         assert_true(getattr(duplicate_checkout, "status_code", None) == 303, "duplicate checkout did not redirect safely")
+        assert_true("No+active+cart" in duplicate_checkout.headers.get("location", ""), "duplicate checkout should return a clear POS error instead of latest sale")
         assert_true(db.query(Sale).count() == 1, "duplicate checkout created another sale")
+
+        held_source_scan = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
+        assert_true(held_source_scan["ok"], "POS did not create active cart before saved-bill load test")
+        held_source_cart = pos._find_active_cart(db)
+        held_source_item = db.query(PosCartItem).filter_by(cart_id=held_source_cart.id, variant_id=first.id).one()
+        asyncio.run(pos.update_pos_item(held_source_item.id, DummyJsonRequest({"qty": "4", "rate": "33"}), db))
+        load_copy_response = pos.load_sale_into_pos_cart(sale.id, db=db)
+        db.refresh(held_source_cart)
+        assert_true(load_copy_response["ok"] and held_source_cart.status == "held", "loading completed sale should hold, not delete, the active bill")
+        held_preserved_item = db.query(PosCartItem).filter_by(cart_id=held_source_cart.id, variant_id=first.id).one()
+        assert_true(held_preserved_item.qty == 4 and str(held_preserved_item.rate_snapshot) in {"33.00", "33"}, "held active bill did not preserve exact qty/rate")
+        active_copy = pos._find_active_cart(db)
+        assert_true(active_copy and active_copy.id != held_source_cart.id and active_copy.cart_mode == "sale_copy" and active_copy.source_sale_id == sale.id, "completed sale should load into a separate active sale-copy cart")
+        held_count_after_first_copy = db.query(PosCart).filter_by(status="held").count()
+        same_copy_response = pos.load_sale_into_pos_cart(sale.id, db=db)
+        assert_true(same_copy_response["cart"]["cart_id"] == active_copy.id and db.query(PosCart).filter_by(status="held").count() == held_count_after_first_copy, "reloading the same completed sale should not duplicate held sale-copy carts")
+        second_sale = Sale(
+            bill_number="SB-2999-000001",
+            status="completed",
+            subtotal=Decimal("88"),
+            discount_total=Decimal("0"),
+            round_off=Decimal("0"),
+            total=Decimal("88"),
+            payment_mode="cash",
+            print_status="not_printed",
+            tally_sync_status="not_started",
+        )
+        second_sale.items = [
+            SaleItem(
+                label_variant_id=first.id,
+                barcode=first_barcode,
+                item_name="Toy",
+                tally_stock_item_name=first.family.tally_stock_item_name if first.family else None,
+                qty=1,
+                rate=Decimal("88"),
+                mrp=first.mrp,
+                discount_amount=Decimal("0"),
+                amount=Decimal("88"),
+            )
+        ]
+        db.add(second_sale)
+        db.commit()
+        db.refresh(second_sale)
+        second_copy_response = pos.load_sale_into_pos_cart(second_sale.id, db=db)
+        db.refresh(active_copy)
+        assert_true(second_copy_response["ok"] and active_copy.status == "discarded" and db.query(PosCart).filter_by(status="held").count() == held_count_after_first_copy, "loading another completed sale from a sale-copy cart should discard the copy, not hold it")
+        active_copy = pos._find_active_cart(db)
+        assert_true(active_copy and active_copy.source_sale_id == second_sale.id and active_copy.cart_mode == "sale_copy", "second completed sale did not become the active sale-copy cart")
+        held_action_block = pos.increase_pos_item(held_preserved_item.id, db=db)
+        assert_true(held_action_block.status_code == 404, "held cart item quantity should not be editable until resumed")
+        pos.discard_active_cart(db=db)
+        resume_response = pos.resume_held_cart(held_source_cart.id, db=db)
+        assert_true(resume_response["ok"] and resume_response["cart"]["cart_id"] == held_source_cart.id, "held bill did not resume")
+        resumed_item = db.query(PosCartItem).filter_by(cart_id=held_source_cart.id, variant_id=first.id).one()
+        assert_true(resumed_item.qty == 4 and str(resumed_item.rate_snapshot) in {"33.00", "33"}, "resumed held bill did not restore exact lines/rates/qty")
+        hold_again_response = pos.hold_active_cart(db=db)
+        assert_true(hold_again_response["ok"] and pos._find_active_cart(db) is None, "holding active bill should remove active cart until resumed or new scan")
+        resume_again_response = pos.resume_held_cart(held_source_cart.id, db=db)
+        assert_true(resume_again_response["ok"] and pos._find_active_cart(db).id == held_source_cart.id, "held bill did not resume after explicit hold")
+
+        pos_html_source = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
+        assert_true("focusNextBillingField(" in pos_html_source and 'focusCartField(rowIndex, "mrp", true)' in pos_html_source, "POS template missing focusNextBillingField or does not focus MRP first")
+        assert_true("skipNextChangeSaveFor" in pos_html_source, "POS template missing skipNextChangeSaveFor double-save guard")
+        assert_true("state.editSearchTerm =" in pos_html_source and "replaceCartItem" in pos_html_source, "POS template missing editSearchTerm or replaceCartItem logic")
+        assert_true("fieldName === \"item\"" in pos_html_source and "Select a saved barcode" in pos_html_source, "POS template missing label-only text save guard")
+        assert_true("focusNextBillingField(data.item && data.item.id)" in pos_html_source, "POS template does not focus missing fields after Tally add")
 
         print("Smoke checks passed")
     finally:

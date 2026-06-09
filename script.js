@@ -1,148 +1,4 @@
-{% extends "base.html" %}
-{% block title %}ShopBridge POS{% endblock %}
-{% block content %}
-  <section class="pos-shell pos-grid-shell" id="posRoot">
-    <header class="pos-header pos-compact-header">
-      <div>
-        <div class="pos-title-row">
-          <h1>ShopBridge POS</h1>
-          <span class="pos-mode-badge">Local Mode / Tally Off</span>
-        </div>
-      </div>
-      <div class="pos-top-actions">
-        <div class="pos-status pos-status-info pos-status-compact" id="cartStatus" role="status">Ready</div>
-        <button class="button" type="button" id="fullscreenPosButton">Fullscreen POS</button>
-        <button class="button" type="button" id="helpToggleButton" aria-controls="posHelpBar" aria-expanded="false">Show Help</button>
-        <button class="button" type="button" id="refreshCartButton">Refresh</button>
-      </div>
-    </header>
 
-    <section class="pos-workspace pos-grid-workspace">
-      <div class="pos-grid-panel">
-        <div class="pos-grid-title">
-          <h2>Bill Lines</h2>
-          <span id="cartLineCount">0 lines</span>
-        </div>
-
-        <div class="pos-table-wrap">
-          <table class="pos-billing-grid">
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>Item / Article</th>
-                <th>Barcode</th>
-                <th>MRP</th>
-                <th>Rate</th>
-                <th>Qty</th>
-                <th>Amount</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="cartRows">
-              <tr class="pos-empty-row">
-                <td colspan="8">Cart is empty.</td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr class="pos-add-row">
-                <td class="pos-line-no">+</td>
-                <td class="pos-add-cell">
-                  <div class="pos-search-wrap">
-                    <input
-                      id="posSearchInput"
-                      autocomplete="off"
-                      inputmode="text"
-                      placeholder="Scan / type item..."
-                      spellcheck="false"
-                    >
-                  </div>
-                </td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td class="pos-add-qty">1</td>
-                <td></td>
-                <td><button class="button small" type="button" id="addItemButton">Add</button></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
-      <aside class="pos-bill-panel pos-grid-summary">
-        <div class="pos-summary-mode" id="posSummaryPanel">
-          <form method="post" action="/pos/checkout" id="checkoutForm">
-            <div class="pos-summary-grid">
-              <span>Lines</span>
-              <strong id="summaryLines">0</strong>
-              <span>Qty</span>
-              <strong id="cartCount">0</strong>
-              <span>Subtotal</span>
-              <strong id="summarySubtotal">Rs. 0.00</strong>
-            </div>
-
-            <div class="pos-total-box">
-              <span>Total</span>
-              <strong id="cartTotal">Rs. 0.00</strong>
-            </div>
-
-            <label class="pos-summary-field">
-              Payment
-              <select name="payment_mode" id="paymentMode">
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="card">Card</option>
-              </select>
-            </label>
-            <label class="pos-summary-field">
-              Notes
-              <input name="notes" id="checkoutNotes" placeholder="Optional">
-            </label>
-
-            <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
-              Checkout - Rs. 0.00
-            </button>
-          </form>
-
-          <button class="button pos-clear-button" type="button" id="clearCartButton">Clear Cart</button>
-          <section class="pos-held-panel" aria-labelledby="heldBillsTitle">
-            <div class="pos-held-head">
-              <div>
-                <h3 id="heldBillsTitle">Held Bills</h3>
-                <span id="heldBillCount">0 held</span>
-              </div>
-              <button class="button small" type="button" id="holdBillButton">Hold</button>
-            </div>
-            <div class="pos-held-list" id="heldBillList" tabindex="-1">
-              <p>No held bills.</p>
-            </div>
-            <div class="pos-held-actions">
-              <button class="button small" type="button" id="resumeHeldBillButton" disabled>Resume</button>
-              <button class="button small danger" type="button" id="discardHeldBillButton" disabled>Discard</button>
-            </div>
-          </section>
-        </div>
-
-        <div class="pos-search-mode" id="posSearchPanel" hidden>
-          <div class="pos-search-panel-head">
-            <div>
-              <h2>Search Results</h2>
-              <span id="searchResultCount">0 items</span>
-            </div>
-            <button class="button small" type="button" id="closeSearchPanelButton">Esc</button>
-          </div>
-          <div class="pos-search-total">Total: <strong id="searchPanelTotal">Rs. 0.00</strong></div>
-          <div class="pos-search-results" id="posSuggestions" role="listbox" hidden></div>
-        </div>
-      </aside>
-    </section>
-
-    <footer class="pos-help-bar" id="posHelpBar" hidden>
-      F2 Item | Enter Add/Select | Up/Down Rows/Search | Left/Right Cells | +/- Qty | Del Remove | F4 Pay | PgUp/PgDn Held | Enter Resume Held | Ctrl+Enter Checkout | Esc Back
-    </footer>
-  </section>
-
-  <script>
     const addItemButton = document.getElementById("addItemButton");
     const cartRows = document.getElementById("cartRows");
     const cartCount = document.getElementById("cartCount");
@@ -174,9 +30,9 @@
     const summaryLines = document.getElementById("summaryLines");
     const summarySubtotal = document.getElementById("summarySubtotal");
 
-    const checkoutError = {{ error|default(None)|tojson }};
-    const initialSaleId = {{ initial_sale_id|default(None)|tojson }};
-    const initialHeldCarts = {{ held_carts|default([])|tojson }};
+    const checkoutError = null;
+    const initialSaleId = null;
+    const initialHeldCarts = null;
     const helpPreferenceKey = "shopbridge.posHelpVisible.v1";
     const inrFormatter = new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -210,7 +66,6 @@
       skipItemSearchOnce: false,
       checkoutSubmitting: false,
       lastLineEdit: null,
-      skipNextChangeSaveFor: null,
     };
 
     function money(value) {
@@ -454,26 +309,14 @@
       focusCartField(rowIndex, next.field, true);
     }
 
-    function focusNextBillingField(itemId, preferredField = null) {
+    function focusRateOrScan(itemId) {
       const rowIndex = selectCartItemById(itemId);
       const item = cartItemAt(rowIndex);
-      if (!item) {
-        focusItemInput(false);
-        return;
-      }
-      if (preferredField) {
-        focusCartField(rowIndex, preferredField, true);
-        return;
-      }
-      if (!String(item.mrp || "").trim()) {
-        focusCartField(rowIndex, "mrp", true);
-      } else if (!String(item.selling_price || "").trim() || Number(item.selling_price) === 0) {
+      if (item && item.missing_price) {
         focusCartField(rowIndex, "rate", true);
-      } else if (!String(item.qty || "").trim() || Number(item.qty) <= 0) {
-        focusCartField(rowIndex, "qty", true);
-      } else {
-        focusItemInput(true);
+        return;
       }
+      focusItemInput(false);
     }
 
     function selectCartItemById(itemId) {
@@ -863,7 +706,7 @@
         closeSuggestions(true);
         if (replaced) {
           const replacementId = (replaced.item && replaced.item.id) || replaced.merged_item_id || editItem.id;
-          focusNextBillingField(replacementId);
+          focusRateOrScan(replacementId);
         } else {
           focusCartField(rowIndex, fieldName, true);
         }
@@ -884,13 +727,6 @@
 
     function renderCart(cart) {
       state.cart = cart || {items: [], count: 0, total: "0.00"};
-      if (state.cart.cart_mode === "sale_copy" && state.cart.source_sale_id) {
-        if (!state.previewMode) {
-          state.previewMode = true;
-          state.previewSaleId = state.cart.source_sale_id;
-          setStatus("Opened saved bill copy. Checkout saves a new bill.", "info");
-        }
-      }
       const items = state.cart.items || [];
       if (!items.length) {
         state.selectedIndex = -1;
@@ -909,7 +745,7 @@
       checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
       checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
       clearCartButton.disabled = items.length === 0;
-      holdBillButton.disabled = items.length === 0 || state.cart.cart_mode === "sale_copy";
+      holdBillButton.disabled = items.length === 0;
       cartRows.innerHTML = "";
 
       if (!items.length) {
@@ -1191,13 +1027,7 @@
       if (input.dataset.cartField === "item") {
         return;
       }
-      const itemId = input.dataset.cartItemId;
-      const fieldName = input.dataset.cartField;
-      if (state.skipNextChangeSaveFor && state.skipNextChangeSaveFor.itemId === itemId && state.skipNextChangeSaveFor.fieldName === fieldName) {
-        state.skipNextChangeSaveFor = null;
-        return;
-      }
-      await saveCartField(Number(input.dataset.cartRowIndex), fieldName);
+      await saveCartField(Number(input.dataset.cartRowIndex), input.dataset.cartField);
     });
 
     cartRows.addEventListener("keydown", async event => {
@@ -1228,18 +1058,18 @@
           focusCartField(rowIndex, "item", true, true);
           return;
         }
-        state.skipNextChangeSaveFor = {itemId: input.dataset.cartItemId, fieldName};
         const updated = await saveCartField(rowIndex, fieldName);
         if (!updated) {
-          state.skipNextChangeSaveFor = null;
           return;
         }
-        if (fieldName === "mrp") {
+        if (fieldName === "item") {
+          focusCartField(rowIndex, "mrp", true);
+        } else if (fieldName === "mrp") {
           focusCartField(rowIndex, "rate", true);
         } else if (fieldName === "rate") {
           focusCartField(rowIndex, "qty", true);
         } else if (fieldName === "qty") {
-          focusItemInput(true);
+          focusSelectedCartItem(true);
         }
         return;
       }
@@ -1386,7 +1216,7 @@
         }
         renderCart(cart);
         markLoadedSaleDirty();
-        setStatus(cart.message || successMessage, "success");
+        setStatus(successMessage, "success");
         return cart;
       } catch (error) {
         setStatus(error.message || "Could not replace line item.", "error");
@@ -1458,7 +1288,7 @@
         closeSuggestions(false);
         setStatus(`Added: ${data.item.billing_item || data.item.item_name || "Tally item"} - enter rate`, "success");
         playBeep(true);
-        focusNextBillingField(data.item && data.item.id);
+        focusRateOrScan(data.item && data.item.id);
       } catch (error) {
         setStatus(error.message || "Could not add Tally item.", "error");
         playBeep(false);
@@ -1513,7 +1343,7 @@
         closeSuggestions(false);
         setStatus(`Added: ${data.item.billing_item || data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
         playBeep(true);
-        focusNextBillingField(data.item && data.item.id);
+        focusRateOrScan(data.item && data.item.id);
       } catch (error) {
         setStatus(error.message || "Could not add item.", "error");
         playBeep(false);
@@ -1835,5 +1665,4 @@
       });
     }
     window.setInterval(() => loadCart(true), 1000);
-  </script>
-{% endblock %}
+  

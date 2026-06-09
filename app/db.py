@@ -89,6 +89,17 @@ def _migrate_existing_sqlite() -> None:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE template_masters ADD COLUMN fields_extracted_file_mtime VARCHAR(80)"))
 
+    if "pos_carts" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("pos_carts")}
+        additive_columns = {
+            "cart_mode": "VARCHAR(40) NOT NULL DEFAULT 'normal'",
+            "source_sale_id": "INTEGER",
+        }
+        for column_name, column_type in additive_columns.items():
+            if column_name not in columns:
+                with engine.begin() as connection:
+                    connection.execute(text(f"ALTER TABLE pos_carts ADD COLUMN {column_name} {column_type}"))
+
     if "pos_cart_items" in table_names:
         columns_info = inspector.get_columns("pos_cart_items")
         columns = {column["name"] for column in columns_info}

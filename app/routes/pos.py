@@ -29,6 +29,12 @@ _pos_cart_heartbeat: dict[str, object] = {
     "signature": None,
     "last_log_at": 0.0,
 }
+ACTIVE_CART_STATUS = "active"
+HELD_CART_STATUS = "held"
+DISCARDED_CART_STATUS = "discarded"
+NORMAL_CART_MODE = "normal"
+SALE_COPY_CART_MODE = "sale_copy"
+ALLOWED_PAYMENT_MODES = {"cash", "upi", "card"}
 
 
 def _money(value: Decimal | None) -> str:
@@ -88,7 +94,7 @@ def _line_tally_name(item: PosCartItem) -> str:
 def _find_active_cart(db: Session) -> PosCart | None:
     return db.scalar(
         select(PosCart)
-        .where(PosCart.status == "active")
+        .where(PosCart.status == ACTIVE_CART_STATUS)
         .order_by(PosCart.id.desc())
     )
 
@@ -97,11 +103,120 @@ def _active_cart(db: Session) -> PosCart:
     cart = _find_active_cart(db)
     if cart:
         return cart
-    cart = PosCart(status="active")
+    cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=NORMAL_CART_MODE)
     db.add(cart)
     db.commit()
     db.refresh(cart)
     return cart
+
+
+def _cart_items(db: Session, cart: PosCart) -> list[PosCartItem]:
+    return db.execute(
+        select(PosCartItem)
+        .where(PosCartItem.cart_id == cart.id)
+        .order_by(PosCartItem.id)
+    ).scalars().all()
+
+
+def _cart_has_items(db: Session, cart: PosCart) -> bool:
+    return db.scalar(
+        select(func.count(PosCartItem.id)).where(PosCartItem.cart_id == cart.id)
+    ) > 0
+
+
+def _park_active_cart(db: Session, *, discard_empty: bool = True) -> PosCart | None:
+    cart = _find_active_cart(db)
+    if not cart:
+        return None
+    if cart.cart_mode == SALE_COPY_CART_MODE or cart.source_sale_id:
+        cart.status = DISCARDED_CART_STATUS
+        db.add(cart)
+        return None
+    if _cart_has_items(db, cart):
+        cart.status = HELD_CART_STATUS
+        db.add(cart)
+        return cart
+    if discard_empty:
+        cart.status = DISCARDED_CART_STATUS
+        db.add(cart)
+    return None
+
+
+def _held_cart_payload(db: Session, cart: PosCart) -> dict[str, object]:
+    payload = _cart_payload(db, cart)
+    return {
+        "id": cart.id,
+        "label": f"Held #{cart.id}",
+        "status": cart.status,
+        "updated_at": cart.updated_at.isoformat() if cart.updated_at else "",
+        "created_at": cart.created_at.isoformat() if cart.created_at else "",
+        "count": payload["count"],
+        "lines": len(payload["items"]),
+        "total": payload["total"],
+    }
+
+
+def _held_carts_payload(db: Session) -> list[dict[str, object]]:
+    carts = db.execute(
+        select(PosCart)
+        .where(PosCart.status == HELD_CART_STATUS)
+        .where(PosCart.cart_mode == NORMAL_CART_MODE)
+        .order_by(PosCart.updated_at.desc(), PosCart.id.desc())
+    ).scalars().all()
+    return [_held_cart_payload(db, cart) for cart in carts]
+
+
+def _active_cart_item_or_error(db: Session, item_id: int) -> PosCartItem | JSONResponse:
+    item = db.get(PosCartItem, item_id)
+    if not item or not item.cart or item.cart.status != ACTIVE_CART_STATUS:
+        return _json_error("Cart item was not found.", status_code=404, status="not_found")
+    return item
+
+
+def _apply_variant_to_cart_item(item: PosCartItem, variant: LabelVariant) -> None:
+    item.variant = variant
+    item.variant_id = variant.id
+    item.unit_price = variant.selling_price
+    item.item_name_snapshot = variant.family.family_name if variant.family else variant.item_display_name
+    item.barcode_snapshot = variant.barcode
+    item.tally_stock_item_name_snapshot = variant.family.tally_stock_item_name if variant.family else None
+    item.mrp_snapshot = variant.mrp
+    item.rate_snapshot = variant.selling_price
+    item.source_type = "barcode"
+    item.is_manual_line = False
+
+
+def _apply_family_to_cart_item(item: PosCartItem, family: ProductFamily) -> None:
+    item_name = family.family_name or family.tally_stock_item_name or "Tally item"
+    tally_name = family.tally_stock_item_name or item_name
+    item.variant = None
+    item.variant_id = None
+    item.unit_price = None
+    item.item_name_snapshot = item_name
+    item.barcode_snapshot = ""
+    item.tally_stock_item_name_snapshot = tally_name
+    item.mrp_snapshot = None
+    item.rate_snapshot = None
+    item.source_type = "tally_item"
+    item.is_manual_line = False
+
+
+def _apply_manual_to_cart_item(
+    item: PosCartItem,
+    *,
+    item_name: str,
+    mrp: Decimal | None = None,
+    rate: Decimal | None = None,
+) -> None:
+    item.variant_id = None
+    item.unit_price = rate
+    item.item_name_snapshot = item_name
+    item.barcode_snapshot = ""
+    item.tally_stock_item_name_snapshot = ""
+    item.mrp_snapshot = mrp
+    item.rate_snapshot = rate
+    item.source_type = "manual"
+    item.is_manual_line = True
 
 
 def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
@@ -115,7 +230,7 @@ def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
     category = variant.family.category if variant and variant.family else ""
     template_name = variant.template.template_name if variant and variant.template else ""
     amount = rate * item.qty if rate is not None else None
-    source_type = item.source_type or ("barcode" if variant else "manual")
+    source_type = item.source_type or ("barcode" if variant else "tally_item")
     return {
         "id": item.id,
         "variant_id": item.variant_id,
@@ -143,7 +258,9 @@ def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
 def _empty_cart_payload() -> dict[str, object]:
     return {
         "cart_id": None,
-        "status": "active",
+        "status": ACTIVE_CART_STATUS,
+        "cart_mode": NORMAL_CART_MODE,
+        "source_sale_id": None,
         "items": [],
         "total": "0.00",
         "count": 0,
@@ -154,11 +271,7 @@ def _cart_payload(db: Session, cart: PosCart | None = None) -> dict[str, object]
     cart = cart or _find_active_cart(db)
     if not cart:
         return _empty_cart_payload()
-    items = db.execute(
-        select(PosCartItem)
-        .where(PosCartItem.cart_id == cart.id)
-        .order_by(PosCartItem.id)
-    ).scalars().all()
+    items = _cart_items(db, cart)
     total = Decimal("0")
     rows = []
     for item in items:
@@ -169,6 +282,8 @@ def _cart_payload(db: Session, cart: PosCart | None = None) -> dict[str, object]
     return {
         "cart_id": cart.id,
         "status": cart.status,
+        "cart_mode": cart.cart_mode or NORMAL_CART_MODE,
+        "source_sale_id": cart.source_sale_id,
         "items": rows,
         "total": _money(total),
         "count": sum(item.qty for item in items),
@@ -194,7 +309,6 @@ def _variant_search_payload(variant: LabelVariant, *, exact_barcode: bool = Fals
         "article_no": variant.article_no or "",
         "brand": variant.brand or "",
         "category": family.category if family else "",
-        "family_name": family.family_name if family else "",
         "tally_stock_item_name": family.tally_stock_item_name if family else "",
         "mrp": _money(variant.mrp),
         "selling_price": _money(variant.selling_price),
@@ -235,12 +349,6 @@ def pos_page(
 ):
     scanner, detected = scanner_url(request.headers.get("host"))
     phone_print, phone_print_detected = phone_print_url(request.headers.get("host"))
-    recent_sales = db.execute(
-        select(Sale)
-        .options(selectinload(Sale.items))
-        .order_by(Sale.created_at.desc(), Sale.id.desc())
-        .limit(20)
-    ).scalars().all()
     return templates.TemplateResponse(
         request,
         "pos.html",
@@ -254,16 +362,7 @@ def pos_page(
             "phone_print_ip_detected": phone_print_detected,
             "error": checkout_error,
             "initial_sale_id": sale_id,
-            "recent_sales": [
-                {
-                    "id": sale.id,
-                    "bill_number": sale.bill_number,
-                    "created_at": sale.created_at.isoformat() if sale.created_at else "",
-                    "total": _money(sale.total),
-                    "items": len(sale.items),
-                }
-                for sale in recent_sales
-            ],
+            "held_carts": _held_carts_payload(db),
         },
     )
 
@@ -314,6 +413,94 @@ def pos_cart(db: Session = Depends(get_db)):
     return payload
 
 
+@router.get("/pos/cart/held")
+def list_held_carts(db: Session = Depends(get_db)):
+    return {"ok": True, "items": _held_carts_payload(db)}
+
+
+@router.post("/pos/cart/hold")
+def hold_active_cart(db: Session = Depends(get_db)):
+    cart = _find_active_cart(db)
+    if not cart or not _cart_has_items(db, cart):
+        return _json_error("No active bill to hold.", status_code=400, status="empty")
+    if cart.cart_mode == SALE_COPY_CART_MODE or cart.source_sale_id:
+        return _json_error("Opened saved bills cannot be held. Checkout or discard this copy.", status_code=400, status="sale_copy")
+    cart.status = HELD_CART_STATUS
+    db.add(cart)
+    db.commit()
+    return {
+        "ok": True,
+        "status": "held",
+        "message": "Bill held.",
+        "held": _held_cart_payload(db, cart),
+        "cart": _empty_cart_payload(),
+        "held_carts": _held_carts_payload(db),
+    }
+
+
+@router.post("/pos/cart/held/{cart_id}/resume")
+def resume_held_cart(
+    cart_id: int,
+    discard_active: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    cart = db.get(PosCart, cart_id)
+    if not cart or cart.status != HELD_CART_STATUS:
+        return _json_error("Held bill was not found.", status_code=404, status="not_found")
+
+    active = _find_active_cart(db)
+    if active and active.id != cart.id:
+        if discard_active:
+            active.status = DISCARDED_CART_STATUS
+            db.add(active)
+        else:
+            _park_active_cart(db)
+
+    cart.status = ACTIVE_CART_STATUS
+    db.add(cart)
+    db.commit()
+    db.refresh(cart)
+    return {
+        "ok": True,
+        "status": "resumed",
+        "message": "Held bill resumed.",
+        "cart": _cart_payload(db, cart),
+        "held_carts": _held_carts_payload(db),
+    }
+
+
+@router.post("/pos/cart/held/{cart_id}/discard")
+def discard_held_cart(cart_id: int, db: Session = Depends(get_db)):
+    cart = db.get(PosCart, cart_id)
+    if not cart or cart.status != HELD_CART_STATUS:
+        return _json_error("Held bill was not found.", status_code=404, status="not_found")
+    cart.status = DISCARDED_CART_STATUS
+    db.add(cart)
+    db.commit()
+    return {
+        "ok": True,
+        "status": "discarded",
+        "message": "Held bill discarded.",
+        "held_carts": _held_carts_payload(db),
+    }
+
+
+@router.post("/pos/cart/active/discard")
+def discard_active_cart(db: Session = Depends(get_db)):
+    cart = _find_active_cart(db)
+    if cart:
+        cart.status = DISCARDED_CART_STATUS
+        db.add(cart)
+        db.commit()
+    return {
+        "ok": True,
+        "status": "discarded",
+        "message": "Active bill discarded.",
+        "cart": _empty_cart_payload(),
+        "held_carts": _held_carts_payload(db),
+    }
+
+
 @router.post("/pos/cart/load-sale/{sale_id}")
 def load_sale_into_pos_cart(sale_id: int, db: Session = Depends(get_db)):
     sale = db.scalar(
@@ -324,15 +511,35 @@ def load_sale_into_pos_cart(sale_id: int, db: Session = Depends(get_db)):
     if not sale:
         return _json_error("Saved bill was not found.", status_code=404, status="not_found")
 
-    cart = _active_cart(db)
-    current_items = db.execute(
-        select(PosCartItem).where(PosCartItem.cart_id == cart.id)
-    ).scalars().all()
-    for item in current_items:
-        db.delete(item)
+    active = _find_active_cart(db)
+    if (
+        active
+        and active.cart_mode == SALE_COPY_CART_MODE
+        and active.source_sale_id == sale.id
+    ):
+        return {
+            "ok": True,
+            "status": "loaded",
+            "message": "Saved bill is already open in POS.",
+            "source_sale_id": sale.id,
+            "bill_number": sale.bill_number,
+            "held_active_cart_id": None,
+            "cart": _cart_payload(db, active),
+            "held_carts": _held_carts_payload(db),
+        }
+
+    held_active = _park_active_cart(db)
+    cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=SALE_COPY_CART_MODE, source_sale_id=sale.id)
+    db.add(cart)
+    db.flush()
 
     for sale_item in sale.items:
         rate = sale_item.rate
+        source_type = "barcode" if sale_item.label_variant_id else "tally_item"
+        is_manual_line = False
+        if not sale_item.label_variant_id and not (sale_item.tally_stock_item_name or "").strip():
+            source_type = "manual"
+            is_manual_line = True
         cart_item = PosCartItem(
             cart_id=cart.id,
             variant_id=sale_item.label_variant_id,
@@ -343,19 +550,22 @@ def load_sale_into_pos_cart(sale_id: int, db: Session = Depends(get_db)):
             tally_stock_item_name_snapshot=sale_item.tally_stock_item_name,
             mrp_snapshot=sale_item.mrp,
             rate_snapshot=rate,
-            source_type="barcode" if sale_item.label_variant_id else "tally_item",
-            is_manual_line=False,
+            source_type=source_type,
+            is_manual_line=is_manual_line,
         )
         db.add(cart_item)
 
     db.commit()
+    db.refresh(cart)
     return {
         "ok": True,
         "status": "loaded",
-        "message": "Saved bill loaded into POS.",
+        "message": "Saved bill copied into POS.",
         "source_sale_id": sale.id,
         "bill_number": sale.bill_number,
+        "held_active_cart_id": held_active.id if held_active else None,
         "cart": _cart_payload(db, cart),
+        "held_carts": _held_carts_payload(db),
     }
 
 
@@ -368,6 +578,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
     lowered = term.lower()
     like = f"%{lowered}%"
     clean_barcode = normalize_barcode(term)
+    barcode_like = bool(clean_barcode) and len(clean_barcode) >= 4 and clean_barcode.replace("-", "").isalnum()
     variants = db.execute(
         select(LabelVariant)
         .outerjoin(LabelVariant.family)
@@ -375,6 +586,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         .where(LabelVariant.status == "active")
         .where(
             or_(
+                LabelVariant.barcode == clean_barcode,
                 func.lower(LabelVariant.barcode).like(like),
                 func.lower(LabelVariant.item_display_name).like(like),
                 func.lower(LabelVariant.article_no).like(like),
@@ -401,6 +613,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
 
     def rank(variant: LabelVariant) -> tuple[int, str]:
         exact_barcode = clean_barcode and variant.barcode == clean_barcode
+        barcode_start = clean_barcode and variant.barcode and variant.barcode.startswith(clean_barcode)
         starts = any(
             (value or "").lower().startswith(lowered)
             for value in (
@@ -410,10 +623,12 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
                 variant.family.family_name if variant.family else "",
             )
         )
-        return (0 if exact_barcode else 1 if starts else 2, variant.item_display_name.lower())
+        return (
+            0 if exact_barcode else 1 if barcode_start else 2 if starts else 3,
+            variant.item_display_name.lower(),
+        )
 
     variants.sort(key=rank)
-    variant_family_ids = {variant.family_id for variant in variants if variant.family_id}
 
     def family_rank(family: ProductFamily) -> tuple[int, str]:
         starts = any(
@@ -423,25 +638,28 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         return (1 if starts else 3, (family.family_name or family.tally_stock_item_name or "").lower())
 
     families.sort(key=family_rank)
-    family_results = []
+    variant_results = [
+        _variant_search_payload(variant, exact_barcode=bool(clean_barcode and variant.barcode == clean_barcode))
+        for variant in variants[:12]
+    ]
+    shown_family_ids = {variant.family_id for variant in variants[:12] if variant.family_id}
+    family_results: list[dict[str, object]] = []
     for family in families:
         if len(family_results) >= 12:
             break
-        if family.id in variant_family_ids and not family.tally_stock_item_name:
+        if family.id in shown_family_ids:
             continue
         family_results.append(_family_search_payload(family))
 
-    results = family_results[:12]
-    if len(results) < 12:
-        for variant in variants[:12]:
-            if len(results) >= 12:
-                break
-            results.append(
-                _variant_search_payload(variant, exact_barcode=bool(clean_barcode and variant.barcode == clean_barcode))
-            )
+    if barcode_like:
+        results = variant_results + family_results
+    else:
+        exact_results = [result for result in variant_results if result["exact_barcode"]]
+        non_exact_variants = [result for result in variant_results if not result["exact_barcode"]]
+        results = exact_results + family_results + non_exact_variants
     return {
         "ok": True,
-        "items": results,
+        "items": results[:12],
     }
 
 
@@ -451,14 +669,14 @@ def pos_checkout(
     notes: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    payment = (payment_mode or "cash").strip().lower() or "cash"
+    if payment not in ALLOWED_PAYMENT_MODES:
+        return RedirectResponse(f"/pos?{urlencode({'checkout_error': 'Choose Cash, UPI, or Card payment.'})}", status_code=303)
     cart = _find_active_cart(db)
     if not cart:
-        latest_sale = db.scalar(select(Sale).order_by(Sale.id.desc()))
-        if latest_sale:
-            return RedirectResponse(f"/sales/{latest_sale.id}", status_code=303)
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': 'No active cart to checkout.'})}", status_code=303)
     try:
-        sale = checkout_cart(db, cart, payment_mode=payment_mode, notes=notes)
+        sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
     except CheckoutError as exc:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': str(exc)})}", status_code=303)
     return RedirectResponse(f"/sales/{sale.id}", status_code=303)
@@ -614,11 +832,16 @@ def add_tally_item_to_cart(family_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/pos/cart/manual/add")
+async def add_manual_item_to_cart(request: Request, db: Session = Depends(get_db)):
+    return _json_error("Manual POS lines are deprecated. Scan a barcode or search a Tally item.", status_code=410, status="gone")
+
+
 @router.post("/pos/cart/items/{item_id}/update")
 async def update_pos_item(item_id: int, request: Request, db: Session = Depends(get_db)):
-    item = db.get(PosCartItem, item_id)
-    if not item or not item.cart or item.cart.status != "active":
-        return _json_error("Cart item was not found.", status_code=404, status="not_found")
+    item = _active_cart_item_or_error(db, item_id)
+    if isinstance(item, JSONResponse):
+        return item
     try:
         payload = await request.json()
     except Exception:
@@ -636,7 +859,7 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
     if "item_name" in payload:
         item_name = str(payload.get("item_name", "")).strip()
         if not item_name:
-          return _json_error("Item name cannot be empty.", status_code=400, status="invalid_item_name")
+            return _json_error("Item name cannot be empty.", status_code=400, status="invalid_item_name")
         item.item_name_snapshot = item_name
 
     if "mrp" in payload:
@@ -663,11 +886,116 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
     return _cart_payload(db, item.cart)
 
 
+def _duplicate_variant_item(
+    db: Session,
+    *,
+    cart_id: int,
+    variant_id: int,
+    exclude_item_id: int,
+) -> PosCartItem | None:
+    return db.scalar(
+        select(PosCartItem)
+        .where(PosCartItem.cart_id == cart_id)
+        .where(PosCartItem.id != exclude_item_id)
+        .where(PosCartItem.variant_id == variant_id)
+        .order_by(PosCartItem.id)
+    )
+
+
+def _duplicate_tally_item(
+    db: Session,
+    *,
+    cart_id: int,
+    tally_name: str,
+    exclude_item_id: int,
+) -> PosCartItem | None:
+    return db.scalar(
+        select(PosCartItem)
+        .where(PosCartItem.cart_id == cart_id)
+        .where(PosCartItem.id != exclude_item_id)
+        .where(PosCartItem.variant_id.is_(None))
+        .where(PosCartItem.source_type == "tally_item")
+        .where(PosCartItem.tally_stock_item_name_snapshot == tally_name)
+        .order_by(PosCartItem.id)
+    )
+
+
+def _merge_replaced_item(db: Session, *, target: PosCartItem, duplicate: PosCartItem, replacement_rate: Decimal | None = None) -> PosCartItem:
+    duplicate.qty = max(1, int(duplicate.qty or 1)) + max(1, int(target.qty or 1))
+    rate = duplicate.rate_snapshot if duplicate.rate_snapshot is not None else duplicate.unit_price
+    if (rate is None or rate <= 0) and replacement_rate is not None and replacement_rate > 0:
+        duplicate.rate_snapshot = replacement_rate
+        duplicate.unit_price = replacement_rate
+    db.add(duplicate)
+    db.delete(target)
+    return duplicate
+
+
+@router.post("/pos/cart/items/{item_id}/replace")
+async def replace_pos_item(item_id: int, request: Request, db: Session = Depends(get_db)):
+    item = _active_cart_item_or_error(db, item_id)
+    if isinstance(item, JSONResponse):
+        return item
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    result_type = str(payload.get("result_type", "")).strip()
+    result_id = payload.get("id")
+    merged_item: PosCartItem | None = None
+    if result_type == "barcode":
+        variant = db.get(LabelVariant, result_id)
+        if not variant or variant.status != "active":
+            return _json_error("Barcode item was not found.", status_code=404, status="not_found")
+        if item.variant_id == variant.id:
+            pass
+        else:
+            duplicate = _duplicate_variant_item(db, cart_id=item.cart_id, variant_id=variant.id, exclude_item_id=item.id)
+            if duplicate:
+                merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate, replacement_rate=variant.selling_price)
+            else:
+                _apply_variant_to_cart_item(item, variant)
+    elif result_type == "tally_item":
+        family = db.get(ProductFamily, result_id)
+        if not family or not family.active_status:
+            return _json_error("Tally item was not found.", status_code=404, status="not_found")
+        tally_name = family.tally_stock_item_name or family.family_name or "Tally item"
+        if item.source_type == "tally_item" and item.tally_stock_item_name_snapshot == tally_name:
+            pass
+        else:
+            duplicate = _duplicate_tally_item(db, cart_id=item.cart_id, tally_name=tally_name, exclude_item_id=item.id)
+            if duplicate:
+                merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate)
+            else:
+                _apply_family_to_cart_item(item, family)
+    else:
+        return _json_error("Choose a valid item to replace this line.", status_code=400, status="invalid_item")
+
+    if merged_item:
+        db.add(merged_item)
+    else:
+        db.add(item)
+    db.commit()
+    if merged_item:
+        db.refresh(merged_item)
+        payload = _cart_payload(db, merged_item.cart)
+        payload["merged_item_id"] = merged_item.id
+        payload["item"] = _cart_item_payload(merged_item)
+        payload["status"] = "merged"
+        payload["message"] = "Merged with existing line."
+        return payload
+    db.refresh(item)
+    payload = _cart_payload(db, item.cart)
+    payload["item"] = _cart_item_payload(item)
+    return payload
+
+
 @router.post("/pos/cart/items/{item_id}/increase")
 def increase_pos_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.get(PosCartItem, item_id)
-    if not item:
-        return _json_error("Cart item was not found.", status_code=404, status="not_found")
+    item = _active_cart_item_or_error(db, item_id)
+    if isinstance(item, JSONResponse):
+        return item
     cart = item.cart
     item.qty += 1
     db.add(item)
@@ -677,9 +1005,9 @@ def increase_pos_item(item_id: int, db: Session = Depends(get_db)):
 
 @router.post("/pos/cart/items/{item_id}/decrease")
 def decrease_pos_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.get(PosCartItem, item_id)
-    if not item:
-        return _json_error("Cart item was not found.", status_code=404, status="not_found")
+    item = _active_cart_item_or_error(db, item_id)
+    if isinstance(item, JSONResponse):
+        return item
     cart = item.cart
     item.qty = max(1, item.qty - 1)
     db.add(item)
@@ -689,9 +1017,9 @@ def decrease_pos_item(item_id: int, db: Session = Depends(get_db)):
 
 @router.post("/pos/cart/items/{item_id}/remove")
 def remove_pos_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.get(PosCartItem, item_id)
-    if not item:
-        return _json_error("Cart item was not found.", status_code=404, status="not_found")
+    item = _active_cart_item_or_error(db, item_id)
+    if isinstance(item, JSONResponse):
+        return item
     cart = item.cart
     db.delete(item)
     db.commit()
@@ -703,6 +1031,10 @@ def clear_pos_cart(db: Session = Depends(get_db)):
     cart = _find_active_cart(db)
     if not cart:
         return _empty_cart_payload()
+    if cart.cart_mode == SALE_COPY_CART_MODE:
+        cart.cart_mode = NORMAL_CART_MODE
+        cart.source_sale_id = None
+        db.add(cart)
     items = db.execute(
         select(PosCartItem).where(PosCartItem.cart_id == cart.id)
     ).scalars().all()
