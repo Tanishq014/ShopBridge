@@ -57,6 +57,55 @@ class PricingSettings:
     mrp_truncate_decimal: bool
 
 
+OPTIONAL_TEMPLATE_FIELDS_KEY = "optional_template_fields"
+
+# The user requested fields other than billing item, selling/code, mrp to be optional by default.
+DEFAULT_OPTIONAL_TEMPLATE_FIELDS = {
+    "article",
+    "article_no",
+    "brand",
+    "item_display_name",
+    "design",
+    "size",
+    "batch_no",
+    "expiry",
+    "margin_percent",
+    "barcode",
+    "tally_item_name"
+}
+
+
+OPTIONAL_FIELD_ALIASES = {
+    "article": {"article", "article_no"},
+    "article_no": {"article", "article_no"},
+    "item_display_name": {"item_display_name", "design"},
+    "design": {"item_display_name", "design"},
+    "selling_price": {"selling_price", "rate"},
+    "rate": {"selling_price", "rate"},
+    "batch_no": {"batch_no", "shade", "shade_color"},
+    "shade": {"batch_no", "shade", "shade_color"},
+    "shade_color": {"batch_no", "shade", "shade_color"},
+}
+
+@dataclass(frozen=True)
+class TemplateFieldSettings:
+    optional_fields: set[str]
+
+    def is_optional(self, field_name: str) -> bool:
+        clean_name = field_name.strip().lower()
+        if clean_name in self.optional_fields:
+            return True
+        aliases = OPTIONAL_FIELD_ALIASES.get(clean_name, set())
+        return bool(aliases & self.optional_fields)
+
+    @property
+    def resolved_optional_fields(self) -> set[str]:
+        resolved = set(self.optional_fields)
+        for field in self.optional_fields:
+            resolved.update(OPTIONAL_FIELD_ALIASES.get(field, set()))
+        return resolved
+
+
 @dataclass(frozen=True)
 class PriceCodeSettings:
     digit_to_code: dict[str, str]
@@ -161,8 +210,32 @@ def ensure_default_settings() -> None:
     if ALLOW_PRICE_CODE_EXTRACTION_KEY not in settings:
         settings[ALLOW_PRICE_CODE_EXTRACTION_KEY] = "true"
         changed = True
+    if OPTIONAL_TEMPLATE_FIELDS_KEY not in settings:
+        settings[OPTIONAL_TEMPLATE_FIELDS_KEY] = json.dumps(list(DEFAULT_OPTIONAL_TEMPLATE_FIELDS))
+        changed = True
     if changed:
         _write_settings(settings)
+
+
+def get_template_field_settings() -> TemplateFieldSettings:
+    ensure_default_settings()
+    settings = _read_settings()
+    raw = settings.get(OPTIONAL_TEMPLATE_FIELDS_KEY, "[]")
+    try:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, list):
+            parsed = []
+    except (TypeError, json.JSONDecodeError):
+        parsed = []
+    return TemplateFieldSettings(optional_fields={str(item).strip().lower() for item in parsed if item})
+
+
+def save_template_field_settings(*, optional_fields: list[str]) -> TemplateFieldSettings:
+    settings = _read_settings()
+    clean_fields = list({str(f).strip().lower() for f in optional_fields if f})
+    settings[OPTIONAL_TEMPLATE_FIELDS_KEY] = json.dumps(clean_fields)
+    _write_settings(settings)
+    return get_template_field_settings()
 
 
 def get_bartender_settings() -> BarTenderSettings:
