@@ -1649,7 +1649,7 @@ tbody tr:last-child td {
 
 .pos-bill-panel form {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .pos-summary-grid {
@@ -1714,10 +1714,13 @@ tbody tr:last-child td {
 
 .pos-held-panel {
   border-top: 1px solid var(--line);
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: 4px;
+  margin-top: 0;
+  padding-top: 6px;
 }
 
 .pos-held-head,
@@ -1740,9 +1743,12 @@ tbody tr:last-child td {
 }
 
 .pos-held-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 120px;
   gap: 6px;
-  max-height: 150px;
+  max-height: none;
   overflow-y: auto;
   position: relative;
 }
@@ -1764,6 +1770,7 @@ tbody tr:last-child td {
   gap: 2px;
   padding: 7px 8px;
   text-align: left;
+  min-height: 54px;
 }
 
 .pos-held-row strong {
@@ -1791,8 +1798,8 @@ tbody tr:last-child td {
 }
 
 .pos-held-row.opened {
-  background: #f0f7ff;
-  border-left: 4px solid var(--primary);
+  background: #eff6ff;
+  border-left: 4px solid #1f6feb;
 }
 
 .pos-help-bar {
@@ -3089,7 +3096,10 @@ body.pos-page .pos-normal-mode {
 }
 
 .pos-normal-mode {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 
 .pos-search-mode {

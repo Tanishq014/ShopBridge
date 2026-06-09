@@ -101,26 +101,26 @@
             <tfoot>
               <tr class="pos-add-row">
                 <td class="pos-line-no">+</td>
-                <td class="pos-add-cell">
+                <td class="pos-add-cell" colspan="4">
                   <div class="pos-search-wrap">
                     <input
                       id="posSearchInput"
                       autocomplete="off"
                       inputmode="text"
-                      placeholder="Scan / type item..."
+                      placeholder="Scan barcode / search item"
                       spellcheck="false"
                     >
                   </div>
                 </td>
-                <td></td>
-                <td></td>
-                <td></td>
                 <td class="pos-add-qty">1</td>
                 <td></td>
-                <td><button class="button" type="button" id="addItemButton" style="width: 100%;">Add</button></td>
+                <td><button class="button" type="button" id="addItemButton" style="width: 100%; padding: 4px; min-width: 40px; font-size: 13px;">Add</button></td>
               </tr>
             </tfoot>
           </table>
+          <div id="posEmptyHelper" style="text-align: center; color: var(--muted); padding: 40px; font-weight: 600; font-size: 13px;">
+            Scan barcode or type item name to add more items
+          </div>
         </div>
       </div>
 
@@ -141,43 +141,46 @@
               <strong id="cartTotal">Rs. 0.00</strong>
             </div>
 
+            <div style="display: contents;" id="checkoutFormExtra">
+              <label class="pos-summary-field" style="margin-bottom: 8px;">
+                Payment
+                <select name="payment_mode" id="paymentMode" form="checkoutForm">
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                </select>
+              </label>
+            </div>
+
             <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
               Checkout - Rs. 0.00
             </button>
           </form>
 
-          <button class="button pos-clear-button" type="button" id="clearCartButton">Clear Cart</button>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; margin-bottom: 8px;">
+            <button class="button" type="button" id="holdBillButton">Hold Bill</button>
+            <button class="button danger outline" type="button" id="clearCartButton">Clear</button>
+          </div>
+
+          <label class="pos-summary-field" style="margin-bottom: 12px;">
+            Notes
+            <input name="notes" id="checkoutNotes" placeholder="Optional" form="checkoutForm">
+          </label>
 
           <section class="pos-held-panel" aria-labelledby="heldBillsTitle">
             <div class="pos-held-head">
               <div>
-                <h3 id="heldBillsTitle">Recent Bills</h3>
-                <span id="heldBillCount">0 held</span>
+                <h3 id="heldBillsTitle" style="margin-bottom: 2px;">Recent Bills</h3>
+                <span id="heldBillCount" style="font-size: 11px; color: var(--muted); font-weight: 600;">0 held / 0 previous</span>
               </div>
-              <button class="button small" type="button" id="holdBillButton">Hold</button>
             </div>
             <div class="pos-held-list" id="heldBillList" tabindex="-1">
               <p>No bills.</p>
             </div>
             <div class="pos-held-actions">
-              <button class="button small danger" type="button" id="discardHeldBillButton" disabled>Discard</button>
+              <button class="button small danger outline" type="button" id="discardHeldBillButton" disabled>Discard Selected</button>
             </div>
           </section>
-
-          <form id="checkoutFormExtra" style="display: contents;">
-            <label class="pos-summary-field">
-              Payment
-              <select name="payment_mode" id="paymentMode" form="checkoutForm">
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="card">Card</option>
-              </select>
-            </label>
-            <label class="pos-summary-field">
-              Notes
-              <input name="notes" id="checkoutNotes" placeholder="Optional" form="checkoutForm">
-            </label>
-          </form>
         </div>
 
         <div class="pos-search-mode" id="posSearchPanelRight" hidden>
@@ -207,7 +210,7 @@
     </dialog>
 
     <footer class="pos-help-bar" id="posHelpBar" hidden>
-      F2 Item | Enter Add/Select | Up/Down Rows/Search | Left/Right Cells | +/- Qty | Del Remove | F4 Pay | Enter Resume Held | Ctrl+Enter Checkout | Esc Back
+      F2 Item | Enter Add/Select | Up/Down Rows/Search | Left/Right Cells | +/- Qty | Del Remove | F4 Pay | PgUp/PgDn Bills | Enter Open Bill | Ctrl+Enter Checkout | Esc Back
     </footer>
   </section>
 
@@ -376,7 +379,7 @@
         state.loadedSaleCheckoutConfirmed = false;
         state.returnHeldCartId = null;
       }
-      searchInput.placeholder = "Scan / type item...";
+      searchInput.placeholder = "Scan barcode / search item";
     }
 
     function markLoadedSaleDirty() {
@@ -733,7 +736,7 @@
       if (!state.billNavItems.length) {
         state.billNavIndex = -1;
         state.heldSelectionActive = false;
-        heldBillCount.textContent = "0 items";
+        heldBillCount.textContent = "0 held / 0 previous";
         heldBillList.innerHTML = "<p>No bills found.</p>";
         discardHeldBillButton.disabled = true;
         return;
@@ -744,20 +747,39 @@
           state.billNavIndex = 0;
         }
       }
+      
       const heldCount = state.billNavItems.filter(i => i.type === "held").length;
-      heldBillCount.textContent = `${heldCount} held / ${state.billNavItems.length - heldCount} previous`;
+      const previousCount = state.billNavItems.length - heldCount;
+      heldBillCount.textContent = `${heldCount} held / ${previousCount} previous`;
+      
       heldBillList.innerHTML = "";
       
       let normalHeldDisplayNo = 0;
+      let lastSection = null;
       
       state.billNavItems.forEach((item, index) => {
+        const isPrevious = item.type === "recent_sale" || item.type === "sale";
+        const currentSection = isPrevious ? "Previous Bills" : "Held Bills";
+        
+        if (currentSection !== lastSection) {
+          const header = document.createElement("div");
+          header.style.fontSize = "12px";
+          header.style.fontWeight = "800";
+          header.style.color = "var(--muted)";
+          header.style.margin = "12px 4px 6px 4px";
+          header.style.textTransform = "uppercase";
+          header.textContent = currentSection;
+          heldBillList.appendChild(header);
+          lastSection = currentSection;
+        }
+
         const row = document.createElement("button");
         row.type = "button";
         
         const isSelected = index === state.billNavIndex && state.heldSelectionActive;
         row.className = `pos-held-row${isSelected ? " selected" : ""}`;
         row.dataset.navIndex = index;
-        
+
         // Top row: badge + label + total, all in one flex line
         const top = document.createElement("div");
         top.className = "pos-held-row-top";
@@ -828,8 +850,17 @@
 
     function scrollSelectedBillNavIntoView() {
       const selected = heldBillList.querySelector(".pos-held-row.selected");
-      if (selected) {
-        selected.scrollIntoView({ block: "nearest" });
+      if (!selected) return;
+
+      const listTop = heldBillList.scrollTop;
+      const listBottom = listTop + heldBillList.clientHeight;
+      const itemTop = selected.offsetTop - heldBillList.offsetTop;
+      const itemBottom = itemTop + selected.offsetHeight;
+
+      if (itemTop < listTop) {
+        heldBillList.scrollTop = Math.max(0, itemTop - 6);
+      } else if (itemBottom > listBottom) {
+        heldBillList.scrollTop = itemBottom - heldBillList.clientHeight + 6;
       }
     }
 
@@ -852,9 +883,22 @@
         }
         
         if (isOpened) {
-          row.classList.add("opened");
+          if (!row.classList.contains("opened")) {
+            row.classList.add("opened");
+            const openLabel = document.createElement("div");
+            openLabel.className = "opened-bill-label";
+            openLabel.textContent = "Viewing this bill";
+            openLabel.style.fontSize = "10px";
+            openLabel.style.fontWeight = "800";
+            openLabel.style.color = "#1f6feb";
+            openLabel.style.textTransform = "uppercase";
+            openLabel.style.marginBottom = "2px";
+            row.prepend(openLabel);
+          }
         } else {
           row.classList.remove("opened");
+          const lbl = row.querySelector(".opened-bill-label");
+          if (lbl) lbl.remove();
         }
       });
     }
@@ -1362,6 +1406,11 @@
       
       clearCartButton.disabled = items.length === 0;
       holdBillButton.disabled = items.length === 0;
+      
+      const posEmptyHelper = document.getElementById("posEmptyHelper");
+      if (posEmptyHelper) {
+        posEmptyHelper.hidden = items.length > 0;
+      }
 
       let restoreItemId = null;
       let restoreField = null;
