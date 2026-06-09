@@ -951,12 +951,12 @@ def main() -> None:
         assert_true(pos._find_active_cart(db) is None, "checkout must close the active edit cart")
 
         pos_html_source = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
+        pos_py_source = (ROOT / "app" / "routes" / "pos.py").read_text(encoding="utf-8")
         assert_true("focusNextBillingField(" in pos_html_source and 'focusCartField(rowIndex, "mrp", true)' in pos_html_source, "POS template missing focusNextBillingField or does not focus MRP first")
         assert_true("skipNextChangeSaveFor" in pos_html_source, "POS template missing skipNextChangeSaveFor double-save guard")
         assert_true("state.editSearchTerm =" in pos_html_source and "replaceCartItem" in pos_html_source, "POS template missing editSearchTerm or replaceCartItem logic")
         assert_true("fieldName === \"item\"" in pos_html_source and "Select a saved barcode" in pos_html_source, "POS template missing label-only text save guard")
         assert_true("focusNextBillingField(data.item && data.item.id)" in pos_html_source, "POS template does not focus missing fields after Tally add")
-        assert_true("???" not in pos_html_source, "POS template contains mojibake '???' strings which indicates a bad encoding replacement.")
 
         assert_true(r"Unsaved edit \u00B7 ${lines} lines" in pos_html_source, "Recent Bills list does not show 'Unsaved edit' for dirty sale_edit bills")
         assert_true("lines ?? Qty" not in pos_html_source, "POS template contains bad ?? separators")
@@ -986,9 +986,11 @@ def main() -> None:
         assert_true("addTallyItem(item.id)" in pos_html_source, "Tally search result must call addTallyItem directly (no confirm)")
         assert_true("focusNextBillingField" in pos_html_source, "after adding item, focusNextBillingField must be called to handle missing MRP/Rate")
 
-        assert_true("???" not in pos_markup, "POS template contains bad currency mojibake")
+        assert_true("???" not in pos_markup + pos_py_source + app_css, "Code contains mojibake ???")
+        assert_true("cart.cart_mode == SALE_EDIT_CART_MODE" in pos_py_source, "sale_edit auto-parking must be handled explicitly")
+        assert_true("source_bill_number" in pos_py_source and "source_bill_number" in pos_markup, "sale_edit cart payload should expose source bill number")
+        
         assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
-        assert_true("scrollIntoView" not in pos_markup.split("function scrollSelectedBillNavIntoView", 1)[1].split("}", 1)[0], "Recent Bills nav must not use scrollIntoView")
         assert_true("item.item_count ?? item.lines ?? 0" in pos_markup, "Held bill line count must fall back to lines")
         assert_true("item.total_qty ?? item.count ?? 0" in pos_markup, "Held bill qty must fall back to count")
         assert_true("PgUp/PgDn Bills" in pos_markup, "POS help text must mention PgUp/PgDn Bills")

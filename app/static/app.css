@@ -1643,8 +1643,7 @@ tbody tr:last-child td {
   display: grid;
   gap: 12px;
   padding: 14px;
-  position: sticky;
-  top: 16px;
+  /* position: sticky removed - flex layout controls height now */
 }
 
 .pos-bill-panel form {
@@ -1791,6 +1790,7 @@ tbody tr:last-child td {
   max-height: none;
   overflow-y: auto;
   position: relative;
+  padding-bottom: 6px; /* stop last card clipping at scroll edge */
 }
 
 .pos-held-list p {
@@ -2582,6 +2582,10 @@ tbody tr:last-child td {
 .pos-grid-shell {
   gap: 8px;
   padding-bottom: 0;
+  flex: 1;       /* fill the .page flex column */
+  min-height: 0; /* allow flex shrink below intrinsic */
+  display: flex;
+  flex-direction: column;
 }
 
 .pos-compact-header {
@@ -2606,10 +2610,10 @@ tbody tr:last-child td {
 }
 
 .pos-grid-workspace {
-  align-items: start;
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) 286px;
+  /* grid-template-rows handled by late override below */
 }
 
 .pos-grid-panel {
@@ -2618,6 +2622,7 @@ tbody tr:last-child td {
   border-radius: 8px;
   min-width: 0;
   overflow: hidden;
+  align-self: start; /* don't stretch - only right panel fills full height */
 }
 
 .pos-grid-title {
@@ -2928,8 +2933,7 @@ tbody tr:last-child td {
 .pos-grid-summary {
   gap: 10px;
   padding: 10px;
-  position: sticky;
-  top: 10px;
+  /* position: sticky removed - .pos-bill-panel flex controls height */
 }
 
 .pos-summary-mode,
@@ -3039,17 +3043,15 @@ tbody tr:last-child td {
 #posRoot:fullscreen {
   background: var(--bg);
   max-width: none;
-  overflow: auto;
+  /* overflow: hidden - only .pos-held-list scrolls, not the whole root */
+  overflow: hidden;
   padding: 12px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-#posRoot:fullscreen .pos-table-wrap {
-  max-height: calc(100vh - 180px);
-}
-
-#posRoot:fullscreen .pos-search-results {
-  max-height: calc(100vh - 295px);
-}
+/* Max-heights handled natively by CSS Grid stretch */
 
 
 .pos-modal {
@@ -3126,13 +3128,17 @@ body.pos-page .pos-normal-mode {
 .pos-grid-workspace {
   grid-template-columns: minmax(0, 1fr) 360px;
   min-height: 0;
+  flex: 1;            /* stretch to fill .pos-grid-shell flex column */
+  align-items: stretch; /* both panels fill the row height */
 }
 
 .pos-bill-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: hidden; /* clips children; .pos-held-list scrolls internally */
+  position: static; /* cancel any sticky from earlier rules */
+  height: 100%; /* fill grid cell fully */
 }
 
 .pos-normal-mode {
@@ -3140,6 +3146,7 @@ body.pos-page .pos-normal-mode {
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  overflow: hidden; /* ensures .pos-held-panel cannot push this outside .pos-bill-panel */
 }
 
 .pos-search-mode {

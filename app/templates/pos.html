@@ -434,8 +434,8 @@
         }
         state.loadedSaleDirty = false;
         state.selectedIndex = -1;
-        await loadBillNavItems();
         renderCart(data.cart);
+        await loadBillNavItems();
         const hasManual = (data.cart.items || []).some(item => item.is_manual_line);
         if (hasManual) {
           setStatus("This saved bill has old manual lines. Replace them with barcode/Tally items before checkout.", "warning");
@@ -846,17 +846,8 @@
 
     function scrollSelectedBillNavIntoView() {
       const selected = heldBillList.querySelector(".pos-held-row.selected");
-      if (!selected) return;
-
-      const listTop = heldBillList.scrollTop;
-      const listBottom = listTop + heldBillList.clientHeight;
-      const itemTop = selected.offsetTop - heldBillList.offsetTop;
-      const itemBottom = itemTop + selected.offsetHeight;
-
-      if (itemTop < listTop) {
-        heldBillList.scrollTop = Math.max(0, itemTop - 6);
-      } else if (itemBottom > listBottom) {
-        heldBillList.scrollTop = itemBottom - heldBillList.clientHeight + 6;
+      if (selected) {
+        selected.scrollIntoView({block: "nearest", inline: "nearest"});
       }
     }
 
@@ -879,22 +870,9 @@
         }
         
         if (isOpened) {
-          if (!row.classList.contains("opened")) {
-            row.classList.add("opened");
-            const openLabel = document.createElement("div");
-            openLabel.className = "opened-bill-label";
-            openLabel.textContent = "Viewing this bill";
-            openLabel.style.fontSize = "10px";
-            openLabel.style.fontWeight = "800";
-            openLabel.style.color = "#1f6feb";
-            openLabel.style.textTransform = "uppercase";
-            openLabel.style.marginBottom = "2px";
-            row.prepend(openLabel);
-          }
+          row.classList.add("opened");
         } else {
           row.classList.remove("opened");
-          const lbl = row.querySelector(".opened-bill-label");
-          if (lbl) lbl.remove();
         }
       });
     }
@@ -919,14 +897,29 @@
           return (b.id || 0) - (a.id || 0);
         });
 
-        if (state.billNavIndex === -1 && state.cart && state.cart.cart_id) {
+        // After rebuilding the list, find where the currently open bill sits so we keep
+        // the blue highlight on the correct row even if the list shifted (e.g. holding
+        // a bill moves it, resuming a bill puts it back).
+        if (state.cart && state.cart.cart_id) {
           const activeIndex = combined.findIndex(item => {
-            const isSaleEdit = item.type === "recent_sale" && state.cart.cart_mode === "sale_edit" && state.loadedSaleBillNumber === item.bill_number;
-            return (state.cart.status === "active" && state.cart.cart_id === item.id && item.type === "held") || isSaleEdit;
+            // Match a normal held cart that is somehow active (edge case)
+            if (item.type === "held" && item.id === state.cart.cart_id) return true;
+            // Match an active sale_edit cart to its original sale row
+            if (item.type === "sale" && state.cart.cart_mode === "sale_edit" &&
+                item.id === state.cart.source_sale_id) return true;
+            return false;
           });
+          
           if (activeIndex >= 0) {
             state.billNavIndex = activeIndex;
+          } else {
+            // Active cart is empty or not in the list (e.g. a new fresh bill)
+            state.billNavIndex = -1;
+            state.heldSelectionActive = false;
           }
+        } else {
+          state.billNavIndex = -1;
+          state.heldSelectionActive = false;
         }
 
         renderBillNavItems(combined);
@@ -978,9 +971,23 @@
           throw new Error(data.message || "Could not resume held bill.");
         }
         history.replaceState({}, document.title, window.location.pathname);
-        setPreviewState(false, null);
         state.selectedIndex = -1;
+
+        // For sale_edit held carts, restore edit mode state before rendering.
+        if (data.cart && data.cart.cart_mode === "sale_edit" && data.cart.source_sale_id) {
+          state.loadedSaleDirty = false;
+          state.loadedSaleBillNumber = data.cart.source_bill_number || "";
+          setPreviewState(true, data.cart.source_sale_id);
+          state.openedSaleMode = "edit";
+          state.returnHeldCartId = null;
+        } else {
+          setPreviewState(false, null);
+        }
+
         renderCart(data.cart);
+        // Reset nav index - list will change after loadBillNavItems, let it recalculate.
+        state.billNavIndex = -1;
+        state.heldSelectionActive = false;
         await loadBillNavItems();
         setStatus("Held bill resumed.", "success");
         focusItemInput(false);
@@ -1076,6 +1083,10 @@
           }
 
           async function onClick(event) {
+            if (event.target === dialog) {
+              finish(false);
+              return;
+            }
             const action = event.target && event.target.value;
             if (!action) return;
             
@@ -2383,6 +2394,23 @@
     });
 
     document.addEventListener("keydown", async event => {
+      const dirtyModal = document.getElementById("dirtyNavModal");
+      if (dirtyModal && dirtyModal.open) {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault();
+          const buttons = Array.from(dirtyModal.querySelectorAll("button:not([disabled])"));
+          if (buttons.length) {
+            const currentIndex = buttons.indexOf(document.activeElement);
+            const delta = event.key === "ArrowLeft" ? -1 : 1;
+            let nextIndex = currentIndex + delta;
+            if (nextIndex < 0) nextIndex = buttons.length - 1;
+            if (nextIndex >= buttons.length) nextIndex = 0;
+            buttons[nextIndex].focus();
+          }
+        }
+        return; // Let native dialog handle Enter, Esc, Tab, and block POS shortcuts
+      }
+
       const active = document.activeElement;
       const activeTag = active && active.tagName ? active.tagName : "";
       const isLineInput = Boolean(active && active.classList && active.classList.contains("pos-line-input"));

@@ -129,14 +129,22 @@ def _park_active_cart(db: Session, *, discard_empty: bool = True) -> PosCart | N
     cart = _find_active_cart(db)
     if not cart:
         return None
-    if cart.cart_mode == SALE_COPY_CART_MODE or cart.source_sale_id:
+
+    if cart.cart_mode == SALE_COPY_CART_MODE:
         cart.status = DISCARDED_CART_STATUS
         db.add(cart)
         return None
-    if _cart_has_items(db, cart):
+
+    if cart.cart_mode == SALE_EDIT_CART_MODE:
+        cart.status = DISCARDED_CART_STATUS
+        db.add(cart)
+        return None
+
+    if cart.cart_mode == NORMAL_CART_MODE and _cart_has_items(db, cart):
         cart.status = HELD_CART_STATUS
         db.add(cart)
         return cart
+
     if discard_empty:
         cart.status = DISCARDED_CART_STATUS
         db.add(cart)
@@ -460,9 +468,28 @@ def list_recent_sales(limit: int = 20, db: Session = Depends(get_db)):
         .order_by(Sale.id.desc())
         .limit(limit)
     ).all()
-    
+
+    # Only exclude sales that have a HELD sale_edit cart pointing at them.
+    # These appear in the Held section instead, so showing them in Previous Bills too
+    # would create a duplicate entry.
+    # Do NOT exclude the sale that is currently being actively edited; it must stay
+    # in Previous Bills so PgDown navigation can track position correctly and the
+    # blue .opened border indicator works.
+    held_edit_sale_ids: set[int] = set(
+        db.scalars(
+            select(PosCart.source_sale_id)
+            .where(
+                PosCart.status == HELD_CART_STATUS,
+                PosCart.cart_mode == SALE_EDIT_CART_MODE,
+                PosCart.source_sale_id.is_not(None),
+            )
+        ).all()
+    )
+
     items = []
     for sale in sales:
+        if sale.id in held_edit_sale_ids:
+            continue  # shown in Held section instead
         items.append({
             "type": "sale",
             "id": sale.id,
@@ -544,16 +571,22 @@ def discard_held_cart(cart_id: int, db: Session = Depends(get_db)):
 
 @router.post("/pos/cart/active/discard")
 def discard_active_cart(db: Session = Depends(get_db)):
+    """Discard the active cart and return a fresh empty cart payload."""
     cart = _find_active_cart(db)
     if cart:
         cart.status = DISCARDED_CART_STATUS
         db.add(cart)
         db.commit()
+    # Always return a fresh cart so the frontend has a valid cart_id to work with.
+    new_cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=NORMAL_CART_MODE)
+    db.add(new_cart)
+    db.commit()
+    db.refresh(new_cart)
     return {
         "ok": True,
         "status": "discarded",
         "message": "Active bill discarded.",
-        "cart": _empty_cart_payload(),
+        "cart": _cart_payload(db, new_cart),
         "held_carts": _held_carts_payload(db),
     }
 
@@ -639,7 +672,7 @@ def load_sale_for_edit_in_pos_cart(sale_id: int, db: Session = Depends(get_db)):
     active = _find_active_cart(db)
     if (
         active
-        and active.cart_mode == "sale_edit"
+        and active.cart_mode == SALE_EDIT_CART_MODE
         and active.source_sale_id == sale.id
     ):
         return {
@@ -653,8 +686,44 @@ def load_sale_for_edit_in_pos_cart(sale_id: int, db: Session = Depends(get_db)):
             "held_carts": _held_carts_payload(db),
         }
 
+    # If this sale is already held for editing, resume that held cart instead of
+    # creating a duplicate. This is the case when user held a sale_edit and then
+    # navigates to the same sale via PgDown.
+    held_edit_cart = db.scalar(
+        select(PosCart)
+        .where(
+            PosCart.status == HELD_CART_STATUS,
+            PosCart.cart_mode == SALE_EDIT_CART_MODE,
+            PosCart.source_sale_id == sale.id,
+        )
+        .order_by(PosCart.id.desc())
+    )
+    if held_edit_cart:
+        # Park whatever is currently active, then resume the held edit cart.
+        if active and active.id != held_edit_cart.id:
+            if active.cart_mode == NORMAL_CART_MODE and _cart_has_items(db, active):
+                active.status = HELD_CART_STATUS
+                db.add(active)
+            else:
+                active.status = DISCARDED_CART_STATUS
+                db.add(active)
+        held_edit_cart.status = ACTIVE_CART_STATUS
+        db.add(held_edit_cart)
+        db.commit()
+        db.refresh(held_edit_cart)
+        return {
+            "ok": True,
+            "status": "loaded",
+            "message": "Resumed held edit for this bill.",
+            "source_sale_id": sale.id,
+            "bill_number": sale.bill_number,
+            "held_active_cart_id": None,
+            "cart": _cart_payload(db, held_edit_cart),
+            "held_carts": _held_carts_payload(db),
+        }
+
     held_active = _park_active_cart(db)
-    cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode="sale_edit", source_sale_id=sale.id)
+    cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=SALE_EDIT_CART_MODE, source_sale_id=sale.id)
     db.add(cart)
     db.flush()
 
@@ -1194,20 +1263,3 @@ def clear_pos_cart(db: Session = Depends(get_db)):
         db.delete(item)
     db.commit()
     return _cart_payload(db, cart)
-
-@router.post("/pos/cart/active/discard")
-def discard_active_pos_cart(db: Session = Depends(get_db)):
-    cart = _find_active_cart(db)
-    if not cart:
-        return {"ok": True, "cart": _empty_cart_payload()}
-    
-    cart.status = DISCARDED_CART_STATUS
-    db.add(cart)
-    db.commit()
-    
-    # Create a fresh normal cart to return
-    new_cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=NORMAL_CART_MODE)
-    db.add(new_cart)
-    db.commit()
-    
-    return {"ok": True, "cart": _cart_payload(db, new_cart)}
