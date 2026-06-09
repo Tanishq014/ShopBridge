@@ -106,6 +106,9 @@
         <p class="muted-text">LAN IP was not detected. Start with <span class="mono">uvicorn app.main:app --host 0.0.0.0 --port 8001</span>, then use the laptop IP from Windows Wi-Fi settings.</p>
       {% endif %}
     </div>
+    {% if scanner_qr_url %}
+      <img src="{{ scanner_qr_url }}" class="scanner-qr" alt="Phone Scanner QR">
+    {% endif %}
   </section>
 
   <section class="panel setup-panel scanner-link-panel">
@@ -116,6 +119,9 @@
         <p class="muted-text">LAN IP was not detected. Start with <span class="mono">uvicorn app.main:app --host 0.0.0.0 --port 8001</span>, then use the laptop IP from Windows Wi-Fi settings.</p>
       {% endif %}
     </div>
+    {% if phone_print_qr_url %}
+      <img src="{{ phone_print_qr_url }}" class="scanner-qr" alt="Phone Print QR">
+    {% endif %}
   </section>
 
   <section class="panel setup-panel">
