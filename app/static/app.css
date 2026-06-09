@@ -1690,6 +1690,46 @@ tbody tr:last-child td {
   line-height: 1.05;
 }
 
+.pos-total-compact {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.pos-total-compact-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-total-compact-stats-right {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  row-gap: 2px;
+  column-gap: 12px;
+}
+
+.pos-total-compact-stats-right .stat-row {
+  display: contents;
+}
+
+.pos-total-compact-stats-right span {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  justify-self: end;
+}
+
+.pos-total-compact-stats-right .stat-row strong {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  justify-self: end;
+}
+
 .pos-summary-field {
   display: grid;
   gap: 5px;
@@ -3084,7 +3124,7 @@ body.pos-page .pos-normal-mode {
 }
 
 .pos-grid-workspace {
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   min-height: 0;
 }
 

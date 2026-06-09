@@ -127,22 +127,23 @@
       <aside class="pos-bill-panel pos-grid-summary">
         <div class="pos-normal-mode" id="posNormalPanel">
           <form method="post" action="/pos/checkout" id="checkoutForm">
-            <div class="pos-summary-grid">
-              <span>Lines</span>
-              <strong id="summaryLines">0</strong>
-              <span>Qty</span>
-              <strong id="cartCount">0</strong>
-              <span>Subtotal</span>
-              <strong id="summarySubtotal">Rs. 0.00</strong>
+            <div class="pos-total-box pos-total-compact">
+              <div class="pos-total-compact-main">
+                <span>TOTAL</span>
+                <strong id="cartTotal">Rs. 0.00</strong>
+              </div>
+              <div class="pos-total-compact-stats-right">
+                <div class="stat-row"><span>Lines</span> <strong id="summaryLines">0</strong></div>
+                <div class="stat-row"><span>Qty</span> <strong id="cartCount">0</strong></div>
+              </div>
             </div>
 
-            <div class="pos-total-box">
-              <span>Total</span>
-              <strong id="cartTotal">Rs. 0.00</strong>
-            </div>
+            <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
+              Checkout - Rs. 0.00
+            </button>
 
-            <div style="display: contents;" id="checkoutFormExtra">
-              <label class="pos-summary-field" style="margin-bottom: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" id="checkoutFormExtra">
+              <label class="pos-summary-field" style="margin-bottom: 0;">
                 Payment
                 <select name="payment_mode" id="paymentMode" form="checkoutForm">
                   <option value="cash">Cash</option>
@@ -150,22 +151,17 @@
                   <option value="card">Card</option>
                 </select>
               </label>
+              <label class="pos-summary-field" style="margin-bottom: 0;">
+                Notes
+                <input name="notes" id="checkoutNotes" placeholder="Optional" form="checkoutForm">
+              </label>
             </div>
-
-            <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
-              Checkout - Rs. 0.00
-            </button>
           </form>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; margin-bottom: 8px;">
             <button class="button" type="button" id="holdBillButton">Hold Bill</button>
             <button class="button danger outline" type="button" id="clearCartButton">Clear</button>
           </div>
-
-          <label class="pos-summary-field" style="margin-bottom: 12px;">
-            Notes
-            <input name="notes" id="checkoutNotes" placeholder="Optional" form="checkoutForm">
-          </label>
 
           <section class="pos-held-panel" aria-labelledby="heldBillsTitle">
             <div class="pos-held-head">
@@ -1394,7 +1390,7 @@
       cartCount.textContent = state.cart.count || 0;
       cartTotal.textContent = money(state.cart.total || "0.00");
       if (searchPanelTotal) { searchPanelTotal.textContent = money(state.cart.total || "0.00"); }
-      summarySubtotal.textContent = money(state.cart.total || "0.00");
+      if (summarySubtotal) { summarySubtotal.textContent = money(state.cart.total || "0.00"); }
       state.hasMissingRate = items.some(item => item.missing_price);
       checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
       
