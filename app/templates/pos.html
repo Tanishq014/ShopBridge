@@ -540,8 +540,10 @@
     }
 
     function focusCartField(rowIndex, fieldName, selectText = true, openItemSearch = false) {
+      console.log(`[DEBUG] focusCartField called with rowIndex=${rowIndex}, fieldName=${fieldName}`);
       const input = cartRows.querySelector(`[data-cart-row-index="${rowIndex}"][data-cart-field="${fieldName}"]`);
       if (input) {
+        console.log(`[DEBUG] focusCartField found input for ${fieldName}`);
         markSelectedCartRow(rowIndex);
         if (fieldName === "item" && !openItemSearch) {
           state.skipItemSearchOnce = true;
@@ -550,6 +552,8 @@
         if (selectText && typeof input.select === "function") {
           input.select();
         }
+      } else {
+        console.log(`[DEBUG] focusCartField FAILED to find input for [data-cart-row-index="${rowIndex}"][data-cart-field="${fieldName}"]`);
       }
     }
 
@@ -563,9 +567,12 @@
     }
 
     function focusNextBillingField(itemId, preferredField = null) {
+      console.log(`[DEBUG] focusNextBillingField called with itemId=${itemId}, preferredField=${preferredField}`);
       const rowIndex = selectCartItemById(itemId);
       const item = cartItemAt(rowIndex);
+      console.log(`[DEBUG] focusNextBillingField found rowIndex=${rowIndex}, item=`, item);
       if (!item) {
+        console.log(`[DEBUG] focusNextBillingField could not find item, falling back to focusItemInput`);
         focusItemInput(false);
         return;
       }
@@ -578,6 +585,7 @@
         return;
       }
       if (preferredField) {
+        console.log(`[DEBUG] focusNextBillingField using preferredField: ${preferredField}`);
         focusCartField(rowIndex, preferredField, true);
         return;
       }
@@ -1059,6 +1067,16 @@
       
       clearCartButton.disabled = items.length === 0;
       holdBillButton.disabled = items.length === 0 || state.cart.cart_mode === "sale_copy" || state.cart.cart_mode === "sale_edit";
+      let restoreItemId = null;
+      let restoreField = null;
+      let restoreSelectText = false;
+      const activeEl = document.activeElement;
+      if (activeEl && cartRows.contains(activeEl) && activeEl.classList.contains("pos-line-input")) {
+        restoreItemId = activeEl.dataset.cartItemId;
+        restoreField = activeEl.dataset.cartField;
+        restoreSelectText = activeEl.selectionStart === 0 && activeEl.selectionEnd === activeEl.value.length;
+      }
+
       cartRows.innerHTML = "";
 
       if (!items.length) {
@@ -1177,7 +1195,19 @@
         cartRows.appendChild(row);
       });
 
-      window.requestAnimationFrame(scrollSelectedCartRowIntoView);
+      if (restoreItemId && restoreField) {
+        state.focusTransition = true;
+        window.setTimeout(() => {
+          const rowIndex = rowIndexForCartItemId(restoreItemId);
+          if (rowIndex >= 0) {
+            focusCartField(rowIndex, restoreField, restoreSelectText);
+          }
+          state.focusTransition = false;
+        }, 50);
+      } else {
+        window.requestAnimationFrame(scrollSelectedCartRowIntoView);
+      }
+
       if (state.highlightItemId) {
         const highlightedId = state.highlightItemId;
         window.setTimeout(() => {
@@ -1382,21 +1412,40 @@
             focusCartField(rowIndex, "item", true);
             return;
           }
-          focusNextBillingField(itemId, "mrp");
+          state.focusTransition = true;
+          window.setTimeout(() => {
+            focusNextBillingField(itemId, "mrp");
+            state.focusTransition = false;
+          }, 50);
           return;
         }
+        console.log(`[DEBUG] Enter keydown on ${fieldName}, awaiting saveCartField`);
         state.skipNextChangeSaveFor = {itemId: itemId, fieldName};
         const updated = await saveCartField(rowIndex, fieldName);
+        console.log(`[DEBUG] saveCartField completed. updated = ${updated}`);
         if (!updated) {
           state.skipNextChangeSaveFor = null;
           return;
         }
         if (fieldName === "mrp") {
-          focusNextBillingField(itemId, "rate");
+          console.log(`[DEBUG] calling focusNextBillingField for rate with 50ms delay`);
+          state.focusTransition = true;
+          window.setTimeout(() => {
+            focusNextBillingField(itemId, "rate");
+            state.focusTransition = false;
+          }, 50);
         } else if (fieldName === "rate") {
-          focusNextBillingField(itemId, "qty");
+          state.focusTransition = true;
+          window.setTimeout(() => {
+            focusNextBillingField(itemId, "qty");
+            state.focusTransition = false;
+          }, 50);
         } else if (fieldName === "qty") {
-          focusNextBillingField(itemId, "next_row_item");
+          state.focusTransition = true;
+          window.setTimeout(() => {
+            focusNextBillingField(itemId, "next_row_item");
+            state.focusTransition = false;
+          }, 50);
         }
         return;
       }
@@ -1450,7 +1499,7 @@
     });
 
     async function loadCart(silent = false) {
-      if (silent && (state.cartEditActive || lineEditIsActive() || !suggestionsBox.hidden)) {
+      if (silent && (state.cartEditActive || lineEditIsActive() || !suggestionsBox.hidden || state.focusTransition)) {
         return;
       }
       try {
