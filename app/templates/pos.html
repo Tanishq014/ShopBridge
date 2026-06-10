@@ -74,10 +74,7 @@
 
     <section class="pos-workspace pos-grid-workspace">
       <div class="pos-grid-panel">
-        <div class="pos-grid-title">
-          <h2>Bill Lines</h2>
-          <span id="cartLineCount">0 lines</span>
-        </div>
+        <!-- Bill Lines title removed per user request -->
 
         <div class="pos-table-wrap">
           <table class="pos-billing-grid">
@@ -165,8 +162,8 @@
 
           <section class="pos-held-panel" aria-labelledby="heldBillsTitle">
             <div class="pos-held-head">
-              <div>
-                <h3 id="heldBillsTitle" style="margin-bottom: 2px;">Recent Bills</h3>
+              <div style="display: flex; align-items: baseline; gap: 8px;">
+                <h3 id="heldBillsTitle" style="margin-bottom: 0;">Recent Bills</h3>
                 <span id="heldBillCount" style="font-size: 11px; color: var(--muted); font-weight: 600;">0 held / 0 previous</span>
               </div>
             </div>
@@ -523,10 +520,12 @@
         if (fieldName === "item" && !openItemSearch) {
           state.skipItemSearchOnce = true;
         }
-        input.focus();
-        if (selectText && typeof input.select === "function") {
-          input.select();
-        }
+        window.requestAnimationFrame(() => {
+          input.focus();
+          if (selectText && typeof input.select === "function") {
+            input.select();
+          }
+        });
       }
     }
 
@@ -753,22 +752,20 @@
     }
 
     function activeBillNavItem() {
-      const cart = state.cart || {};
-      const items = cart.items || [];
-      if (cart.status !== "active" || cart.cart_mode !== "normal" || !cart.cart_id || !items.length) {
-        return null;
-      }
+      if (!state.cart || !state.cart.cart_id) return null;
+      if (!state.cart.items || !state.cart.items.length) return null;
+      if (state.cart.cart_mode === "sale_edit") return null;
+      if (state.cart.status !== "active") return null;
       return {
         type: "open",
-        id: cart.cart_id,
-        status: cart.status,
-        cart_mode: cart.cart_mode,
-        source_sale_id: cart.source_sale_id,
-        total: cart.total || "0.00",
-        lines: items.length,
-        count: cart.count || 0,
-        updated_at: "",
-        created_at: "",
+        id: state.cart.cart_id,
+        status: state.cart.status,
+        cart_mode: state.cart.cart_mode,
+        source_sale_id: state.cart.source_sale_id,
+        total: state.cart.total || "0.00",
+        item_count: state.cart.items ? state.cart.items.length : 0,
+        total_qty: state.cart.items ? state.cart.items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0) : 0,
+        updated_at: new Date().toISOString(),
       };
     }
 
@@ -890,7 +887,11 @@
       });
       
       const selectedItem = state.heldSelectionActive ? state.billNavItems[state.billNavIndex] : null;
-      discardHeldBillButton.disabled = state.billNavBusy || !(selectedItem && selectedItem.type === "held" && selectedItem.status === "held");
+      const isDiscardable = selectedItem && (
+        (selectedItem.type === "held" && selectedItem.status === "held") ||
+        (selectedItem.type === "open")
+      );
+      discardHeldBillButton.disabled = state.billNavBusy || !isDiscardable;
 
       scrollSelectedBillNavIntoView();
     }
@@ -1084,8 +1085,8 @@
       }
       if (!state.heldSelectionActive || state.billNavIndex < 0) return;
       const targetItem = state.billNavItems[state.billNavIndex];
-      if (!targetItem || targetItem.type !== "held") {
-        setStatus("No held bill selected.", "info");
+      if (!targetItem || (targetItem.type !== "held" && targetItem.type !== "open")) {
+        setStatus("No bill selected.", "info");
         return;
       }
 
@@ -1354,11 +1355,20 @@
         }
       } finally {
         state.billNavBusy = false;
+        renderBillNavItems();
       }
     }
 
     // Safely leaves the current bill (auto-holding or confirming) and starts a fresh cart.
     async function startNewBillSafe() {
+      if (!state.cart || !state.cart.cart_id || !state.cart.items || state.cart.items.length === 0) {
+        focusItemInput(false);
+        setStatus("Start of bill list.", "info");
+        return;
+      }
+
+      const wasNormalWithItems = state.cart.cart_mode === "normal" && state.cart.status === "active";
+
       if (!await leaveCurrentCartForBillNavigation()) {
         return;
       }
@@ -1367,9 +1377,16 @@
       state.heldSelectionActive = false;
       renderBillNavItems();
 
-      await postCartAction("/pos/cart/clear", "Started new bill.");
       history.replaceState({}, document.title, window.location.pathname);
       setPreviewState(false, null);
+      
+      focusItemInput(false);
+      
+      if (wasNormalWithItems) {
+        setStatus("Current bill held. Started new bill.", "success");
+      } else {
+        setStatus("Started new bill.", "success");
+      }
     }
 
     async function navigateBillList(delta) {
@@ -1519,7 +1536,7 @@
       }
 
       const lineLabel = `${items.length} ${items.length === 1 ? "line" : "lines"}`;
-      cartLineCount.textContent = lineLabel;
+      if (cartLineCount) cartLineCount.textContent = lineLabel;
       summaryLines.textContent = items.length;
       cartCount.textContent = state.cart.count || 0;
       cartTotal.textContent = money(state.cart.total || "0.00");
@@ -1986,6 +2003,7 @@
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
+        const searchWasOpen = !searchPanel.hidden;
         const item = cartItemAt(rowIndex);
         if (fieldName === "item" && item) {
           input.value = previewItemLabel(item);
@@ -1995,7 +2013,11 @@
         } else if (fieldName === "qty" && item) {
           input.value = item.qty;
         }
-        focusItemInput(false);
+        if (searchWasOpen) {
+          input.select();
+        } else {
+          focusItemInput(false);
+        }
         return;
       }
 
@@ -2416,13 +2438,25 @@
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopPropagation();
-        if (state.heldSelectionActive && !searchInput.value.trim()) {
+        
+        const text = searchInput.value.trim();
+        
+        if (state.heldSelectionActive && !text) {
           if (state.billNavBusy) {
             return;
           }
           await openSelectedBillNavItem();
           return;
         }
+        
+        if (!text) {
+          const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
+          if (hasItems) {
+            await handleCtrlAQuickAction();
+            return;
+          }
+        }
+        
         await submitItemInput();
         return;
       }
@@ -2505,9 +2539,13 @@
         return;
       }
       if (window.confirm("Clear the full bill?")) {
+        const wasEdit = state.cart && (state.cart.cart_mode === "sale_edit" || state.cart.cart_mode === "sale_copy");
         await postCartAction("/pos/cart/clear", "Bill cleared.");
         history.replaceState({}, document.title, window.location.pathname);
         setPreviewState(false, null);
+        if (wasEdit) {
+          await loadBillNavItems();
+        }
       } else {
         focusSelectedCartItem(true);
       }
@@ -2747,8 +2785,21 @@
         }
         event.preventDefault();
         if (!searchPanel.hidden) {
-          closeSuggestions();
-          focusSelectedCartItem(true);
+          const mode = state.suggestionMode;
+          const rIndex = state.suggestionRowIndex;
+          if (mode === "edit" && rIndex >= 0) {
+            const item = cartItemAt(rIndex);
+            if (item) {
+              const input = document.querySelector(`.pos-billing-row[data-cart-row-index="${rIndex}"] .pos-line-input[data-field="item"]`);
+              if (input) input.value = previewItemLabel(item);
+            }
+            closeSuggestions();
+            focusCartField(rIndex, "item", true);
+          } else {
+            searchInput.value = "";
+            closeSuggestions();
+            searchInput.focus();
+          }
           return;
         }
         if (state.heldSelectionActive) {

@@ -2623,7 +2623,9 @@ tbody tr:last-child td {
   border-radius: 8px;
   min-width: 0;
   overflow: hidden;
-  align-self: start; /* don't stretch - only right panel fills full height */
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
 }
 
 .pos-grid-title {
@@ -2647,9 +2649,10 @@ tbody tr:last-child td {
 }
 
 .pos-table-wrap {
-  max-height: calc(100vh - 214px);
+  max-height: none;
   min-height: 386px;
   overflow: auto;
+  flex: 1;
 }
 
 .pos-billing-grid {
@@ -2721,6 +2724,7 @@ tbody tr:last-child td {
 
 .pos-billing-row {
   height: 50px;
+  scroll-margin-top: 35px;
 }
 
 .pos-billing-row td {
@@ -2883,6 +2887,10 @@ tbody tr:last-child td {
   font-weight: 700;
   height: 44px;
   text-align: center;
+}
+
+.pos-add-row {
+  scroll-margin-top: 35px;
 }
 
 .pos-add-row td {
