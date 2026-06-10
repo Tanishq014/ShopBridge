@@ -929,7 +929,12 @@ async def pos_checkout_json(
         else:
             sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
     except CheckoutError as exc:
-        return _json_error(str(exc), status_code=400, status="checkout_error")
+        extra = {}
+        if exc.cart_item_id is not None:
+            extra["cart_item_id"] = exc.cart_item_id
+        if exc.field_name is not None:
+            extra["field_name"] = exc.field_name
+        return _json_error(str(exc), status_code=400, status="checkout_error", **extra)
     return {
         "ok": True,
         "sale_id": sale.id,

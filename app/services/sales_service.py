@@ -14,7 +14,10 @@ LOCAL_TIMEZONE = timezone(timedelta(hours=5, minutes=30), name="IST")
 
 
 class CheckoutError(RuntimeError):
-    pass
+    def __init__(self, message: str, cart_item_id: int | None = None, field_name: str | None = None):
+        super().__init__(message)
+        self.cart_item_id = cart_item_id
+        self.field_name = field_name
 
 
 def money(value: Decimal | int | str | None) -> Decimal:
@@ -70,9 +73,9 @@ def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decim
         is_barcode = bool(variant)
         is_tally = item.source_type == "tally_item" and bool((item.tally_stock_item_name_snapshot or "").strip())
         if item.source_type == "manual" or item.is_manual_line:
-            raise CheckoutError("Manual POS lines are not allowed. Select a saved barcode or Tally item.")
+            raise CheckoutError("Manual POS lines are not allowed. Select a saved barcode or Tally item.", cart_item_id=item.id, field_name="item")
         if not (is_barcode or is_tally):
-            raise CheckoutError("Invalid POS line. Select a saved barcode or Tally item.")
+            raise CheckoutError("Invalid POS line. Select a saved barcode or Tally item.", cart_item_id=item.id, field_name="item")
         rate = item.rate_snapshot if item.rate_snapshot is not None else item.unit_price
         if rate is None and variant:
             rate = variant.selling_price
@@ -80,12 +83,12 @@ def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decim
             variant.family.family_name if variant and variant.family and variant.family.family_name else variant.item_display_name if variant else ""
         )
         if not item_name:
-            raise CheckoutError("Cart contains a line without an item name.")
+            raise CheckoutError("Cart contains a line without an item name.", cart_item_id=item.id, field_name="item")
         if rate is None or money(rate) <= 0:
-            raise CheckoutError(f"Rate is missing for {item_name}.")
+            raise CheckoutError(f"Rate is missing for {item_name}.", cart_item_id=item.id, field_name="rate")
         qty = int(item.qty or 1)
         if qty == 0:
-            raise CheckoutError(f"Quantity cannot be zero for {item_name}.")
+            raise CheckoutError(f"Quantity cannot be zero for {item_name}.", cart_item_id=item.id, field_name="qty")
         amount = money(rate) * qty
         subtotal += amount
         barcode = item.barcode_snapshot if item.barcode_snapshot is not None else variant.barcode if variant else ""
@@ -94,7 +97,7 @@ def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decim
         )
         mrp = item.mrp_snapshot if item.mrp_snapshot is not None else variant.mrp if variant else None
         if mrp is not None and money(mrp) < money(rate):
-            raise CheckoutError(f"MRP cannot be lower than Rate for {item_name}.")
+            raise CheckoutError(f"MRP cannot be lower than Rate for {item_name}.", cart_item_id=item.id, field_name="mrp")
         sale_items.append(
             SaleItem(
                 label_variant_id=variant.id if variant else None,

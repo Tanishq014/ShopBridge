@@ -2462,6 +2462,13 @@
              state.checkoutSubmitting = false;
              checkoutButton.disabled = false;
              checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+             
+             if (data.cart_item_id && data.field_name) {
+               const rowIndex = (state.cart.items || []).findIndex(item => String(item.id) === String(data.cart_item_id));
+               if (rowIndex >= 0) {
+                 focusCartField(rowIndex, data.field_name, true);
+               }
+             }
              return false;
           }
         } catch (e) {
