@@ -1830,16 +1830,17 @@ tbody tr:last-child td {
   font-weight: 900;
 }
 
-.pos-held-row.selected,
-.pos-held-row:focus-visible {
-  background: #dceaff;
-  border-color: var(--primary);
-  outline: none;
-}
-
 .pos-held-row.opened {
   background: #eff6ff;
   border-left: 4px solid #1f6feb;
+}
+
+.pos-held-row.selected,
+.pos-held-row:focus-visible,
+.pos-held-row.selected.opened {
+  background: #dceaff;
+  border-color: var(--primary);
+  outline: none;
 }
 
 .pos-help-bar {

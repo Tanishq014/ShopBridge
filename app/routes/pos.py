@@ -92,16 +92,37 @@ def _line_tally_name(item: PosCartItem) -> str:
     return variant.family.tally_stock_item_name if variant and variant.family and variant.family.tally_stock_item_name else ""
 
 
-def _find_active_cart(db: Session) -> PosCart | None:
-    return db.scalar(
+def _find_active_cart(db: Session, *, normalize_duplicates: bool = False) -> PosCart | None:
+    active_carts = db.execute(
         select(PosCart)
         .where(PosCart.status == ACTIVE_CART_STATUS)
         .order_by(PosCart.id.desc())
+    ).scalars().all()
+    if not active_carts:
+        return None
+
+    current = active_carts[0]
+    if len(active_carts) == 1 or not normalize_duplicates:
+        return current
+
+    for stale_cart in active_carts[1:]:
+        if stale_cart.cart_mode == NORMAL_CART_MODE and _cart_has_items(db, stale_cart):
+            stale_cart.status = HELD_CART_STATUS
+        else:
+            stale_cart.status = DISCARDED_CART_STATUS
+        db.add(stale_cart)
+    db.commit()
+    db.refresh(current)
+    logger.warning(
+        "Normalized %s duplicate active POS carts; keeping cart %s.",
+        len(active_carts) - 1,
+        current.id,
     )
+    return current
 
 
 def _active_cart(db: Session) -> PosCart:
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if cart:
         return cart
     cart = PosCart(status=ACTIVE_CART_STATUS, cart_mode=NORMAL_CART_MODE)
@@ -126,7 +147,7 @@ def _cart_has_items(db: Session, cart: PosCart) -> bool:
 
 
 def _park_active_cart(db: Session, *, discard_empty: bool = True) -> PosCart | None:
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if not cart:
         return None
 
@@ -177,19 +198,22 @@ def _held_cart_payload(db: Session, cart: PosCart) -> dict[str, object]:
 def _held_carts_payload(db: Session) -> list[dict[str, object]]:
     carts = db.execute(
         select(PosCart)
-        .where(
-            (PosCart.status == HELD_CART_STATUS) | 
-            ((PosCart.status == ACTIVE_CART_STATUS) & (PosCart.cart_mode == NORMAL_CART_MODE))
-        )
+        .where(PosCart.status == HELD_CART_STATUS)
         .order_by(PosCart.id.desc())
     ).scalars().all()
-    valid_carts = [c for c in carts if c.status == HELD_CART_STATUS or (c.status == ACTIVE_CART_STATUS and len(c.items) > 0)]
-    return [_held_cart_payload(db, cart) for cart in valid_carts]
+    return [_held_cart_payload(db, cart) for cart in carts if _cart_has_items(db, cart)]
 
 
 def _active_cart_item_or_error(db: Session, item_id: int) -> PosCartItem | JSONResponse:
+    active_cart = _find_active_cart(db, normalize_duplicates=True)
     item = db.get(PosCartItem, item_id)
-    if not item or not item.cart or item.cart.status != ACTIVE_CART_STATUS:
+    if (
+        not item
+        or not item.cart
+        or item.cart.status != ACTIVE_CART_STATUS
+        or not active_cart
+        or item.cart_id != active_cart.id
+    ):
         return _json_error("Cart item was not found.", status_code=404, status="not_found")
     return item
 
@@ -504,7 +528,7 @@ def list_recent_sales(limit: int = 20, db: Session = Depends(get_db)):
 
 @router.post("/pos/cart/hold")
 def hold_active_cart(db: Session = Depends(get_db)):
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if not cart or not _cart_has_items(db, cart):
         return _json_error("No active bill to hold.", status_code=400, status="empty")
     if cart.cart_mode == SALE_COPY_CART_MODE:
@@ -532,7 +556,7 @@ def resume_held_cart(
     if not cart or cart.status != HELD_CART_STATUS:
         return _json_error("Held bill was not found.", status_code=404, status="not_found")
 
-    active = _find_active_cart(db)
+    active = _find_active_cart(db, normalize_duplicates=True)
     if active and active.id != cart.id:
         if discard_active:
             active.status = DISCARDED_CART_STATUS
@@ -561,10 +585,12 @@ def discard_held_cart(cart_id: int, db: Session = Depends(get_db)):
     cart.status = DISCARDED_CART_STATUS
     db.add(cart)
     db.commit()
+    _find_active_cart(db, normalize_duplicates=True)
     return {
         "ok": True,
         "status": "discarded",
         "message": "Held bill discarded.",
+        "cart": _cart_payload(db),
         "held_carts": _held_carts_payload(db),
     }
 
@@ -572,7 +598,7 @@ def discard_held_cart(cart_id: int, db: Session = Depends(get_db)):
 @router.post("/pos/cart/active/discard")
 def discard_active_cart(db: Session = Depends(get_db)):
     """Discard the active cart and return a fresh empty cart payload."""
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if cart:
         cart.status = DISCARDED_CART_STATUS
         db.add(cart)
@@ -601,7 +627,7 @@ def load_sale_into_pos_cart(sale_id: int, db: Session = Depends(get_db)):
     if not sale:
         return _json_error("Saved bill was not found.", status_code=404, status="not_found")
 
-    active = _find_active_cart(db)
+    active = _find_active_cart(db, normalize_duplicates=True)
     if (
         active
         and active.cart_mode == SALE_COPY_CART_MODE
@@ -669,7 +695,7 @@ def load_sale_for_edit_in_pos_cart(sale_id: int, db: Session = Depends(get_db)):
     if not sale:
         return _json_error("Saved bill was not found.", status_code=404, status="not_found")
 
-    active = _find_active_cart(db)
+    active = _find_active_cart(db, normalize_duplicates=True)
     if (
         active
         and active.cart_mode == SALE_EDIT_CART_MODE
@@ -866,7 +892,7 @@ def pos_checkout(
     payment = (payment_mode or "cash").strip().lower() or "cash"
     if payment not in ALLOWED_PAYMENT_MODES:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': 'Choose Cash, UPI, or Card payment.'})}", status_code=303)
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if not cart:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': 'No active cart to checkout.'})}", status_code=303)
     try:
@@ -893,7 +919,7 @@ async def pos_checkout_json(
     notes = str(payload.get("notes") or "").strip()
     if payment not in ALLOWED_PAYMENT_MODES:
         return _json_error("Choose Cash, UPI, or Card payment.", status_code=400, status="invalid_payment")
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if not cart:
         return _json_error("No active cart to checkout.", status_code=400, status="empty_cart")
     try:
@@ -1249,7 +1275,7 @@ def remove_pos_item(item_id: int, db: Session = Depends(get_db)):
 
 @router.post("/pos/cart/clear")
 def clear_pos_cart(db: Session = Depends(get_db)):
-    cart = _find_active_cart(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
     if not cart:
         return _empty_cart_payload()
     if cart.cart_mode in (SALE_COPY_CART_MODE, "sale_edit") or cart.source_sale_id is not None:

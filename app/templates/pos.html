@@ -274,6 +274,8 @@
       billNavItems: initialHeldCarts || [],
       billNavIndex: -1,
       heldSelectionActive: false,
+      billNavBusy: false,
+      billNavLoadRequestId: 0,
       returnHeldCartId: null,
       highlightItemId: null,
       skipItemSearchOnce: false,
@@ -727,6 +729,26 @@
       });
     }
 
+    function activeBillNavItem() {
+      const cart = state.cart || {};
+      const items = cart.items || [];
+      if (cart.status !== "active" || cart.cart_mode !== "normal" || !cart.cart_id || !items.length) {
+        return null;
+      }
+      return {
+        type: "open",
+        id: cart.cart_id,
+        status: cart.status,
+        cart_mode: cart.cart_mode,
+        source_sale_id: cart.source_sale_id,
+        total: cart.total || "0.00",
+        lines: items.length,
+        count: cart.count || 0,
+        updated_at: "",
+        created_at: "",
+      };
+    }
+
     function renderBillNavItems(items = state.billNavItems) {
       state.billNavItems = items || [];
       if (!state.billNavItems.length) {
@@ -744,9 +766,10 @@
         }
       }
       
+      const openCount = state.billNavItems.filter(i => i.type === "open").length;
       const heldCount = state.billNavItems.filter(i => i.type === "held").length;
-      const previousCount = state.billNavItems.length - heldCount;
-      heldBillCount.textContent = `${heldCount} held / ${previousCount} previous`;
+      const previousCount = state.billNavItems.filter(i => i.type === "recent_sale" || i.type === "sale").length;
+      heldBillCount.textContent = `${openCount} open / ${heldCount} held / ${previousCount} previous`;
       
       heldBillList.innerHTML = "";
       
@@ -755,7 +778,7 @@
       
       state.billNavItems.forEach((item, index) => {
         const isPrevious = item.type === "recent_sale" || item.type === "sale";
-        const currentSection = isPrevious ? "Previous Bills" : "Held Bills";
+        const currentSection = isPrevious ? "Previous Bills" : "Open / Held Bills";
         
         if (currentSection !== lastSection) {
           const header = document.createElement("div");
@@ -781,8 +804,8 @@
         top.className = "pos-held-row-top";
 
         const badge = document.createElement("span");
-        badge.className = `badge ${item.type === "held" ? "ok" : "muted"}`;
-        badge.textContent = item.type === "held" ? "Held" : "Prev";
+        badge.className = `badge ${item.type === "held" || item.type === "open" ? "ok" : "muted"}`;
+        badge.textContent = item.type === "open" ? "Open" : item.type === "held" ? "Held" : "Prev";
 
         const isEdit = item.type === "held" && item.cart_mode === "sale_edit";
         const label = document.createElement("span");
@@ -791,6 +814,8 @@
         let labelText;
         if (isEdit) {
           labelText = item.bill_number || `Sale #${item.source_sale_id}`;
+        } else if (item.type === "open") {
+          labelText = "Current Bill";
         } else if (item.type === "held") {
           normalHeldDisplayNo += 1;
           labelText = `Held ${normalHeldDisplayNo}`;
@@ -823,6 +848,9 @@
         row.appendChild(sub);
 
         row.addEventListener("click", () => {
+          if (state.billNavBusy) {
+            return;
+          }
           state.billNavIndex = index;
           state.heldSelectionActive = true;
           renderBillNavItems();
@@ -839,7 +867,7 @@
       });
       
       const selectedItem = state.heldSelectionActive ? state.billNavItems[state.billNavIndex] : null;
-      discardHeldBillButton.disabled = !(selectedItem && selectedItem.type === "held");
+      discardHeldBillButton.disabled = state.billNavBusy || !(selectedItem && selectedItem.type === "held" && selectedItem.status === "held");
 
       scrollSelectedBillNavIntoView();
     }
@@ -860,7 +888,9 @@
         
         let isOpened = false;
         if (state.cart && state.cart.status === "active") {
-          if (item.type === "held" && state.cart.cart_mode === "sale_edit" && item.cart_mode === "sale_edit" && item.source_sale_id === state.cart.source_sale_id) {
+          if (item.type === "open" && item.id === state.cart.cart_id) {
+            isOpened = true;
+          } else if (item.type === "held" && state.cart.cart_mode === "sale_edit" && item.cart_mode === "sale_edit" && item.source_sale_id === state.cart.source_sale_id) {
             isOpened = true;
           } else if (item.type === "held" && item.id === state.cart.cart_id) {
             isOpened = true;
@@ -878,17 +908,30 @@
     }
 
     async function loadBillNavItems() {
+      const requestId = ++state.billNavLoadRequestId;
       try {
         const [heldRes, recentRes] = await Promise.all([
             fetch("/pos/cart/held", {cache: "no-store"}),
             fetch("/pos/recent-sales", {cache: "no-store"})
         ]);
+        if (requestId !== state.billNavLoadRequestId) {
+          return;
+        }
         const heldData = heldRes.ok ? await heldRes.json() : {items: []};
         const recentData = recentRes.ok ? await recentRes.json() : {items: []};
+        if (requestId !== state.billNavLoadRequestId) {
+          return;
+        }
         
-        const combined = [...(heldData.items || []), ...(recentData.items || [])];
+        const activeItem = activeBillNavItem();
+        const combined = [
+          ...(activeItem ? [activeItem] : []),
+          ...(heldData.items || []),
+          ...(recentData.items || []),
+        ];
         combined.sort((a, b) => {
           const score = (item) => {
+            if (item.type === "open") return 2;
             if (item.type === "held" && item.cart_mode === "sale_edit") return 1;
             if (item.type === "held") return 2;
             return 3;
@@ -902,8 +945,8 @@
         // a bill moves it, resuming a bill puts it back).
         if (state.cart && state.cart.cart_id) {
           const activeIndex = combined.findIndex(item => {
-            // Match a normal held cart that is somehow active (edge case)
-            if (item.type === "held" && item.id === state.cart.cart_id) return true;
+            // Match the locally inserted current active bill.
+            if (item.type === "open" && item.id === state.cart.cart_id) return true;
             // Match an active sale_edit cart to its original sale row
             if (item.type === "sale" && state.cart.cart_mode === "sale_edit" &&
                 item.id === state.cart.source_sale_id) return true;
@@ -912,6 +955,7 @@
           
           if (activeIndex >= 0) {
             state.billNavIndex = activeIndex;
+            state.heldSelectionActive = true;
           } else {
             // Active cart is empty or not in the list (e.g. a new fresh bill)
             state.billNavIndex = -1;
@@ -924,11 +968,17 @@
 
         renderBillNavItems(combined);
       } catch (error) {
+        if (requestId !== state.billNavLoadRequestId) {
+          return;
+        }
         setStatus("Could not load bill navigation items.", "error");
       }
     }
 
     async function holdCurrentBill() {
+      if (state.billNavBusy) {
+        return;
+      }
       if (!state.cart.items || !state.cart.items.length) {
         setStatus("No active bill to hold.", "info");
         focusItemInput(false);
@@ -1006,10 +1056,45 @@
     }
 
     async function discardSelectedHeldBill() {
+      if (state.billNavBusy) {
+        return;
+      }
       if (!state.heldSelectionActive || state.billNavIndex < 0) return;
       const targetItem = state.billNavItems[state.billNavIndex];
       if (!targetItem || targetItem.type !== "held") {
         setStatus("No held bill selected.", "info");
+        return;
+      }
+
+      if (state.cart && String(state.cart.cart_id) === String(targetItem.id)) {
+        if (!window.confirm("Discard the currently open bill?")) {
+          focusItemInput(false);
+          return;
+        }
+        try {
+          const response = await fetch("/pos/cart/active/discard", {method: "POST"});
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.message || "Could not discard open bill.");
+          }
+          state.billNavIndex = -1;
+          state.heldSelectionActive = false;
+          history.replaceState({}, document.title, window.location.pathname);
+          setPreviewState(false, null);
+          renderCart(data.cart);
+          await loadBillNavItems();
+          setStatus("Open bill discarded.", "success");
+          focusItemInput(false);
+        } catch (error) {
+          setStatus(error.message || "Could not discard open bill.", "error");
+        }
+        return;
+      }
+
+      if (targetItem.status !== "held") {
+        state.heldSelectionActive = false;
+        await loadBillNavItems();
+        setStatus("That bill is already open or was moved. Bill list refreshed.", "info");
         return;
       }
 
@@ -1018,25 +1103,17 @@
         return;
       }
 
-      // If they are discarding the currently active cart, just clear it.
-      if (state.cart && state.cart.cart_id === targetItem.id) {
-        try {
-          const response = await fetch("/pos/cart/clear", {method: "POST"});
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.message);
-          renderCart(data.cart);
-          await loadBillNavItems();
-          setStatus("Active bill discarded.", "success");
-        } catch (error) {
-          setStatus(error.message || "Could not discard active bill.", "error");
-        }
-        return;
-      }
-
       try {
         const response = await fetch(`/pos/cart/held/${targetItem.id}/discard`, {method: "POST"});
         const data = await response.json();
         if (!response.ok) {
+          if (response.status === 404) {
+            state.heldSelectionActive = false;
+            await loadBillNavItems();
+            setStatus("That held bill was already moved. Bill list refreshed.", "info");
+            focusItemInput(false);
+            return;
+          }
           throw new Error(data.message || "Could not discard held bill.");
         }
         state.billNavIndex = -1;
@@ -1206,39 +1283,54 @@
     }
 
     async function openBillNavItemAt(index) {
+      if (state.billNavBusy) {
+        return;
+      }
       const targetItem = state.billNavItems[index];
       if (!targetItem) {
         return;
       }
 
-      if (state.cart && state.cart.cart_id === targetItem.id && targetItem.type === "held") {
-        state.billNavIndex = index;
+      state.billNavBusy = true;
+      try {
+        if (targetItem.type === "open") {
+          state.billNavIndex = index;
+          state.heldSelectionActive = true;
+          renderBillNavItems();
+          setStatus("This bill is already open.", "info");
+          focusItemInput(false);
+          return;
+        }
+        if (state.cart && state.cart.cart_id === targetItem.id && targetItem.type === "held") {
+          state.billNavIndex = index;
+          state.heldSelectionActive = true;
+          renderBillNavItems();
+          setStatus("This bill is already open.", "info");
+          focusItemInput(false);
+          return;
+        }
+
+        if (!await leaveCurrentCartForBillNavigation()) {
+          return;
+        }
+
+        // The list might have reloaded and shifted. Find the target again by identity.
+        let newIndex = state.billNavItems.findIndex(i => i.id === targetItem.id && i.type === targetItem.type);
+        if (newIndex === -1) {
+          newIndex = index;
+        }
+
+        state.billNavIndex = newIndex;
         state.heldSelectionActive = true;
         renderBillNavItems();
-        setStatus("This bill is already open.", "info");
-        focusItemInput(false);
-        return;
-      }
 
-      if (!await leaveCurrentCartForBillNavigation()) {
-        return;
-      }
-
-      // 3. The list might have reloaded and shifted. Find the new index.
-      let newIndex = state.billNavItems.findIndex(i => i.id === targetItem.id && i.type === targetItem.type);
-      if (newIndex === -1) {
-        newIndex = index;
-      }
-
-      state.billNavIndex = newIndex;
-      state.heldSelectionActive = true;
-      renderBillNavItems();
-
-      // 4. Open the target item.
-      if (targetItem.type === "held") {
-        await resumeHeldBillById(targetItem.id);
-      } else {
-        await loadSaleForEdit(targetItem.id, {skipDiscardConfirm: true});
+        if (targetItem.type === "held") {
+          await resumeHeldBillById(targetItem.id);
+        } else {
+          await loadSaleForEdit(targetItem.id, {skipDiscardConfirm: true});
+        }
+      } finally {
+        state.billNavBusy = false;
       }
     }
 
@@ -1258,6 +1350,9 @@
     }
 
     async function navigateBillList(delta) {
+      if (state.billNavBusy) {
+        return;
+      }
       if (!state.billNavItems.length) {
         await loadBillNavItems();
       }
@@ -1411,8 +1506,8 @@
         checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
       }
       
-      clearCartButton.disabled = items.length === 0;
-      holdBillButton.disabled = items.length === 0;
+      clearCartButton.disabled = state.billNavBusy || items.length === 0;
+      holdBillButton.disabled = state.billNavBusy || items.length === 0;
       
       const posEmptyHelper = document.getElementById("posEmptyHelper");
       if (posEmptyHelper) {
@@ -1891,7 +1986,7 @@
     });
 
     async function loadCart(silent = false) {
-      if (silent && (state.checkoutSubmitting || state.cartEditActive || lineEditIsActive() || !searchPanel.hidden || state.focusTransition)) {
+      if (silent && (state.checkoutSubmitting || state.cartEditActive || state.billNavBusy || lineEditIsActive() || !searchPanel.hidden || state.focusTransition)) {
         return;
       }
       try {
@@ -2289,6 +2384,9 @@
         event.preventDefault();
         event.stopPropagation();
         if (state.heldSelectionActive && !searchInput.value.trim()) {
+          if (state.billNavBusy) {
+            return;
+          }
           await openSelectedBillNavItem();
           return;
         }
@@ -2419,6 +2517,9 @@
       if (state.heldSelectionActive && !isLineInput && !isEditingOtherField && active !== searchInput) {
         if (event.key === "ArrowUp" || event.key === "ArrowDown") {
           event.preventDefault();
+          if (state.billNavBusy) {
+            return;
+          }
           const delta = event.key === "ArrowDown" ? 1 : -1;
           const nextIndex = state.billNavIndex + delta;
           if (nextIndex >= 0 && nextIndex < state.billNavItems.length) {
@@ -2429,6 +2530,9 @@
           return;
         } else if (event.key === "Enter") {
           event.preventDefault();
+          if (state.billNavBusy) {
+            return;
+          }
           await openBillNavItemAt(state.billNavIndex);
           return;
         }
@@ -2436,6 +2540,9 @@
 
       if (event.key === "F2") {
         event.preventDefault();
+        if (state.billNavBusy) {
+          return;
+        }
         if (!await saveFocusedLineInput()) {
           return;
         }
@@ -2444,6 +2551,9 @@
       }
       if (event.key === "F4") {
         event.preventDefault();
+        if (state.billNavBusy) {
+          return;
+        }
         if (!await saveFocusedLineInput()) {
           return;
         }
@@ -2452,12 +2562,21 @@
       }
       if ((event.ctrlKey && event.key === "Enter") || (event.shiftKey && event.key === "Enter")) {
         event.preventDefault();
+        if (state.billNavBusy) {
+          return;
+        }
         await checkoutNow();
         return;
       }
       if (event.key === "PageUp" || event.key === "PageDown") {
         event.preventDefault();
+        if (state.billNavBusy) {
+          return;
+        }
         if (isEditingOtherField || (active === searchInput && searchInput.value.trim())) {
+          return;
+        }
+        if (isLineInput && !await saveFocusedLineInput()) {
           return;
         }
         await navigateBillList(event.key === "PageUp" ? -1 : 1);

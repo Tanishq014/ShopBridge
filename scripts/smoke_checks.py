@@ -950,6 +950,43 @@ def main() -> None:
         assert_true(db.query(SaleItem).filter_by(sale_id=third_sale.id).one().qty == 5, "sale-edit checkout must use new item qty")
         assert_true(pos._find_active_cart(db) is None, "checkout must close the active edit cart")
 
+        duplicate_old_cart = PosCart(status="active", cart_mode="normal")
+        db.add(duplicate_old_cart)
+        db.flush()
+        db.add(PosCartItem(
+            cart_id=duplicate_old_cart.id,
+            variant_id=first.id,
+            qty=1,
+            unit_price=first.selling_price,
+            item_name_snapshot=first.family.family_name if first.family else first.item_display_name,
+            barcode_snapshot=first.barcode,
+            tally_stock_item_name_snapshot=first.family.tally_stock_item_name if first.family else None,
+            mrp_snapshot=first.mrp,
+            rate_snapshot=first.selling_price,
+            source_type="barcode",
+            is_manual_line=False,
+        ))
+        duplicate_new_cart = PosCart(status="active", cart_mode="normal")
+        db.add(duplicate_new_cart)
+        db.commit()
+
+        pos._held_carts_payload(db)
+        db.refresh(duplicate_old_cart)
+        db.refresh(duplicate_new_cart)
+        assert_true(
+            duplicate_old_cart.status == "active" and duplicate_new_cart.status == "active",
+            "held cart list must not normalize duplicate active carts during GET/read payload",
+        )
+        normalized_cart = pos._find_active_cart(db, normalize_duplicates=True)
+        db.refresh(duplicate_old_cart)
+        db.refresh(duplicate_new_cart)
+        assert_true(
+            normalized_cart.id == duplicate_new_cart.id
+            and duplicate_new_cart.status == "active"
+            and duplicate_old_cart.status == "held",
+            "explicit duplicate active cart normalization did not keep newest active and hold older bill with items",
+        )
+
         pos_html_source = (ROOT / "app" / "templates" / "pos.html").read_text(encoding="utf-8")
         pos_py_source = (ROOT / "app" / "routes" / "pos.py").read_text(encoding="utf-8")
         assert_true("focusNextBillingField(" in pos_html_source and 'focusCartField(rowIndex, "mrp", true)' in pos_html_source, "POS template missing focusNextBillingField or does not focus MRP first")
@@ -971,6 +1008,14 @@ def main() -> None:
         assert_true('fetch("/pos/cart/hold"' in pos_html_source and "finish(true)" in pos_html_source, "dirty modal Hold must call hold endpoint and continue")
         assert_true('dialog.addEventListener("cancel", onCancel)' in pos_html_source, "dirty modal must handle cancel/close events to avoid hanging")
         assert_true("qty = item.total_qty ?? item.count ?? 0" in pos_html_source, "held bill qty must use count as fallback so it does not show Qty 0")
+        assert_true('selectedItem.status === "held"' in pos_html_source and 'targetItem.status !== "held"' in pos_html_source, "Discard Selected must only act on real held rows")
+        assert_true("state.billNavBusy" in pos_html_source and "billNavLoadRequestId" in pos_html_source, "bill navigation must guard overlapping PgUp/PgDn actions")
+        assert_true(".where(PosCart.status == HELD_CART_STATUS)" in pos_py_source, "held bill endpoint must not mix active carts into held list")
+        assert_true('"cart": _cart_payload(db)' in pos_py_source, "discard held route must return current cart payload")
+        main_source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+        assert_true("serialize_pos_cart_mutations" in main_source and "pos_cart_mutation_lock" in main_source, "POS cart mutations must be serialized")
+        assert_true("Normalized %s duplicate active POS carts" in pos_py_source and "stale_cart.status = HELD_CART_STATUS" in pos_py_source, "POS must normalize duplicate active carts safely")
+        assert_true(".pos-held-row.selected.opened" in app_css, "selected bill row style must win over opened row style")
 
         # Layout/UI checks
         assert_true("body.pos-page" in app_css and "overflow: hidden" in app_css, "body.pos-page must lock browser scroll")
@@ -991,6 +1036,11 @@ def main() -> None:
         assert_true("source_bill_number" in pos_py_source and "source_bill_number" in pos_markup, "sale_edit cart payload should expose source bill number")
         
         assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
+        assert_true("activeBillNavItem" in pos_markup and 'type: "open"' in pos_markup, "POS bill nav must keep the current active bill visible locally")
+        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} previous" in pos_markup, "POS bill nav must separate open, held, and previous counts")
+        assert_true('if (item.type === "open") return 2;' in pos_markup, "Open bill must sort with held bills, not always at the top")
+        assert_true('item.type === "open" && item.id === state.cart.cart_id' in pos_markup, "POS bill nav must reselect the currently open bill after reload")
+        assert_true('if (targetItem.type === "open")' in pos_markup, "Opening the active bill row should be a no-op, not a server call")
         assert_true("item.item_count ?? item.lines ?? 0" in pos_markup, "Held bill line count must fall back to lines")
         assert_true("item.total_qty ?? item.count ?? 0" in pos_markup, "Held bill qty must fall back to count")
         assert_true("PgUp/PgDn Bills" in pos_markup, "POS help text must mention PgUp/PgDn Bills")
