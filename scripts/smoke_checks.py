@@ -1048,7 +1048,7 @@ def main() -> None:
         assert_true('value="save_print"' in pos_html_source and 'Save + Print' in pos_html_source, "Ctrl+A prompt missing Save+Print action")
         assert_true('value="save_no_print"' in pos_html_source and 'Save No Print' in pos_html_source, "Ctrl+A prompt missing Save No Print action")
         assert_true('value="hold"' in pos_html_source and 'Hold' in pos_html_source, "Ctrl+A prompt missing Hold action")
-        assert_true('value="discard"' not in pos_html_source.split('id="ctrlAModal"')[1].split("</dialog>")[0], "Prompt should not show Discard as a quick action")
+        assert_true('value="discard"' in pos_html_source and 'id="discardActionText"' in pos_html_source, "Prompt should show Discard / Clear as a quick action")
         assert_true("printAfterSave: true" in pos_html_source, "Save+Print action must call checkoutNow with print enabled")
         assert_true("printAfterSave: false" in pos_html_source, "Save No Print action must call checkoutNow with print disabled")
         assert_true("if (printAfterSave && data.sale_id)" in pos_html_source, "Save failure must not print")

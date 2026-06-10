@@ -3352,5 +3352,5 @@ body.pos-page .pos-normal-mode {
 }
 
 .pos-qty-input { text-align: right; }
-body.pos-page .pos-item-cell span.return-badge { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 12px; background-color: rgba(211, 47, 47, 0.1); color: #d32f2f; border: 1px solid rgba(211, 47, 47, 0.2); vertical-align: middle; }
+body.pos-page .pos-item-cell span.return-badge { display: inline-block; margin-left: 0; white-space: nowrap; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 12px; background-color: rgba(211, 47, 47, 0.1); color: #d32f2f; border: 1px solid rgba(211, 47, 47, 0.2); vertical-align: middle; }
 

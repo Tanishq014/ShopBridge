@@ -98,7 +98,7 @@
             <tfoot>
               <tr class="pos-add-row">
                 <td class="pos-line-no"></td>
-                <td class="pos-add-cell" colspan="4">
+                <td class="pos-add-cell" colspan="6">
                   <div class="pos-search-wrap">
                     <input
                       id="posSearchInput"
@@ -109,8 +109,6 @@
                     >
                   </div>
                 </td>
-                <td class="pos-add-qty">1</td>
-                <td></td>
                 <td><button class="button" type="button" id="addItemButton" style="width: 100%; padding: 4px; min-width: 40px; font-size: 13px;">Add</button></td>
               </tr>
             </tfoot>
@@ -220,6 +218,11 @@
             <span class="action-icon"></span>
             <span class="action-text">Hold</span>
             <kbd>H</kbd>
+          </button>
+          <button class="button action-btn" value="discard">
+            <span class="action-icon"></span>
+            <span class="action-text" id="discardActionText">Discard / Clear</span>
+            <kbd>X</kbd>
           </button>
         </div>
       </div>
@@ -389,16 +392,7 @@
       }
     }
 
-    function itemDescription(item) {
-      const parts = [];
-      if (item.source_type === "tally_item") {
-        parts.push("Tally item");
-      }
-      if (item.sticker_name) {
-        parts.push(`Sticker: ${item.sticker_name}`);
-      }
-      return parts.join(" | ");
-    }
+    // itemDescription removed
 
     function selectedCartItem() {
       if (!state.cart.items || state.selectedIndex < 0) {
@@ -495,11 +489,11 @@
       }
     }
 
-    async function exitPreview(refresh = true) {
+    async function exitPreview(refresh = true, force = false) {
       if (!state.previewMode) {
         return;
       }
-      if (state.loadedSaleDirty && !window.confirm("Discard edits to this opened bill and return to the active bill?")) {
+      if (!force && state.loadedSaleDirty && !window.confirm("Discard edits to this opened bill and return to the active bill?")) {
         return;
       }
       const returnHeldCartId = state.returnHeldCartId;
@@ -1627,28 +1621,28 @@
         itemInput.dataset.cartRowIndex = index;
         itemInput.dataset.cartItemId = item.id;
         itemInput.dataset.cartField = "item";
-        const meta = document.createElement("span");
-        const description = itemDescription(item);
-        meta.textContent = description;
-        itemCell.appendChild(itemInput);
-        if (description) {
-          itemCell.appendChild(meta);
-        }
+
+        const wrapper = document.createElement("div");
+        wrapper.style.display = "flex";
+        wrapper.style.alignItems = "center";
+        wrapper.style.gap = "8px";
+        wrapper.style.width = "100%";
+
+        itemInput.style.flex = "1";
+        wrapper.appendChild(itemInput);
+
         if (item.qty < 0) {
           const badge = document.createElement("span");
           badge.className = "return-badge";
-          badge.textContent = "Goods Returned";
-          badge.style.display = "inline-block";
-          badge.style.marginLeft = "8px";
-          badge.style.fontSize = "11px";
-          badge.style.color = "#d32f2f";
-          badge.style.fontWeight = "bold";
-          itemCell.appendChild(badge);
+          badge.textContent = "RETURNED";
+          wrapper.appendChild(badge);
         }
+        
+        itemCell.appendChild(wrapper);
 
         const barcode = document.createElement("td");
         barcode.className = "mono pos-barcode-cell";
-        barcode.textContent = item.barcode || "";
+        barcode.textContent = item.source_type === "tally_item" ? "Tally Item" : (item.barcode || "");
 
         const mrp = document.createElement("td");
         mrp.className = "pos-money-cell";
@@ -2637,7 +2631,7 @@
         return;
       }
       event.preventDefault();
-      await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
+      await handleCtrlAQuickAction();
     });
 
     async function handleCtrlAQuickAction() {
@@ -2653,11 +2647,14 @@
       const isEdit = state.cart.cart_mode === "sale_edit";
       const ctrlAModal = document.getElementById("ctrlAModal");
       const title = document.getElementById("ctrlAModalTitle");
+      const discardText = document.getElementById("discardActionText");
       
       if (isEdit) {
         title.textContent = "Edit Bill Action";
+        if (discardText) discardText.textContent = "Discard Edits";
       } else {
         title.textContent = "Bill Action";
+        if (discardText) discardText.textContent = "Clear Bill";
       }
       
       const action = await new Promise(resolve => {
@@ -2689,6 +2686,14 @@
             event.preventDefault();
             event.stopPropagation();
             finish("hold");
+          } else if (event.key.toLowerCase() === "x") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish("discard");
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish(null);
           }
         }
         function onClose() { finish(null); }
@@ -2719,6 +2724,13 @@
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
       } else if (action === "save_no_print") {
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: false});
+      } else if (action === "discard") {
+        if (state.openedSaleMode === "edit") {
+          await exitPreview(true, true);
+        } else {
+          await postCartAction("/pos/cart/clear", "Bill cleared.");
+          await loadCart();
+        }
       }
     }
 

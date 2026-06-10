@@ -35,14 +35,24 @@
             </tr>
           </thead>
           <tbody>
+            {% set ns = namespace(total_saved=0) %}
             {% for item in sale.items %}
+              {% set item_mrp = item.mrp or item.rate %}
+              {% if item_mrp > item.rate and item.qty > 0 %}
+                {% set ns.total_saved = ns.total_saved + (item_mrp - item.rate) * item.qty %}
+              {% endif %}
               <tr>
                 <td>
                   {{ item.item_name }}
                   {% if item.qty < 0 %}<br><strong style="font-size: 11px;">(RETURN)</strong>{% endif %}
                   <span>{{ item.barcode }}</span>
                 </td>
-                <td>{{ item.qty }} x {{ "%.2f"|format(item.rate) }}</td>
+                <td>
+                  {{ item.qty }} x {{ "%.2f"|format(item.rate) }}
+                  {% if item.mrp %}
+                  <br><span style="font-size: 11px; color: #888;">MRP: {% if item.mrp > item.rate %}<del>{% endif %}{{ "%.2f"|format(item.mrp) }}{% if item.mrp > item.rate %}</del>{% endif %}</span>
+                  {% endif %}
+                </td>
                 <td>{{ "%.2f"|format(item.amount) }}</td>
               </tr>
             {% endfor %}
@@ -51,11 +61,23 @@
         <div class="receipt-rule"></div>
 
         <dl class="receipt-totals">
-          <dt>Subtotal</dt><dd>{{ "%.2f"|format(sale.subtotal) }}</dd>
-          <dt>Discount</dt><dd>{{ "%.2f"|format(sale.discount_total) }}</dd>
-          <dt>Round Off</dt><dd>{{ "%.2f"|format(sale.round_off) }}</dd>
-          <dt>Total</dt><dd>{{ "%.2f"|format(sale.total) }}</dd>
+          <dt>Total</dt><dd>₹{{ "%.2f"|format(sale.total) }}</dd>
+          {% if ns.total_saved > 0 %}
+          <dt style="color: #1d7f46; font-weight: bold;">You Saved!</dt>
+          <dd style="color: #1d7f46; font-weight: bold;">₹{{ "%.2f"|format(ns.total_saved) }}</dd>
+          {% endif %}
         </dl>
+
+        <div style="display: flex; justify-content: center; gap: 24px; margin-top: 20px; margin-bottom: 15px;">
+          <div style="text-align: center;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=paytmqr://pay?pa=demo@paytm&pn=Balaji" alt="Paytm QR" width="80" height="80">
+            <p style="font-size: 10px; margin-top: 6px; font-weight: 500;">Pay with Paytm</p>
+          </div>
+          <div style="text-align: center;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balaji_cosmetics" alt="Instagram QR" width="80" height="80">
+            <p style="font-size: 10px; margin-top: 6px; font-weight: 500;">Follow Us</p>
+          </div>
+        </div>
 
         <footer class="receipt-footer">
           <p>Thank you</p>
