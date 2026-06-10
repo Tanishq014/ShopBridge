@@ -3090,9 +3090,9 @@ body.pos-page {
 
 body.pos-page .page {
   max-width: none;
-  height: calc(100vh - 58px);
+  height: 100vh;
   overflow: hidden;
-  padding: 0 16px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
 }
