@@ -97,7 +97,7 @@
             </tbody>
             <tfoot>
               <tr class="pos-add-row">
-                <td class="pos-line-no">+</td>
+                <td class="pos-line-no"></td>
                 <td class="pos-add-cell" colspan="4">
                   <div class="pos-search-wrap">
                     <input
@@ -330,12 +330,17 @@
 
     function focusItemInput(selectText = false) {
       state.selectedIndex = -1;
-      cartRows.querySelectorAll(".pos-billing-row").forEach(row => {
-        row.classList.remove("selected");
-      });
+      const clearRowSelection = () => {
+        cartRows.querySelectorAll(".pos-billing-row").forEach(row => {
+          row.classList.remove("selected");
+        });
+      };
+      clearRowSelection();
       const addRow = document.querySelector(".pos-add-row");
       if (addRow) addRow.classList.add("selected");
       window.requestAnimationFrame(() => {
+        state.selectedIndex = -1;
+        clearRowSelection();
         searchInput.focus();
         if (selectText) {
           searchInput.select();
@@ -2471,6 +2476,10 @@
         return new Promise(() => {}); // never resolve while unloading
       }
     }
+
+    searchInput.addEventListener("focus", () => {
+      focusItemInput(false);
+    });
 
     searchInput.addEventListener("input", () => {
       if (searchInput.value) {
