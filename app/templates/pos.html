@@ -1367,8 +1367,13 @@
       let nextIndex;
       if (!hasActiveNav) {
         if (delta < 0) {
-          setStatus("Start of bill list.", "info");
-          focusItemInput(false);
+          const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
+          if (hasItems) {
+            await startNewBillSafe();
+          } else {
+            setStatus("Start of bill list.", "info");
+            focusItemInput(false);
+          }
           return;
         }
         nextIndex = 0;
@@ -2659,3 +2664,4 @@
     window.setInterval(() => loadCart(true), 1000);
   </script>
 {% endblock %}
+
