@@ -1044,6 +1044,14 @@ def main() -> None:
         assert_true("item.item_count ?? item.lines ?? 0" in pos_markup, "Held bill line count must fall back to lines")
         assert_true("item.total_qty ?? item.count ?? 0" in pos_markup, "Held bill qty must fall back to count")
         assert_true("PgUp/PgDn Bills" in pos_markup, "POS help text must mention PgUp/PgDn Bills")
+        
+        # Ctrl+A Quick Action Checks
+        assert_true("ctrlABtnFinalize" in pos_html_source, "Ctrl+A Finalize button ID is incorrect")
+        assert_true("ctrlABtnDiscard" in pos_html_source, "Ctrl+A Discard button ID is incorrect")
+        assert_true('querySelectorAll("dialog")' in pos_html_source, "Modal check must use querySelectorAll('dialog')")
+        assert_true("checkoutNow(options = {})" in pos_html_source, "checkoutNow signature must use options object")
+        assert_true('"sale_id": sale.id' in pos_py_source, "pos_checkout_json must return sale_id")
+
         print("Smoke checks passed")
     finally:
         db.close()

@@ -205,6 +205,29 @@
       </div>
     </dialog>
 
+    <dialog id="ctrlAModal" class="pos-modal">
+      <div class="pos-modal-content">
+        <h2 id="ctrlAModalTitle">Bill Action</h2>
+        <p>What would you like to do with the current bill?</p>
+        <div class="pos-modal-actions">
+          <button class="button primary" value="finalize" id="ctrlABtnFinalize">Finalize</button>
+          <button class="button" value="hold">Hold</button>
+          <button class="button danger" value="discard" id="ctrlABtnDiscard">Discard</button>
+          <button class="button outline" value="cancel">Cancel</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="printPromptModal" class="pos-modal">
+      <div class="pos-modal-content">
+        <h2>Print receipt?</h2>
+        <div class="pos-modal-actions">
+          <button class="button primary" value="yes">Yes</button>
+          <button class="button outline" value="no">No</button>
+        </div>
+      </div>
+    </dialog>
+
     <footer class="pos-help-bar" id="posHelpBar" hidden>
       F2 Item | Enter Add/Select | Up/Down Rows/Search | Left/Right Cells | +/- Qty | Del Remove | F4 Pay | PgUp/PgDn Bills | Enter Open Bill | Ctrl+Enter Checkout | Esc Back
     </footer>
@@ -2319,7 +2342,9 @@
       return Boolean(state.previewMode && state.loadedSaleDirty);
     }
 
-    async function checkoutNow({silentAfterSave = false, skipConfirm = false} = {}) {
+    async function checkoutNow(options = {}) {
+      const silentAfterSave = Boolean(options.silentAfterSave);
+      const skipConfirm = Boolean(options.skipConfirm);
       if (!await saveFocusedLineInput()) {
         return false;
       }
@@ -2355,7 +2380,10 @@
              setPreviewState(false, null);
              await postCartAction("/pos/cart/clear");
              await loadBillNavItems();
-             return true;
+             state.checkoutSubmitting = false;
+             checkoutButton.disabled = false;
+             checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+             return data.sale_id || true;
           } else {
              setStatus(data.message || "Could not save bill.", "error");
              state.checkoutSubmitting = false;
@@ -2496,12 +2524,137 @@
       await checkoutNow();
     });
 
+    async function handleCtrlAQuickAction() {
+      if (state.billNavBusy || state.checkoutSubmitting) return;
+      if (!await saveFocusedLineInput()) return;
+      const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
+      if (!hasItems) {
+        setStatus("No active bill to handle.", "info");
+        focusItemInput(false);
+        return;
+      }
+      
+      const isEdit = state.cart.cart_mode === "sale_edit";
+      const ctrlAModal = document.getElementById("ctrlAModal");
+      const title = document.getElementById("ctrlAModalTitle");
+      const btnFinalize = document.getElementById("ctrlABtnFinalize");
+      const btnDiscard = document.getElementById("ctrlABtnDiscard");
+      
+      if (isEdit) {
+        title.textContent = "Edit Bill Action";
+        btnFinalize.textContent = "Save Changes";
+        btnDiscard.textContent = "Discard Changes";
+      } else {
+        title.textContent = "Bill Action";
+        btnFinalize.textContent = "Finalize";
+        btnDiscard.textContent = "Discard";
+      }
+      
+      const action = await new Promise(resolve => {
+        let resolved = false;
+        function finish(value) {
+          if (resolved) return;
+          resolved = true;
+          ctrlAModal.removeEventListener("click", onClick);
+          ctrlAModal.removeEventListener("close", onClose);
+          if (ctrlAModal.open) ctrlAModal.close();
+          resolve(value);
+        }
+        function onClick(event) {
+          if (event.target === ctrlAModal) return finish(null);
+          const val = event.target && event.target.value;
+          if (val) finish(val);
+        }
+        function onClose() { finish(null); }
+        
+        ctrlAModal.addEventListener("click", onClick);
+        ctrlAModal.addEventListener("close", onClose);
+        ctrlAModal.showModal();
+      });
+      
+      if (!action || action === "cancel") {
+        focusItemInput(false);
+        return;
+      }
+      
+      if (action === "discard") {
+        const response = await fetch("/pos/cart/active/discard", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok) {
+          setStatus(data.message || "Could not discard bill.", "error");
+          return;
+        }
+        state.loadedSaleDirty = false;
+        setPreviewState(false, null);
+        renderCart(data.cart);
+        await loadBillNavItems();
+        focusItemInput(false);
+        setStatus("Bill discarded. Started a new bill.", "success");
+      } else if (action === "hold") {
+        const response = await fetch("/pos/cart/hold", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok) {
+          setStatus(data.message || "Could not hold bill.", "error");
+          return;
+        }
+        renderCart(data.cart);
+        await loadBillNavItems();
+        focusItemInput(false);
+        setStatus("Bill held. Started a new bill.", "success");
+      } else if (action === "finalize") {
+        const saleId = await checkoutNow({silentAfterSave: true, skipConfirm: true});
+        if (saleId && saleId !== true) {
+          const printAction = await new Promise(resolve => {
+            const printModal = document.getElementById("printPromptModal");
+            let resolved = false;
+            function finish(val) {
+              if (resolved) return;
+              resolved = true;
+              printModal.removeEventListener("click", onClick);
+              printModal.removeEventListener("close", onClose);
+              if (printModal.open) printModal.close();
+              resolve(val);
+            }
+            function onClick(event) {
+              if (event.target === printModal) return finish(null);
+              const val = event.target && event.target.value;
+              if (val) finish(val);
+            }
+            function onClose() { finish(null); }
+            
+            printModal.addEventListener("click", onClick);
+            printModal.addEventListener("close", onClose);
+            printModal.showModal();
+          });
+          
+          if (printAction === "yes") {
+            window.open(`/sales/${saleId}/receipt`, "_blank");
+          }
+          setStatus("Bill finalized. Started a new bill.", "success");
+        }
+      }
+    }
+
     document.addEventListener("keydown", async event => {
-      const dirtyModal = document.getElementById("dirtyNavModal");
-      if (dirtyModal && dirtyModal.open) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        const searchPanel = document.getElementById("posSearchPanel");
+        const anyModalOpen = Array.from(document.querySelectorAll("dialog")).some(d => d.open);
+        const searchPanelOpen = searchPanel && !searchPanel.hidden;
+        
+        if (searchPanelOpen || state.billNavBusy || state.checkoutSubmitting || anyModalOpen) {
+          // let default Select All work
+        } else {
+          event.preventDefault();
+          event.stopPropagation();
+          await handleCtrlAQuickAction();
+          return;
+        }
+      }
+      const activeModal = Array.from(document.querySelectorAll("dialog")).find(d => d.open);
+      if (activeModal) {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
           event.preventDefault();
-          const buttons = Array.from(dirtyModal.querySelectorAll("button:not([disabled])"));
+          const buttons = Array.from(activeModal.querySelectorAll("button:not([disabled])"));
           if (buttons.length) {
             const currentIndex = buttons.indexOf(document.activeElement);
             const delta = event.key === "ArrowLeft" ? -1 : 1;
@@ -2588,6 +2741,10 @@
         return;
       }
       if (event.key === "Escape") {
+        const anyModalOpen = Array.from(document.querySelectorAll("dialog")).some(d => d.open);
+        if (anyModalOpen) {
+          return;
+        }
         event.preventDefault();
         if (!searchPanel.hidden) {
           closeSuggestions();
