@@ -240,14 +240,13 @@ def main() -> None:
         assert_true("saveFocusedLineInput" in pos_markup and "checkoutForm.submit()" in pos_markup and "checkoutSubmitting" in pos_markup, "POS checkout should save focused edits before submit")
         assert_true("event.stopPropagation()" in pos_markup and "await checkoutNow()" in pos_markup, "POS line editor should stop shortcut bubbling before checkout")
         assert_true("cartEditActive" in pos_markup and "lineEditIsActive()" in pos_markup and "if (silent &&" in pos_markup, "POS polling should pause while editing rate/qty")
-        assert_true("pos-qty-button" in pos_markup and "/increase" in pos_markup and "/decrease" in pos_markup, "POS quantity controls are missing")
         assert_true("addTallyItem" in pos_markup and "result_type === \"tally_item\"" in pos_markup, "POS UI does not add local Tally catalog search results")
         assert_true("addManualItem" not in pos_markup and "/pos/cart/manual/add" not in pos_markup and "pos-suggestion-manual" not in pos_markup, "POS UI must not expose manual free-text bill lines")
         assert_true("Keep manual text" not in pos_markup and "Add manual item" not in pos_markup and "Enter Add/Manual" not in pos_markup, "POS item search still contains manual-line copy")
         assert_true("replaceCartItem" in pos_markup and "/pos/cart/items/${itemId}/replace" in pos_markup, "POS item search selection should replace full cart line identity")
         assert_true("Select a saved barcode/Tally item." in pos_markup and "updateCartItem(editItem.id, {item_name" not in pos_markup, "POS row item editing can still save a label-only product mismatch")
         assert_true("editSearchTerm" in pos_markup and "searchInput.value = input.value" not in pos_markup, "POS row item search still uses the add-row input as hidden state")
-        assert_true("focusNextBillingField" in pos_markup and "focusNextBillingField(data.item && data.item.id)" in pos_markup, "POS valid barcode scans should return focus to the scan/add input")
+        assert_true("focusNextBillingField" in pos_markup and 'focusNextBillingField(data.item && data.item.id, "qty")' in pos_markup, "POS valid barcode scans should return focus to the scan/add input")
         assert_true("helpToggleButton" in pos_markup and "shopbridge.posHelpVisible.v1" in pos_markup and "id=\"posHelpBar\" hidden" in pos_markup, "POS help row toggle/default hidden state is missing")
         assert_true("fullscreenPosButton" in pos_markup and "requestFullscreen" in pos_markup, "POS fullscreen button is missing")
         assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup and "Left/Right Cells" in pos_markup and "F10" not in pos_markup, "POS shortcut help bar is missing or stale")
@@ -738,9 +737,9 @@ def main() -> None:
         scanned_qty_before_merge = scanned_cart_item.qty
         tally_qty_before_merge = tally_cart_item.qty
         replace_response = asyncio.run(pos.replace_pos_item(scanned_cart_item.id, DummyJsonRequest({"result_type": "tally_item", "id": tally_family.id}), db))
-        assert_true(replace_response.get("merged_item_id") is None, "POS duplicate replacement should NOT merge into the existing Tally line")
-        merged_tally_item = db.get(PosCartItem, scanned_cart_item.id)
-        assert_true(merged_tally_item and merged_tally_item.qty == scanned_qty_before_merge, "POS duplicate replacement should replace in place and keep qty")
+        assert_true(replace_response.get("merged_item_id") is not None, "POS duplicate replacement should merge into the existing Tally line")
+        merged_tally_item = db.get(PosCartItem, replace_response.get("merged_item_id"))
+        assert_true(merged_tally_item and merged_tally_item.qty == scanned_qty_before_merge + tally_qty_before_merge, "POS duplicate replacement should merge and sum qty")
         assert_true(replace_response["item"]["source_type"] == "tally_item" and replace_response["item"]["variant_id"] is None and replace_response["item"]["missing_price"] is False, "POS Tally replacement returned stale identity/rate payload")
         invalid_manual_replace = asyncio.run(pos.replace_pos_item(merged_tally_item.id, DummyJsonRequest({"result_type": "manual", "item_name": "Loose"}), db))
         assert_true(getattr(invalid_manual_replace, "status_code", 200) == 400, "POS replacement should not accept manual results")
@@ -993,7 +992,7 @@ def main() -> None:
         assert_true("skipNextChangeSaveFor" in pos_html_source, "POS template missing skipNextChangeSaveFor double-save guard")
         assert_true("state.editSearchTerm =" in pos_html_source and "replaceCartItem" in pos_html_source, "POS template missing editSearchTerm or replaceCartItem logic")
         assert_true("fieldName === \"item\"" in pos_html_source and "Select a saved barcode" in pos_html_source, "POS template missing label-only text save guard")
-        assert_true("focusNextBillingField(data.item && data.item.id)" in pos_html_source, "POS template does not focus missing fields after Tally add")
+        assert_true('focusNextBillingField(data.item && data.item.id, "qty")' in pos_html_source, "POS template does not focus missing fields after Tally add")
 
         assert_true(r"Unsaved edit \u00B7 ${lines} lines" in pos_html_source, "Recent Bills list does not show 'Unsaved edit' for dirty sale_edit bills")
         assert_true("lines ?? Qty" not in pos_html_source, "POS template contains bad ?? separators")
@@ -1046,11 +1045,26 @@ def main() -> None:
         assert_true("PgUp/PgDn Bills" in pos_markup, "POS help text must mention PgUp/PgDn Bills")
         
         # Ctrl+A Quick Action Checks
-        assert_true("ctrlABtnFinalize" in pos_html_source, "Ctrl+A Finalize button ID is incorrect")
-        assert_true("ctrlABtnDiscard" in pos_html_source, "Ctrl+A Discard button ID is incorrect")
+        assert_true('value="save_print"' in pos_html_source and 'Save + Print' in pos_html_source, "Ctrl+A prompt missing Save+Print action")
+        assert_true('value="save_no_print"' in pos_html_source and 'Save No Print' in pos_html_source, "Ctrl+A prompt missing Save No Print action")
+        assert_true('value="hold"' in pos_html_source and 'Hold' in pos_html_source, "Ctrl+A prompt missing Hold action")
+        assert_true('value="discard"' not in pos_html_source.split('id="ctrlAModal"')[1].split("</dialog>")[0], "Prompt should not show Discard as a quick action")
+        assert_true("printAfterSave: true" in pos_html_source, "Save+Print action must call checkoutNow with print enabled")
+        assert_true("printAfterSave: false" in pos_html_source, "Save No Print action must call checkoutNow with print disabled")
+        assert_true("if (printAfterSave && data.sale_id)" in pos_html_source, "Save failure must not print")
+        assert_true('else if (fieldName === "rate")' in pos_html_source and 'focusNextBillingField(itemId, "next_row_item")' in pos_html_source, "Pressing Enter on rate must move to next_row_item")
+        assert_true('if (!action || action === "cancel")' in pos_html_source, "Esc closes prompt without saving/holding")
         assert_true('querySelectorAll("dialog")' in pos_html_source, "Modal check must use querySelectorAll('dialog')")
         assert_true("checkoutNow(options = {})" in pos_html_source, "checkoutNow signature must use options object")
         assert_true('"sale_id": sale.id' in pos_py_source, "pos_checkout_json must return sale_id")
+
+        # Layout and Qty Checks
+        assert_true('row.append(no, itemCell, barcode, qty, mrp, rate, amount, action)' in pos_html_source, "POS column order must be Qty before MRP")
+        assert_true('pos-qty-button' not in pos_html_source, "Qty +/- buttons must be removed")
+        assert_true('item.qty < 0' in pos_html_source and 'return-badge' in pos_html_source, "Negative qty row must show return badge")
+        assert_true('focusNextBillingField(itemId, "qty")' in pos_html_source and 'focusNextBillingField(itemId, "mrp")' in pos_html_source, "Enter navigation must follow Item -> Qty -> MRP -> Rate")
+        assert_true('qty == 0' in pos_py_source and 'Quantity cannot be zero' in pos_py_source, "Qty zero must be rejected")
+        assert_true('qty <= 0' not in pos_py_source.split('if "qty" in payload:')[1].split('item.qty = qty')[0], "Qty input must accept negative values")
 
         print("Smoke checks passed")
     finally:
@@ -1059,3 +1073,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

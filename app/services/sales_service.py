@@ -83,7 +83,9 @@ def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decim
             raise CheckoutError("Cart contains a line without an item name.")
         if rate is None or money(rate) <= 0:
             raise CheckoutError(f"Rate is missing for {item_name}.")
-        qty = max(1, int(item.qty or 1))
+        qty = int(item.qty or 1)
+        if qty == 0:
+            raise CheckoutError(f"Quantity cannot be zero for {item_name}.")
         amount = money(rate) * qty
         subtotal += amount
         barcode = item.barcode_snapshot if item.barcode_snapshot is not None else variant.barcode if variant else ""
@@ -91,6 +93,8 @@ def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decim
             variant.family.tally_stock_item_name if variant and variant.family else None
         )
         mrp = item.mrp_snapshot if item.mrp_snapshot is not None else variant.mrp if variant else None
+        if mrp is not None and money(mrp) < money(rate):
+            raise CheckoutError(f"MRP cannot be lower than Rate for {item_name}.")
         sale_items.append(
             SaleItem(
                 label_variant_id=variant.id if variant else None,
@@ -199,4 +203,5 @@ def save_sale_edit_cart(
     db.commit()
     db.refresh(sale)
     return sale
+
 

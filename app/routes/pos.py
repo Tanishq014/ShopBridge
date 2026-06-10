@@ -974,6 +974,7 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
         select(PosCartItem)
         .where(PosCartItem.cart_id == cart.id)
         .where(PosCartItem.variant_id == variant.id)
+        .where(PosCartItem.qty > 0)
     )
     if item:
         item.qty += 1
@@ -1083,7 +1084,6 @@ def add_tally_item_to_cart(family_id: int, db: Session = Depends(get_db)):
 async def add_manual_item_to_cart(request: Request, db: Session = Depends(get_db)):
     return _json_error("Manual POS lines are deprecated. Scan a barcode or search a Tally item.", status_code=410, status="gone")
 
-
 @router.post("/pos/cart/items/{item_id}/update")
 async def update_pos_item(item_id: int, request: Request, db: Session = Depends(get_db)):
     item = _active_cart_item_or_error(db, item_id)
@@ -1098,9 +1098,9 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
         try:
             qty = int(str(payload.get("qty", "")).strip())
         except ValueError:
-            return _json_error("Quantity must be a positive number.", status_code=400, status="invalid_qty")
-        if qty <= 0:
-            return _json_error("Quantity must be at least 1.", status_code=400, status="invalid_qty")
+            return _json_error("Quantity must be a non-zero number.", status_code=400, status="invalid_qty")
+        if qty == 0:
+            return _json_error("Quantity cannot be zero.", status_code=400, status="invalid_qty")
         item.qty = qty
 
     if "item_name" in payload:
@@ -1125,6 +1125,10 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
         item.rate_snapshot = rate
         item.unit_price = rate
 
+    if item.mrp_snapshot is not None and item.rate_snapshot is not None:
+        if item.mrp_snapshot < item.rate_snapshot:
+            return _json_error("MRP cannot be lower than Rate.", status_code=400, status="invalid_mrp")
+
     db.add(item)
     db.commit()
     return _cart_payload(db, item.cart)
@@ -1136,14 +1140,19 @@ def _duplicate_variant_item(
     cart_id: int,
     variant_id: int,
     exclude_item_id: int,
+    qty_sign: int,
 ) -> PosCartItem | None:
-    return db.scalar(
+    q = (
         select(PosCartItem)
         .where(PosCartItem.cart_id == cart_id)
         .where(PosCartItem.id != exclude_item_id)
         .where(PosCartItem.variant_id == variant_id)
-        .order_by(PosCartItem.id)
     )
+    if qty_sign > 0:
+        q = q.where(PosCartItem.qty > 0)
+    else:
+        q = q.where(PosCartItem.qty < 0)
+    return db.scalar(q.order_by(PosCartItem.id))
 
 
 def _duplicate_tally_item(
@@ -1152,20 +1161,32 @@ def _duplicate_tally_item(
     cart_id: int,
     tally_name: str,
     exclude_item_id: int,
+    qty_sign: int,
 ) -> PosCartItem | None:
-    return db.scalar(
+    q = (
         select(PosCartItem)
         .where(PosCartItem.cart_id == cart_id)
         .where(PosCartItem.id != exclude_item_id)
         .where(PosCartItem.variant_id.is_(None))
         .where(PosCartItem.source_type == "tally_item")
         .where(PosCartItem.tally_stock_item_name_snapshot == tally_name)
-        .order_by(PosCartItem.id)
     )
+    if qty_sign > 0:
+        q = q.where(PosCartItem.qty > 0)
+    else:
+        q = q.where(PosCartItem.qty < 0)
+    return db.scalar(q.order_by(PosCartItem.id))
 
 
 def _merge_replaced_item(db: Session, *, target: PosCartItem, duplicate: PosCartItem, replacement_rate: Decimal | None = None) -> PosCartItem:
-    duplicate.qty = max(1, int(duplicate.qty or 1)) + max(1, int(target.qty or 1))
+    if (duplicate.qty > 0 and target.qty < 0) or (duplicate.qty < 0 and target.qty > 0):
+        return target
+        
+    merged_qty = (duplicate.qty or 1) + (target.qty or 1)
+    if merged_qty == 0:
+        return target
+
+    duplicate.qty = merged_qty
     rate = duplicate.rate_snapshot if duplicate.rate_snapshot is not None else duplicate.unit_price
     target_rate = target.rate_snapshot if target.rate_snapshot is not None else target.unit_price
     
@@ -1202,7 +1223,8 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
         if item.variant_id == variant.id:
             pass
         else:
-            duplicate = _duplicate_variant_item(db, cart_id=item.cart_id, variant_id=variant.id, exclude_item_id=item.id)
+            qty_sign = 1 if (item.qty or 1) > 0 else -1
+            duplicate = _duplicate_variant_item(db, cart_id=item.cart_id, variant_id=variant.id, exclude_item_id=item.id, qty_sign=qty_sign)
             if duplicate:
                 merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate, replacement_rate=variant.selling_price)
             else:
@@ -1215,7 +1237,12 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
         if item.source_type == "tally_item" and item.tally_stock_item_name_snapshot == tally_name:
             pass
         else:
-            _apply_family_to_cart_item(item, family, preserve_values=True)
+            qty_sign = 1 if (item.qty or 1) > 0 else -1
+            duplicate = _duplicate_tally_item(db, cart_id=item.cart_id, tally_name=tally_name, exclude_item_id=item.id, qty_sign=qty_sign)
+            if duplicate:
+                merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate)
+            else:
+                _apply_family_to_cart_item(item, family, preserve_values=True)
     else:
         return _json_error("Choose a valid item to replace this line.", status_code=400, status="invalid_item")
 
@@ -1289,3 +1316,6 @@ def clear_pos_cart(db: Session = Depends(get_db)):
         db.delete(item)
     db.commit()
     return _cart_payload(db, cart)
+
+
+

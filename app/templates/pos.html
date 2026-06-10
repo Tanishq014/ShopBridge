@@ -83,9 +83,9 @@
                 <th>No</th>
                 <th>Item / Article</th>
                 <th>Barcode</th>
+                <th>Qty</th>
                 <th>MRP</th>
                 <th>Rate</th>
-                <th>Qty</th>
                 <th>Amount</th>
                 <th>Action</th>
               </tr>
@@ -202,31 +202,33 @@
       </div>
     </dialog>
 
-    <dialog id="ctrlAModal" class="pos-modal">
+    <dialog id="ctrlAModal" class="pos-modal elegant-modal">
       <div class="pos-modal-content">
-        <h2 id="ctrlAModalTitle">Bill Action</h2>
-        <p>What would you like to do with the current bill?</p>
-        <div class="pos-modal-actions">
-          <button class="button primary" value="finalize" id="ctrlABtnFinalize">Finalize</button>
-          <button class="button" value="hold">Hold</button>
-          <button class="button danger" value="discard" id="ctrlABtnDiscard">Discard</button>
-          <button class="button outline" value="cancel">Cancel</button>
+        <h2 id="ctrlAModalTitle" class="elegant-modal-title">Bill Action</h2>
+        <div class="pos-modal-actions action-grid">
+          <button class="button action-btn primary" value="save_print">
+            <span class="action-icon"></span>
+            <span class="action-text">Save + Print</span>
+            <kbd>Enter / Y</kbd>
+          </button>
+          <button class="button action-btn" value="save_no_print">
+            <span class="action-icon"></span>
+            <span class="action-text">Save No Print</span>
+            <kbd>N</kbd>
+          </button>
+          <button class="button action-btn" value="hold">
+            <span class="action-icon"></span>
+            <span class="action-text">Hold</span>
+            <kbd>H</kbd>
+          </button>
         </div>
       </div>
     </dialog>
 
-    <dialog id="printPromptModal" class="pos-modal">
-      <div class="pos-modal-content">
-        <h2>Print receipt?</h2>
-        <div class="pos-modal-actions">
-          <button class="button primary" value="yes">Yes</button>
-          <button class="button outline" value="no">No</button>
-        </div>
-      </div>
-    </dialog>
+
 
     <footer class="pos-help-bar" id="posHelpBar" hidden>
-      F2 Item | Enter Add/Select | Up/Down Rows/Search | Left/Right Cells | +/- Qty | Del Remove | F4 Pay | PgUp/PgDn Bills | Enter Open Bill | Ctrl+Enter Checkout | Esc Back
+      F2 Item | Enter Add/Select | Up/Down Rows/Search | Left/Right Cells | Del Remove | F4 Pay | PgUp/PgDn Bills | Enter Open Bill | Ctrl+Enter Checkout | Esc Back
     </footer>
   </section>
 
@@ -302,7 +304,24 @@
       checkoutSubmitting: false,
       lastLineEdit: null,
       skipNextChangeSaveFor: null,
+      activeEditField: null,
+      activeEditOriginalValue: null,
+      activeEditDirty: false,
     };
+
+    function currentFieldIsActuallyEditing(input = document.activeElement) {
+      return Boolean(
+        input &&
+        state.activeEditField === input &&
+        state.activeEditDirty
+      );
+    }
+
+    function resetActiveEditState() {
+      state.activeEditField = null;
+      state.activeEditOriginalValue = null;
+      state.activeEditDirty = false;
+    }
 
     function money(value) {
       const amount = Number.parseFloat(String(value ?? "").replace(/[^0-9.-]/g, ""));
@@ -586,7 +605,7 @@
     }
 
     function moveCartField(rowIndex, fieldName, delta) {
-      const order = ["item", "mrp", "rate", "qty"];
+      const order = ["item", "qty", "mrp", "rate"];
       const current = order.indexOf(fieldName);
       if (current < 0) {
         return;
@@ -1485,7 +1504,7 @@
         closeSuggestions(true);
         if (replaced) {
           const replacementId = (replaced.item && replaced.item.id) || replaced.merged_item_id || editItem.id;
-          focusNextBillingField(replacementId);
+          focusNextBillingField(replacementId, "qty");
         } else {
           focusCartField(rowIndex, fieldName, true);
         }
@@ -1505,6 +1524,7 @@
     }
 
     function renderCart(cart) {
+      resetActiveEditState();
       state.skipNextChangeSaveFor = null;
       state.cart = cart || {items: [], count: 0, total: "0.00"};
       const saleEditBadge = document.getElementById("saleEditBadge");
@@ -1609,6 +1629,17 @@
         if (description) {
           itemCell.appendChild(meta);
         }
+        if (item.qty < 0) {
+          const badge = document.createElement("span");
+          badge.className = "return-badge";
+          badge.textContent = "Goods Returned";
+          badge.style.display = "inline-block";
+          badge.style.marginLeft = "8px";
+          badge.style.fontSize = "11px";
+          badge.style.color = "#d32f2f";
+          badge.style.fontWeight = "bold";
+          itemCell.appendChild(badge);
+        }
 
         const barcode = document.createElement("td");
         barcode.className = "mono pos-barcode-cell";
@@ -1641,14 +1672,6 @@
 
         const qty = document.createElement("td");
         qty.className = "pos-qty-cell";
-        const dec = document.createElement("button");
-        dec.type = "button";
-        dec.className = "button small pos-qty-button";
-        dec.textContent = "-";
-        dec.setAttribute("aria-label", "Decrease quantity");
-        dec.dataset.cartAction = "qty";
-        dec.dataset.qtyDelta = "-1";
-        dec.dataset.cartRowIndex = index;
         const qtyValue = document.createElement("input");
         qtyValue.className = "pos-line-input pos-qty-input";
         qtyValue.inputMode = "numeric";
@@ -1658,15 +1681,7 @@
         qtyValue.dataset.cartRowIndex = index;
         qtyValue.dataset.cartItemId = item.id;
         qtyValue.dataset.cartField = "qty";
-        const inc = document.createElement("button");
-        inc.type = "button";
-        inc.className = "button small pos-qty-button";
-        inc.textContent = "+";
-        inc.setAttribute("aria-label", "Increase quantity");
-        inc.dataset.cartAction = "qty";
-        inc.dataset.qtyDelta = "1";
-        inc.dataset.cartRowIndex = index;
-        qty.append(dec, qtyValue, inc);
+        qty.appendChild(qtyValue);
 
         const amount = document.createElement("td");
         amount.className = "pos-money-cell pos-amount-cell";
@@ -1683,7 +1698,7 @@
         remove.dataset.cartRowIndex = index;
         action.appendChild(remove);
 
-        row.append(no, itemCell, barcode, mrp, rate, qty, amount, action);
+        row.append(no, itemCell, barcode, qty, mrp, rate, amount, action);
         cartRows.appendChild(row);
       });
 
@@ -1805,7 +1820,9 @@
         rate: "Rate updated.",
         qty: "Quantity updated.",
       };
-      return updateCartItem(item.id, values, messages[fieldName] || "Line updated.", false);
+      const result = await updateCartItem(item.id, values, messages[fieldName] || "Line updated.", false);
+      if (result) resetActiveEditState();
+      return result;
     }
 
     function startItemEditSearch(input, rowIndex) {
@@ -1856,6 +1873,11 @@
       setLineEditActive(true);
       state.lastLineEdit = {itemId, fieldName};
       state.selectedIndex = rowIndex;
+      
+      state.activeEditField = input;
+      state.activeEditOriginalValue = input.value;
+      state.activeEditDirty = false;
+      
       if (typeof input.select === "function") {
         input.select();
       }
@@ -1877,6 +1899,11 @@
         return;
       }
       setLineEditActive(true);
+      
+      if (state.activeEditField === input) {
+        state.activeEditDirty = input.value !== state.activeEditOriginalValue;
+      }
+      
       const rowIndex = Number(input.dataset.cartRowIndex);
       state.lastLineEdit = {itemId: input.dataset.cartItemId, fieldName: input.dataset.cartField};
       state.selectedIndex = rowIndex;
@@ -1925,7 +1952,14 @@
       if ((event.ctrlKey && event.key === "Enter") || (event.shiftKey && event.key === "Enter")) {
         event.preventDefault();
         event.stopPropagation();
-        await checkoutNow();
+        await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
+        return;
+      }
+      
+      if (event.key === "Backspace" && !currentFieldIsActuallyEditing()) {
+        event.preventDefault();
+        event.stopPropagation();
+        moveCartField(rowIndex, fieldName, -1);
         return;
       }
 
@@ -1949,7 +1983,7 @@
           }
           state.focusTransition = true;
           window.setTimeout(() => {
-            focusNextBillingField(itemId, "mrp");
+            focusNextBillingField(itemId, "qty");
             state.focusTransition = false;
           }, 50);
           return;
@@ -1960,19 +1994,19 @@
           state.skipNextChangeSaveFor = null;
           return;
         }
-        if (fieldName === "mrp") {
+        if (fieldName === "qty") {
+          state.focusTransition = true;
+          window.setTimeout(() => {
+            focusNextBillingField(itemId, "mrp");
+            state.focusTransition = false;
+          }, 50);
+        } else if (fieldName === "mrp") {
           state.focusTransition = true;
           window.setTimeout(() => {
             focusNextBillingField(itemId, "rate");
             state.focusTransition = false;
           }, 50);
         } else if (fieldName === "rate") {
-          state.focusTransition = true;
-          window.setTimeout(() => {
-            focusNextBillingField(itemId, "qty");
-            state.focusTransition = false;
-          }, 50);
-        } else if (fieldName === "qty") {
           state.focusTransition = true;
           window.setTimeout(() => {
             focusNextBillingField(itemId, "next_row_item");
@@ -1985,7 +2019,7 @@
       if (event.key === "ArrowRight") {
         event.preventDefault();
         event.stopPropagation();
-        if (fieldName === "qty") {
+        if (fieldName === "rate") {
           focusSelectedCartItem(true);
         } else {
           moveCartField(rowIndex, fieldName, 1);
@@ -2003,6 +2037,7 @@
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
+        resetActiveEditState();
         const searchWasOpen = !searchPanel.hidden;
         const item = cartItemAt(rowIndex);
         if (fieldName === "item" && item) {
@@ -2162,6 +2197,10 @@
       if (!fieldName || !itemId) {
         return true;
       }
+      if (!currentFieldIsActuallyEditing()) {
+        state.lastLineEdit = null;
+        return true;
+      }
       const rowIndex = rowIndexForCartItemId(itemId);
       if (rowIndex < 0) {
         state.lastLineEdit = null;
@@ -2214,7 +2253,7 @@
         closeSuggestions(false);
         setStatus(`Added: ${data.item.billing_item || data.item.item_name || "Tally item"} - enter rate`, "success");
         playBeep(true);
-        focusNextBillingField(data.item && data.item.id);
+        focusNextBillingField(data.item && data.item.id, "qty");
       } catch (error) {
         setStatus(error.message || "Could not add Tally item.", "error");
         playBeep(false);
@@ -2367,6 +2406,7 @@
     async function checkoutNow(options = {}) {
       const silentAfterSave = Boolean(options.silentAfterSave);
       const skipConfirm = Boolean(options.skipConfirm);
+      const printAfterSave = Boolean(options.printAfterSave);
       if (!await saveFocusedLineInput()) {
         return false;
       }
@@ -2405,6 +2445,12 @@
              state.checkoutSubmitting = false;
              checkoutButton.disabled = false;
              checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+             if (printAfterSave && data.sale_id) {
+               window.open(`/sales/${data.sale_id}/receipt`, "_blank");
+               setStatus("Bill finalized and printed.", "success");
+             } else {
+               setStatus("Bill finalized. Started a new bill.", "success");
+             }
              return data.sale_id || true;
           } else {
              setStatus(data.message || "Could not save bill.", "error");
@@ -2435,6 +2481,16 @@
     });
 
     searchInput.addEventListener("keydown", async event => {
+      if (event.key === "Backspace" && !searchInput.value) {
+        const items = state.cart.items || [];
+        if (items.length > 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeSuggestions();
+          focusCartField(items.length - 1, "rate", true);
+          return;
+        }
+      }
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopPropagation();
@@ -2445,8 +2501,14 @@
           if (state.billNavBusy) {
             return;
           }
-          await openSelectedBillNavItem();
-          return;
+          const item = state.billNavItems[state.billNavIndex];
+          const isCurrentBill = item && (item.type === "open" || (state.cart && String(state.cart.cart_id) === String(item.id) && item.type === "held"));
+          if (!isCurrentBill) {
+            await openSelectedBillNavItem();
+            return;
+          }
+          state.heldSelectionActive = false;
+          renderBillNavItems();
         }
         
         if (!text) {
@@ -2559,7 +2621,7 @@
         return;
       }
       event.preventDefault();
-      await checkoutNow();
+      await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
     });
 
     async function handleCtrlAQuickAction() {
@@ -2575,17 +2637,11 @@
       const isEdit = state.cart.cart_mode === "sale_edit";
       const ctrlAModal = document.getElementById("ctrlAModal");
       const title = document.getElementById("ctrlAModalTitle");
-      const btnFinalize = document.getElementById("ctrlABtnFinalize");
-      const btnDiscard = document.getElementById("ctrlABtnDiscard");
       
       if (isEdit) {
         title.textContent = "Edit Bill Action";
-        btnFinalize.textContent = "Save Changes";
-        btnDiscard.textContent = "Discard Changes";
       } else {
         title.textContent = "Bill Action";
-        btnFinalize.textContent = "Finalize";
-        btnDiscard.textContent = "Discard";
       }
       
       const action = await new Promise(resolve => {
@@ -2595,18 +2651,35 @@
           resolved = true;
           ctrlAModal.removeEventListener("click", onClick);
           ctrlAModal.removeEventListener("close", onClose);
+          document.removeEventListener("keydown", onKeyDown, true);
           if (ctrlAModal.open) ctrlAModal.close();
           resolve(value);
         }
         function onClick(event) {
           if (event.target === ctrlAModal) return finish(null);
-          const val = event.target && event.target.value;
+          const val = event.target && event.target.closest("button")?.value;
           if (val) finish(val);
+        }
+        function onKeyDown(event) {
+          if (event.key === "Enter" || event.key.toLowerCase() === "y") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish("save_print");
+          } else if (event.key.toLowerCase() === "n") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish("save_no_print");
+          } else if (event.key.toLowerCase() === "h") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish("hold");
+          }
         }
         function onClose() { finish(null); }
         
         ctrlAModal.addEventListener("click", onClick);
         ctrlAModal.addEventListener("close", onClose);
+        document.addEventListener("keydown", onKeyDown, true);
         ctrlAModal.showModal();
       });
       
@@ -2615,20 +2688,7 @@
         return;
       }
       
-      if (action === "discard") {
-        const response = await fetch("/pos/cart/active/discard", {method: "POST"});
-        const data = await response.json();
-        if (!response.ok) {
-          setStatus(data.message || "Could not discard bill.", "error");
-          return;
-        }
-        state.loadedSaleDirty = false;
-        setPreviewState(false, null);
-        renderCart(data.cart);
-        await loadBillNavItems();
-        focusItemInput(false);
-        setStatus("Bill discarded. Started a new bill.", "success");
-      } else if (action === "hold") {
+      if (action === "hold") {
         const response = await fetch("/pos/cart/hold", {method: "POST"});
         const data = await response.json();
         if (!response.ok) {
@@ -2639,37 +2699,10 @@
         await loadBillNavItems();
         focusItemInput(false);
         setStatus("Bill held. Started a new bill.", "success");
-      } else if (action === "finalize") {
-        const saleId = await checkoutNow({silentAfterSave: true, skipConfirm: true});
-        if (saleId && saleId !== true) {
-          const printAction = await new Promise(resolve => {
-            const printModal = document.getElementById("printPromptModal");
-            let resolved = false;
-            function finish(val) {
-              if (resolved) return;
-              resolved = true;
-              printModal.removeEventListener("click", onClick);
-              printModal.removeEventListener("close", onClose);
-              if (printModal.open) printModal.close();
-              resolve(val);
-            }
-            function onClick(event) {
-              if (event.target === printModal) return finish(null);
-              const val = event.target && event.target.value;
-              if (val) finish(val);
-            }
-            function onClose() { finish(null); }
-            
-            printModal.addEventListener("click", onClick);
-            printModal.addEventListener("close", onClose);
-            printModal.showModal();
-          });
-          
-          if (printAction === "yes") {
-            window.open(`/sales/${saleId}/receipt`, "_blank");
-          }
-          setStatus("Bill finalized. Started a new bill.", "success");
-        }
+      } else if (action === "save_print") {
+        await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
+      } else if (action === "save_no_print") {
+        await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: false});
       }
     }
 
@@ -2826,6 +2859,10 @@
       if (document.activeElement === searchInput) {
         if (!searchPanel.hidden) return;
         if (["ArrowUp", "ArrowDown", "+", "=", "-", "_", "Delete"].includes(event.key)) return;
+      }
+      if (isLineInput) {
+        const fieldName = document.activeElement.dataset.cartField;
+        if (fieldName === "qty" && ["+", "=", "-", "_"].includes(event.key)) return;
       }
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();

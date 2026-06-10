@@ -39,6 +39,7 @@
               <tr>
                 <td>
                   {{ item.item_name }}
+                  {% if item.qty < 0 %}<br><strong style="font-size: 11px;">(RETURN)</strong>{% endif %}
                   <span>{{ item.barcode }}</span>
                 </td>
                 <td>{{ item.qty }} x {{ "%.2f"|format(item.rate) }}</td>

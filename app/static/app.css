@@ -2851,7 +2851,7 @@ tbody tr:last-child td {
   display: inline-block;
   margin: 0 2px;
   text-align: center;
-  width: 32px;
+  width: 48px;
   vertical-align: middle;
 }
 
@@ -3267,4 +3267,84 @@ body.pos-page .pos-normal-mode {
   font-size: 11px;
   margin-top: 2px;
 }
+
+/* Elegant Modal Styles */
+.elegant-modal {
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.25);
+  padding: 32px;
+  width: 400px;
+  max-width: 90vw;
+  color: var(--text-color);
+}
+.elegant-modal::backdrop {
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.elegant-modal-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 24px;
+  text-align: center;
+}
+.action-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 0;
+}
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-color);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.action-btn:hover, .action-btn:focus {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: var(--primary);
+  outline: none;
+}
+.action-btn.primary {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.action-btn.primary:hover, .action-btn.primary:focus {
+  background: var(--primary-hover);
+  box-shadow: 0 6px 16px rgba(var(--primary-rgb), 0.3);
+}
+.action-icon {
+  font-size: 1.2rem;
+  margin-right: 12px;
+}
+.action-text {
+  flex-grow: 1;
+  text-align: left;
+  font-weight: 500;
+}
+.action-btn kbd {
+  background: rgba(128,128,128,0.15);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: inherit;
+  opacity: 0.8;
+}
+.action-btn.primary kbd {
+  background: rgba(255,255,255,0.2);
+}
+
+.pos-qty-input { text-align: right; }
+body.pos-page .pos-item-cell span.return-badge { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 12px; background-color: rgba(211, 47, 47, 0.1); color: #d32f2f; border: 1px solid rgba(211, 47, 47, 0.2); vertical-align: middle; }
 
