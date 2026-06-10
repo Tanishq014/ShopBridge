@@ -1059,7 +1059,7 @@ def main() -> None:
         assert_true('"sale_id": sale.id' in pos_py_source, "pos_checkout_json must return sale_id")
 
         # Layout and Qty Checks
-        assert_true('row.append(no, itemCell, barcode, qty, mrp, rate, amount, action)' in pos_html_source, "POS column order must be Qty before MRP")
+        assert_true('row.append(no, itemCell, barcode, qty, mrp, rate, amount)' in pos_html_source, "POS column order must be Qty before MRP")
         assert_true('pos-qty-button' not in pos_html_source, "Qty +/- buttons must be removed")
         assert_true('item.qty < 0' in pos_html_source and 'return-badge' in pos_html_source, "Negative qty row must show return badge")
         assert_true('focusNextBillingField(itemId, "qty")' in pos_html_source and 'focusNextBillingField(itemId, "mrp")' in pos_html_source, "Enter navigation must follow Item -> Qty -> MRP -> Rate")

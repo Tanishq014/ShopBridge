@@ -2704,22 +2704,13 @@ tbody tr:last-child td {
 .pos-billing-grid td:nth-child(4),
 .pos-billing-grid th:nth-child(5),
 .pos-billing-grid td:nth-child(5),
+.pos-billing-grid th:nth-child(6),
+.pos-billing-grid td:nth-child(6),
 .pos-billing-grid th:nth-child(7),
 .pos-billing-grid td:nth-child(7) {
   text-align: right;
-  width: 82px;
-}
-
-.pos-billing-grid th:nth-child(6),
-.pos-billing-grid td:nth-child(6) {
-  text-align: center;
-  width: 100px;
-}
-
-.pos-billing-grid th:nth-child(8),
-.pos-billing-grid td:nth-child(8) {
-  text-align: center;
-  width: 70px;
+  width: 86px;
+  padding-right: 12px;
 }
 
 .pos-billing-row {
@@ -3135,10 +3126,28 @@ body.pos-page .pos-normal-mode {
 }
 
 .pos-grid-workspace {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1050px) 380px;
+  gap: 10px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding-left: 0;
+  justify-content: center;
   min-height: 0;
   flex: 1;            /* stretch to fill .pos-grid-shell flex column */
   align-items: stretch; /* both panels fill the row height */
+}
+
+body.pos-page .pos-header {
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .pos-grid-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
 }
 
 .pos-bill-panel {

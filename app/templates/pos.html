@@ -87,7 +87,6 @@
                 <th>MRP</th>
                 <th>Rate</th>
                 <th>Amount</th>
-                <th>Action</th>
               </tr>
             </thead>
             <tbody id="cartRows">
@@ -98,7 +97,7 @@
             <tfoot>
               <tr class="pos-add-row">
                 <td class="pos-line-no"></td>
-                <td class="pos-add-cell" colspan="6">
+                <td class="pos-add-cell" colspan="5">
                   <div class="pos-search-wrap">
                     <input
                       id="posSearchInput"
@@ -1686,18 +1685,7 @@
         amount.className = "pos-money-cell pos-amount-cell";
         amount.textContent = item.missing_price ? "" : money(item.amount);
 
-        const action = document.createElement("td");
-        action.className = "pos-action-cell";
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "button small pos-remove-button";
-        remove.textContent = "X";
-        remove.setAttribute("aria-label", "Remove item");
-        remove.dataset.cartAction = "remove";
-        remove.dataset.cartRowIndex = index;
-        action.appendChild(remove);
-
-        row.append(no, itemCell, barcode, qty, mrp, rate, amount, action);
+        row.append(no, itemCell, barcode, qty, mrp, rate, amount);
         cartRows.appendChild(row);
       });
 
