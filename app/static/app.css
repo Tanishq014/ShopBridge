@@ -3211,7 +3211,7 @@ body.pos-page .pos-header {
 .pos-search-results-list .pos-suggestion {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
-  padding: 10px 12px;
+  padding: 6px 12px;
   text-align: left;
   width: 100%;
 }
@@ -3237,19 +3237,24 @@ body.pos-page .pos-header {
 }
 
 .pos-search-item-row {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   justify-content: space-between;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 
 .pos-search-item-name {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 900;
+  color: #000000;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
 }
 
 .pos-search-item-rate {
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 17px;
+  color: #111827;
   white-space: nowrap;
   padding-left: 8px;
 }
@@ -3259,8 +3264,9 @@ body.pos-page .pos-header {
 }
 
 .pos-search-item-meta {
-  color: var(--muted);
-  font-size: 12px;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .pos-cart-row.active {

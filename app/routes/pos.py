@@ -801,7 +801,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         return {"ok": True, "items": []}
 
     lowered = term.lower()
-    like = f"%{lowered}%"
+    like = f"%{lowered}%" if len(lowered) >= 3 else f"{lowered}%"
     clean_barcode = normalize_barcode(term)
     barcode_like = bool(clean_barcode) and len(clean_barcode) >= 4 and clean_barcode.replace("-", "").isalnum()
     variants = db.execute(
@@ -826,18 +826,22 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
     def rank(variant: LabelVariant) -> tuple[int, str]:
         exact_barcode = clean_barcode and variant.barcode == clean_barcode
         barcode_start = clean_barcode and variant.barcode and variant.barcode.startswith(clean_barcode)
-        starts = any(
-            (value or "").lower().startswith(lowered)
-            for value in (
-                variant.item_display_name,
-                variant.article_no,
-                variant.brand,
-                variant.family.family_name if variant.family else "",
-            )
-        )
+        
+        name_starts = (variant.item_display_name or "").lower().startswith(lowered)
+        tally_starts = (variant.family.tally_stock_item_name or "").lower().startswith(lowered) if variant.family else False
+        family_starts = (variant.family.family_name or "").lower().startswith(lowered) if variant.family else False
+        
+        if exact_barcode: p = 0
+        elif barcode_start: p = 1
+        elif name_starts: p = 2
+        elif tally_starts: p = 3
+        elif family_starts: p = 4
+        elif any((value or "").lower().startswith(lowered) for value in (variant.article_no, variant.brand)): p = 5
+        else: p = 6
+
         return (
-            0 if exact_barcode else 1 if barcode_start else 2 if starts else 3,
-            variant.item_display_name.lower(),
+            p,
+            variant.item_display_name.lower() if variant.item_display_name else "",
         )
 
     variants.sort(key=rank)
@@ -863,7 +867,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
     def tally_rank(item: TallyItem) -> tuple[int, str]:
         starts = (item.name or "").lower().startswith(lowered)
         alias_starts = (item.aliases or "").lower().startswith(lowered)
-        return (1 if (starts or alias_starts) else 3, (item.name or "").lower())
+        return (0 if (starts or alias_starts) else 1, (item.name or "").lower())
 
     tally_items.sort(key=tally_rank)
     tally_results = [
@@ -880,12 +884,9 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         for item in tally_items[:12]
     ]
 
-    if barcode_like:
-        results = variant_results + tally_results
-    else:
-        exact_results = [result for result in variant_results if result["exact_barcode"]]
-        non_exact_variants = [result for result in variant_results if not result["exact_barcode"]]
-        results = exact_results + non_exact_variants + tally_results
+    exact_results = [result for result in variant_results if result["exact_barcode"]]
+    non_exact_variants = [result for result in variant_results if not result["exact_barcode"]]
+    results = exact_results + tally_results + non_exact_variants
     return {
         "ok": True,
         "items": results[:12],
