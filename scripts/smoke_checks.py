@@ -267,6 +267,30 @@ def main() -> None:
         assert_true("/sales/{sale_id}/data" in sales_route_source and "sale_payload" in sales_route_source, "sales replay data route is missing")
         assert_true("window.print()" in sale_receipt_markup and "Thankyu" in sale_receipt_markup, "receipt template is missing browser print UI")
         assert_true("size: 80mm auto" in app_css and ".receipt" in app_css, "80mm receipt print CSS is missing")
+        
+        assert_true("item_search" in sales_route_source, "item_search parameter exists in sales route")
+        assert_true("SaleItem" in sales_route_source and "exists" in sales_route_source, "SaleItem is used for item search")
+        assert_true("PosCartItem" not in sales_route_source, "item_search filter does not use PosCartItem")
+        assert_true("SaleItem.barcode" not in sales_route_source, "item_search filter does not search barcode")
+        assert_true("/sales/search-names" in sales_route_source, "/sales/search-names route exists")
+        assert_true("SaleItem.item_name" in sales_route_source, "SaleItem.item_name is used")
+        assert_true("SaleItem.tally_stock_item_name" in sales_route_source, "SaleItem.tally_stock_item_name is used")
+        
+        assert_true("item_search" in sales_markup, "sales.html has item_search input")
+        assert_true("itemSearchSuggestions" in sales_markup, "sales.html has itemSearchSuggestions")
+        assert_true('fetch(`/sales/search-names' in sales_markup, 'sales.html uses fetch("/sales/search-names')
+        assert_true('autocomplete="off"' in sales_markup, 'sales.html has autocomplete="off" on item_search')
+        assert_true('itemSearchSuggestions.querySelectorAll(".sales-item-suggestion")' in sales_markup, 'sales.html has ArrowDown/ArrowUp suggestion navigation')
+        assert_true('itemSearchInput.value = items[selectedIndex].textContent' in sales_markup, 'sales.html has Enter suggestion selection')
+        
+        assert_true("F2" in sales_markup and "singleDateModal" in sales_markup, "F2 shortcut exists")
+        assert_true("altKey" in sales_markup and "rangeDateModal" in sales_markup, "Alt+F2 shortcut exists")
+        assert_true("parseTallyDate" in sales_markup, "DDMM/DDMMYY/DDMMYYYY parser exists")
+        assert_true("ArrowUp" in sales_markup and "ArrowDown" in sales_markup, "ArrowUp/ArrowDown row navigation exists")
+        assert_true("Enter" in sales_markup and "openLink.click()" in sales_markup, "Enter opens selected row")
+        assert_true("isInput" in sales_markup and "active.tagName === \"INPUT\"" in sales_markup, "shortcuts ignore input/textarea/select/button/a/contenteditable focus")
+        assert_true('document.querySelector("tbody tr.selected")' in sales_markup, "sales table keyboard navigation still exists")
+
         demo_items = db.query(TallyItem).all()
         assert_true(
             any((item.name or "").startswith("Demo Tally") for item in demo_items),

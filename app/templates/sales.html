@@ -27,6 +27,38 @@
       color: #fff;
       border-color: #0f172a;
     }
+    tbody tr.selected {
+      background-color: #f1f5f9;
+      outline: 2px solid #3b82f6;
+      outline-offset: -2px;
+    }
+    .sales-item-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      max-height: 250px;
+      overflow-y: auto;
+      z-index: 50;
+      margin-top: 4px;
+    }
+    .sales-item-suggestion {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .sales-item-suggestion:last-child {
+      border-bottom: none;
+    }
+    .sales-item-suggestion:hover, .sales-item-suggestion.selected {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
   </style>
   <div class="quick-filters" style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
     <span style="font-size: 13px; font-weight: 600; color: #64748b; margin-right: 8px;">Quick Filters:</span>
@@ -131,9 +163,14 @@
         <option value="card" {% if filters.payment_mode == 'card' %}selected{% endif %}>Card</option>
       </select>
     </div>
+    <div class="form-group" style="margin: 0; min-width: 150px; flex: 1; position: relative;">
+      <label for="item_search" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Item Search</label>
+      <input type="text" id="item_search" name="item_search" autocomplete="off" onfocus="this.select()" placeholder="Item name or barcode..." value="{{ filters.item_search }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+      <div id="itemSearchSuggestions" class="sales-item-suggestions" hidden></div>
+    </div>
     <div class="form-group" style="margin: 0; min-width: 150px; flex: 1;">
       <label for="bill_number" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Bill Number</label>
-      <input type="text" id="bill_number" name="bill_number" placeholder="Search bill no..." value="{{ filters.bill_number }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+      <input type="text" id="bill_number" name="bill_number" onfocus="this.select()" placeholder="Search bill no..." value="{{ filters.bill_number }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
     </div>
     <div class="form-actions" style="margin: 0; display: flex; gap: 8px;">
       <button type="submit" class="button primary" style="height: 38px;">Apply</button>
@@ -185,4 +222,242 @@
       </tbody>
     </table>
   </div>
+
+  <dialog id="singleDateModal" style="padding: 20px; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+    <h3 style="margin-top: 0;">Select Date</h3>
+    <input type="text" id="singleDateInput" placeholder="DDMM, DDMMYY, or DDMMYYYY" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 12px;">
+    <div style="text-align: right;">
+      <button type="button" class="button" onclick="document.getElementById('singleDateModal').close()">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="rangeDateModal" style="padding: 20px; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+    <h3 style="margin-top: 0;">Date Range</h3>
+    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">From</label>
+    <input type="text" id="rangeDateFrom" placeholder="DDMM, DDMMYY, or DDMMYYYY" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 12px;">
+    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">To</label>
+    <input type="text" id="rangeDateTo" placeholder="DDMM, DDMMYY, or DDMMYYYY" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 12px;">
+    <div style="text-align: right;">
+      <button type="button" class="button" onclick="document.getElementById('rangeDateModal').close()">Cancel</button>
+    </div>
+  </dialog>
+
+  <script>
+    function parseTallyDate(input) {
+      const clean = (input || "").trim().replace(/\D/g, "");
+      if (!clean || clean.length < 4) return null;
+      
+      const dd = parseInt(clean.substring(0, 2), 10);
+      const mm = parseInt(clean.substring(2, 4), 10);
+      if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return null;
+
+      let yy = new Date().getFullYear();
+      if (clean.length === 6) {
+        const shortYy = parseInt(clean.substring(4, 6), 10);
+        yy = shortYy < 70 ? 2000 + shortYy : 1900 + shortYy;
+      } else if (clean.length === 8) {
+        yy = parseInt(clean.substring(4, 8), 10);
+      } else if (clean.length !== 4) {
+        return null;
+      }
+
+      const date = new Date(yy, mm - 1, dd);
+      if (date.getFullYear() !== yy || date.getMonth() !== mm - 1 || date.getDate() !== dd) {
+        return null;
+      }
+      return formatLocalDate(date);
+    }
+
+    function applySingleDate() {
+      const input = document.getElementById("singleDateInput").value;
+      const parsed = parseTallyDate(input);
+      if (!parsed) {
+        alert("Invalid date format. Use DDMM, DDMMYY, or DDMMYYYY.");
+        return;
+      }
+      document.getElementById('start_date').value = parsed;
+      document.getElementById('end_date').value = parsed;
+      document.querySelector('.sales-filter-form').submit();
+    }
+
+    function applyRangeDate() {
+      const fromInput = document.getElementById("rangeDateFrom").value;
+      const toInput = document.getElementById("rangeDateTo").value;
+      const parsedFrom = parseTallyDate(fromInput);
+      const parsedTo = parseTallyDate(toInput);
+      if (!parsedFrom || !parsedTo) {
+        alert("Invalid date format. Use DDMM, DDMMYY, or DDMMYYYY.");
+        return;
+      }
+      document.getElementById('start_date').value = parsedFrom;
+      document.getElementById('end_date').value = parsedTo;
+      document.querySelector('.sales-filter-form').submit();
+    }
+
+    const itemSearchInput = document.getElementById("item_search");
+    const itemSearchSuggestions = document.getElementById("itemSearchSuggestions");
+    let itemSearchTimeout = null;
+
+    if (itemSearchInput) {
+      itemSearchInput.addEventListener("input", () => {
+        clearTimeout(itemSearchTimeout);
+        const q = itemSearchInput.value.trim();
+        if (!q) {
+          itemSearchSuggestions.hidden = true;
+          return;
+        }
+        itemSearchTimeout = setTimeout(async () => {
+          try {
+            const res = await fetch(`/sales/search-names?q=${encodeURIComponent(q)}`);
+            const data = await res.json();
+            if (data.ok && data.items.length > 0) {
+              itemSearchSuggestions.innerHTML = data.items.map((item, i) => 
+                `<div class="sales-item-suggestion" data-index="${i}">${item}</div>`
+              ).join("");
+              itemSearchSuggestions.hidden = false;
+            } else {
+              itemSearchSuggestions.hidden = true;
+            }
+          } catch (e) {
+            console.error("Autocomplete fetch failed", e);
+          }
+        }, 200);
+      });
+
+      itemSearchSuggestions.addEventListener("click", (e) => {
+        const item = e.target.closest(".sales-item-suggestion");
+        if (item) {
+          itemSearchInput.value = item.textContent;
+          itemSearchSuggestions.hidden = true;
+          document.querySelector('.sales-filter-form').submit();
+        }
+      });
+      
+      document.addEventListener("click", (e) => {
+        if (!itemSearchInput.contains(e.target) && !itemSearchSuggestions.contains(e.target)) {
+          itemSearchSuggestions.hidden = true;
+        }
+      });
+    }
+
+    document.addEventListener("keydown", (e) => {
+      const active = document.activeElement;
+      const isInput = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.tagName === "BUTTON" || active.tagName === "A" || active.isContentEditable);
+      
+      const singleModal = document.getElementById("singleDateModal");
+      const rangeModal = document.getElementById("rangeDateModal");
+      const isModalOpen = singleModal.open || rangeModal.open;
+
+      if (e.key === "Enter" && isModalOpen) {
+        e.preventDefault();
+        if (singleModal.open) {
+          applySingleDate();
+        } else if (rangeModal.open) {
+          if (active.id === "rangeDateFrom" && active.value.trim() !== "" && document.getElementById("rangeDateTo").value.trim() === "") {
+            document.getElementById("rangeDateTo").focus();
+          } else {
+            applyRangeDate();
+          }
+        }
+        return;
+      }
+
+      if (e.key === "Escape" && isModalOpen) {
+        return; // default dialog behavior handles this
+      }
+
+      if (active === itemSearchInput && !itemSearchSuggestions.hidden) {
+        const items = Array.from(itemSearchSuggestions.querySelectorAll(".sales-item-suggestion"));
+        let selectedIndex = items.findIndex(el => el.classList.contains("selected"));
+        
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          if (items.length === 0) return;
+          if (e.key === "ArrowDown") {
+            selectedIndex = selectedIndex < items.length - 1 ? selectedIndex + 1 : 0;
+          } else {
+            selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : items.length - 1;
+          }
+          items.forEach(el => el.classList.remove("selected"));
+          items[selectedIndex].classList.add("selected");
+          items[selectedIndex].scrollIntoView({ block: "nearest" });
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (selectedIndex >= 0) {
+            itemSearchInput.value = items[selectedIndex].textContent;
+          }
+          itemSearchSuggestions.hidden = true;
+          document.querySelector('.sales-filter-form').submit();
+          return;
+        }
+        if (e.key === "Escape") {
+          itemSearchSuggestions.hidden = true;
+          return;
+        }
+      }
+
+      if (active === itemSearchInput && e.key === "Enter") {
+        e.preventDefault();
+        document.querySelector('.sales-filter-form').submit();
+        return;
+      }
+
+      if (isInput) return;
+
+      if (e.key === "F2") {
+        e.preventDefault();
+        if (e.altKey) {
+          rangeModal.showModal();
+          document.getElementById("rangeDateFrom").focus();
+        } else {
+          singleModal.showModal();
+          document.getElementById("singleDateInput").focus();
+        }
+        return;
+      }
+
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const rows = Array.from(document.querySelectorAll("tbody tr:not(.empty)"));
+        if (!rows.length) return;
+        let selectedIndex = rows.findIndex(r => r.classList.contains("selected"));
+        if (selectedIndex === -1) selectedIndex = 0;
+        
+        if (e.key === "ArrowDown") {
+          selectedIndex = selectedIndex < rows.length - 1 ? selectedIndex + 1 : rows.length - 1;
+        } else {
+          selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
+        }
+        rows.forEach(r => r.classList.remove("selected"));
+        rows[selectedIndex].classList.add("selected");
+        rows[selectedIndex].scrollIntoView({ block: "nearest" });
+        return;
+      }
+
+      if (e.key === "Enter") {
+        const selected = document.querySelector("tbody tr.selected");
+        if (selected) {
+          e.preventDefault();
+          const openLink = selected.querySelector("a.button.small[href^='/sales/']");
+          if (openLink) openLink.click();
+        }
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll("dialog").forEach(dialog => {
+        dialog.addEventListener("click", e => {
+          const rect = dialog.getBoundingClientRect();
+          if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+            dialog.close();
+          }
+        });
+      });
+
+      const firstRow = document.querySelector("tbody tr:not(.empty)");
+      if (firstRow) firstRow.classList.add("selected");
+    });
+  </script>
 {% endblock %}

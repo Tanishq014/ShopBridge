@@ -6,12 +6,12 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import select, exists, or_, func
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import TEMPLATES_DIR
 from app.db import get_db
-from app.models import Sale
+from app.models import Sale, SaleItem
 from app.services.template_filters import register_template_filters
 from app.services.time_service import LOCAL_TIMEZONE
 
@@ -83,6 +83,7 @@ def list_sales(
     end_date: str | None = Query(None),
     payment_mode: str | None = Query(None),
     bill_number: str | None = Query(None),
+    item_search: str | None = Query(None),
     db: Session = Depends(get_db)
 ):
     q = select(Sale).options(selectinload(Sale.items))
@@ -111,6 +112,22 @@ def list_sales(
     if bill_number:
         q = q.where(Sale.bill_number.ilike(f"%{bill_number}%"))
 
+    if item_search:
+        term = item_search.strip()
+        if term:
+            like = f"%{term.lower()}%"
+            q = q.where(
+                exists(
+                    select(SaleItem.id).where(
+                        SaleItem.sale_id == Sale.id,
+                        or_(
+                            func.lower(SaleItem.item_name).like(like),
+                            func.lower(SaleItem.tally_stock_item_name).like(like),
+                        ),
+                    )
+                )
+            )
+
     sales = db.execute(
         q.order_by(Sale.created_at.desc(), Sale.id.desc()).limit(100)
     ).scalars().all()
@@ -126,9 +143,43 @@ def list_sales(
                 "end_date": end_date or "",
                 "payment_mode": payment_mode or "",
                 "bill_number": bill_number or "",
+                "item_search": item_search or "",
             }
         },
     )
+
+
+@router.get("/sales/search-names")
+def search_sales_names(q: str = Query(""), db: Session = Depends(get_db)):
+    term = q.strip().lower()
+    if not term:
+        return {"ok": True, "items": []}
+    
+    like = f"%{term}%"
+    
+    names_q = select(SaleItem.item_name).where(
+        func.lower(SaleItem.item_name).like(like),
+        SaleItem.item_name != None,
+        SaleItem.item_name != ""
+    )
+    
+    tally_q = select(SaleItem.tally_stock_item_name).where(
+        func.lower(SaleItem.tally_stock_item_name).like(like),
+        SaleItem.tally_stock_item_name != None,
+        SaleItem.tally_stock_item_name != ""
+    )
+    
+    names = db.execute(names_q).scalars().all()
+    tally_names = db.execute(tally_q).scalars().all()
+    
+    unique_names = set()
+    for name in names + tally_names:
+        if name:
+            unique_names.add(name.strip())
+            
+    sorted_names = sorted(list(unique_names), key=lambda x: x.lower())
+    
+    return {"ok": True, "items": sorted_names[:20]}
 
 
 @router.get("/sales/{sale_id}", response_class=HTMLResponse)
