@@ -11,3 +11,4 @@ exports/*
 !exports/.gitkeep
 print_jobs/*
 !print_jobs/.gitkeep
+.env
