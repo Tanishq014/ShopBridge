@@ -1935,8 +1935,23 @@ tbody tr:last-child td {
 .receipt-table th:nth-child(2),
 .receipt-table td:nth-child(2),
 .receipt-table th:nth-child(3),
-.receipt-table td:nth-child(3) {
+.receipt-table td:nth-child(3),
+.receipt-table th:nth-child(4),
+.receipt-table td:nth-child(4) {
   text-align: right;
+}
+
+.receipt-savings {
+  background: #000;
+  color: #fff !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  text-align: center;
+  padding: 6px;
+  margin: 12px 0;
+  font-weight: bold;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 .receipt-table td span {
