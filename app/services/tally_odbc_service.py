@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import DEFAULT_TALLY_DSN
-from app.models import ProductFamily
+from app.models import TallyItem
 
 
 @dataclass
@@ -120,36 +120,45 @@ def fetch_stock_item_names(dsn: str = DEFAULT_TALLY_DSN) -> tuple[list[str], str
     raise RuntimeError("Could not read Tally stock item names. Tried: " + " | ".join(errors))
 
 
-def import_stock_items_as_families(db: Session, dsn: str = DEFAULT_TALLY_DSN) -> dict[str, object]:
+def import_tally_items(db: Session, dsn: str = DEFAULT_TALLY_DSN) -> dict[str, object]:
     names, query = fetch_stock_item_names(dsn)
-    imported = 0
+    created = 0
+    updated = 0
     skipped = 0
+    errors = []
 
     for name in names:
-        existing = db.scalar(
-            select(ProductFamily).where(ProductFamily.tally_stock_item_name == name)
-        )
-        if existing:
-            skipped += 1
-            continue
-
-        db.add(
-            ProductFamily(
-                family_name=name,
-                tally_stock_item_name=name,
-                category="Imported from Tally",
-                default_tax_rate=0,
-                default_unit="PCS",
-                active_status=True,
+        try:
+            normalized = name.strip().lower()
+            existing = db.scalar(
+                select(TallyItem).where(TallyItem.normalized_name == normalized)
             )
-        )
-        imported += 1
+            if existing:
+                if existing.name != name:
+                    existing.name = name
+                    updated += 1
+                else:
+                    skipped += 1
+                continue
+
+            db.add(
+                TallyItem(
+                    name=name,
+                    normalized_name=normalized,
+                    active_status="active",
+                    source="odbc",
+                )
+            )
+            created += 1
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
 
     db.commit()
     return {
-        "imported": imported,
+        "created": created,
+        "updated": updated,
         "skipped": skipped,
-        "source_query": query,
-        "total_seen": len(names),
+        "errors": errors,
     }
+
 

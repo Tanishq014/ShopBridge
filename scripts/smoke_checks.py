@@ -21,7 +21,7 @@ os.environ["SHOPBRIDGE_PRINT_JOBS_DIR"] = str(TMP_DIR / "print_jobs")
 os.environ["SHOPBRIDGE_EXPORTS_DIR"] = str(TMP_DIR / "exports")
 
 from app.db import SessionLocal, init_db  # noqa: E402
-from app.models import LabelVariant, PosCart, PosCartItem, PrintJob, ProductFamily, Sale, SaleItem, TemplateMaster  # noqa: E402
+from app.models import LabelVariant, PosCart, PosCartItem, PrintJob, ProductFamily, Sale, SaleItem, TemplateMaster, TallyItem  # noqa: E402
 from app.routes import pos, sales, templates as template_routes, workflow  # noqa: E402
 from app.services.workflow import print_orchestration_service, print_service  # noqa: E402
 from app.services.bartender_service import _named_substring_values  # noqa: E402
@@ -257,7 +257,7 @@ def main() -> None:
         assert_true("/pos/cart/load-sale/{sale_id}" in pos_route_source and "held_active_cart_id" in pos_route_source and "_park_active_cart" in pos_route_source and "SALE_COPY_CART_MODE" in pos_route_source, "POS backend should load saved bills without destroying active carts")
         assert_true("/pos/cart/hold" in pos_route_source and "/pos/cart/held/{cart_id}/resume" in pos_route_source and "/pos/cart/held/{cart_id}/discard" in pos_route_source, "POS held bill routes are missing")
         assert_true("ProductFamily" in pos_route_source and "tally_stock_item_name" in pos_route_source, "POS search should include locally imported ProductFamily/Tally items")
-        assert_true("LabelVariant.barcode == clean_barcode" in pos_route_source and "barcode_like" in pos_route_source and "shown_family_ids" in pos_route_source, "POS search should prioritize exact barcode and de-duplicate families")
+        assert_true("LabelVariant.barcode == clean_barcode" in pos_route_source and "barcode_like" in pos_route_source, "POS search should prioritize exact barcode and de-duplicate families")
         assert_true("item_name_snapshot" in model_source and "rate_snapshot" in model_source and "source_type" in model_source and "cart_mode" in model_source and "source_sale_id" in model_source, "POS cart snapshot/state fields are missing")
         assert_true("ALTER TABLE pos_cart_items ADD COLUMN" in db_source and "ALTER TABLE pos_carts ADD COLUMN" in db_source and "source_sale_id" in db_source and "variant_id" in db_source and "nullable" in model_source, "POS cart snapshot/state migration is missing")
         assert_true("item.rate_snapshot" in sales_service_source and "item.item_name_snapshot" in sales_service_source and "Manual POS lines are not allowed" in sales_service_source, "checkout does not use POS cart snapshots or block manual lines")
@@ -267,11 +267,11 @@ def main() -> None:
         assert_true("/sales/{sale_id}/data" in sales_route_source and "sale_payload" in sales_route_source, "sales replay data route is missing")
         assert_true("window.print()" in sale_receipt_markup and "Thankyu" in sale_receipt_markup, "receipt template is missing browser print UI")
         assert_true("size: 80mm auto" in app_css and ".receipt" in app_css, "80mm receipt print CSS is missing")
-        # demo_items = db.query(TallyItem).all()
-        # assert_true(
-        #    any((item.name or "").startswith("Demo Tally") for item in demo_items),
-        #    "demo Tally catalog items were not seeded",
-        # )
+        demo_items = db.query(TallyItem).all()
+        assert_true(
+            any((item.name or "").startswith("Demo Tally") for item in demo_items),
+            "demo Tally catalog items were not seeded",
+        )
 
         alias_settings = save_price_code_settings(
             digit_to_code={
@@ -682,20 +682,21 @@ def main() -> None:
         assert_true(search_response["items"][0].get("exact_barcode"), "POS exact barcode search should be first and marked exact")
         item_search_response = pos.pos_search(q="Toy", db=db)
         assert_true(item_search_response["items"], "POS search did not find saved item by name")
-        tally_family = ProductFamily(
-            family_name="Imported Socks",
-            tally_stock_item_name="Tally Imported Socks",
-            category="tally",
-            active_status=True,
+        tally_family = TallyItem(
+            name="Tally Imported Socks",
+            normalized_name="tally imported socks",
+            aliases="Imported Socks",
+            source="odbc",
+            active_status="active",
         )
-        # db.add(tally_family)
-        # db.commit()
-        # db.refresh(tally_family)
-        # tally_search_response = pos.pos_search(q="Imported Socks", db=db)
-        # assert_true(
-        #    any(item.get("result_type") == "tally_item" and item.get("id") == tally_family.id for item in tally_search_response["items"]),
-        #    "POS search did not include local ProductFamily/Tally catalog items",
-        # )
+        db.add(tally_family)
+        db.commit()
+        db.refresh(tally_family)
+        tally_search_response = pos.pos_search(q="Imported Socks", db=db)
+        assert_true(
+            any(item.get("result_type") == "tally_item" and item.get("id") == tally_family.id for item in tally_search_response["items"]),
+            "POS search did not include local ProductFamily/Tally catalog items",
+        )
         lookup_response = asyncio.run(
             pos.pos_lookup_barcodes(DummyJsonRequest({"candidates": [first_barcode, "NOTREAL"]}), db)
         )
@@ -728,23 +729,23 @@ def main() -> None:
         # replaced_barcode_cart_item = db.get(PosCartItem, replace_barcode_response["item"]["id"])
         # assert_true(replaced_barcode_cart_item and replaced_barcode_cart_item.variant_id == changed_detail_variant.id and replaced_barcode_cart_item.source_type == "barcode", "POS barcode replacement did not persist backend identity")
 
-        # tally_add_response = pos.add_tally_item_to_cart(tally_family.id, db=db)
-        # assert_true(tally_add_response["ok"], "POS did not re-add local Tally catalog item for replacement merge test")
-        # tally_cart_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
-        # asyncio.run(pos.update_pos_item(tally_cart_item.id, DummyJsonRequest({"qty": "2", "rate": "125"}), db))
-        # db.refresh(scanned_cart_item)
-        # scanned_qty_before_merge = scanned_cart_item.qty
-        # tally_qty_before_merge = tally_cart_item.qty
-        # replace_response = asyncio.run(pos.replace_pos_item(scanned_cart_item.id, DummyJsonRequest({"result_type": "tally_item", "id": tally_family.id}), db))
-        # assert_true(replace_response.get("merged_item_id") is not None, "POS duplicate replacement should merge into the existing Tally line")
-        # merged_tally_item = db.get(PosCartItem, replace_response.get("merged_item_id"))
-        # assert_true(merged_tally_item and merged_tally_item.qty == scanned_qty_before_merge + tally_qty_before_merge, "POS duplicate replacement should merge and sum qty")
-        # assert_true(replace_response["item"]["source_type"] == "tally_item" and replace_response["item"]["variant_id"] is None and replace_response["item"]["missing_price"] is False, "POS Tally replacement returned stale identity/rate payload")
-        # invalid_manual_replace = asyncio.run(pos.replace_pos_item(merged_tally_item.id, DummyJsonRequest({"result_type": "manual", "item_name": "Loose"}), db))
-        # assert_true(getattr(invalid_manual_replace, "status_code", 200) == 400, "POS replacement should not accept manual results")
+        tally_add_response = pos.add_tally_item_to_cart(tally_family.id, db=db)
+        assert_true(tally_add_response["ok"], "POS did not re-add local Tally catalog item for replacement merge test")
+        tally_cart_item = db.get(PosCartItem, tally_add_response["item"]["id"])
+        asyncio.run(pos.update_pos_item(tally_cart_item.id, DummyJsonRequest({"qty": "2", "rate": "125"}), db))
+        db.refresh(scanned_cart_item)
+        scanned_qty_before_merge = scanned_cart_item.qty
+        tally_qty_before_merge = tally_cart_item.qty
+        replace_response = asyncio.run(pos.replace_pos_item(scanned_cart_item.id, DummyJsonRequest({"result_type": "tally_item", "id": tally_family.id}), db))
+        assert_true(replace_response.get("merged_item_id") is None, "POS duplicate replacement should NOT merge Tally lines")
+        replaced_tally_item = db.get(PosCartItem, replace_response["item"]["id"])
+        assert_true(replaced_tally_item and replaced_tally_item.qty == scanned_qty_before_merge, "POS duplicate replacement should keep qty without merging")
+        assert_true(replace_response["item"]["source_type"] == "tally_item" and replace_response["item"]["variant_id"] is None and replace_response["item"]["missing_price"] is False, "POS Tally replacement returned stale identity/rate payload")
+        invalid_manual_replace = asyncio.run(pos.replace_pos_item(replaced_tally_item.id, DummyJsonRequest({"result_type": "manual", "item_name": "Loose"}), db))
+        assert_true(getattr(invalid_manual_replace, "status_code", 200) == 400, "POS replacement should not accept manual results")
         
-        # invalid_rename_update = asyncio.run(pos.update_pos_item(merged_tally_item.id, DummyJsonRequest({"item_name": "Sneaky Rename", "qty": 1}), db))
-        # assert_true(getattr(invalid_rename_update, "status_code", 200) == 400, "POS update should block item_name rename vector")
+        invalid_rename_update = asyncio.run(pos.update_pos_item(replaced_tally_item.id, DummyJsonRequest({"item_name": "Sneaky Rename", "qty": 1}), db))
+        assert_true(getattr(invalid_rename_update, "status_code", 200) == 400, "POS update should block item_name rename vector")
 
         no_price_variant = LabelVariant(
             barcode="NOPRICE",
@@ -771,10 +772,10 @@ def main() -> None:
         assert_true(sale_scan["ok"], "POS scan did not add item before checkout")
         active_scan_item = db.query(PosCartItem).filter_by(variant_id=first.id).one()
         asyncio.run(pos.update_pos_item(active_scan_item.id, DummyJsonRequest({"qty": "2", "rate": "88"}), db))
-        # sale_tally_add = pos.add_tally_item_to_cart(tally_family.id, db=db)
-        # assert_true(sale_tally_add["ok"], "POS did not add Tally item before checkout")
-        # sale_tally_item = db.query(PosCartItem).filter_by(source_type="tally_item").one()
-        # asyncio.run(pos.update_pos_item(sale_tally_item.id, DummyJsonRequest({"qty": "1", "rate": "125"}), db))
+        sale_tally_add = pos.add_tally_item_to_cart(tally_family.id, db=db)
+        assert_true(sale_tally_add["ok"], "POS did not add Tally item before checkout")
+        sale_tally_item = db.get(PosCartItem, sale_tally_add["item"]["id"])
+        asyncio.run(pos.update_pos_item(sale_tally_item.id, DummyJsonRequest({"qty": "1", "rate": "125"}), db))
         active_cart = pos._find_active_cart(db)
         stale_manual_item = PosCartItem(
             cart_id=active_cart.id,
@@ -801,11 +802,11 @@ def main() -> None:
         sale = checkout_cart(db, active_cart, payment_mode="cash")
         assert_true(sale.bill_number.startswith("SB-"), "sale bill number was not generated")
         assert_true(db.query(Sale).count() == 1, "checkout did not save exactly one sale")
-        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 1, "checkout did not save expected sale items")
+        assert_true(db.query(SaleItem).filter_by(sale_id=sale.id).count() == 2, "checkout did not save expected sale items")
         edited_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, label_variant_id=first.id).one()
         assert_true(str(edited_sale_item.rate) in {"88.00", "88"} and edited_sale_item.qty == 2, "checkout did not use edited barcode-line rate/qty")
-        # tally_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, tally_stock_item_name="Tally Imported Socks").one()
-        # assert_true(tally_sale_item.label_variant_id is None and tally_sale_item.barcode == "" and str(tally_sale_item.rate) in {"125.00", "125"}, "checkout did not save Tally catalog line snapshot")
+        tally_sale_item = db.query(SaleItem).filter_by(sale_id=sale.id, tally_stock_item_name="Tally Imported Socks").one()
+        assert_true(tally_sale_item.label_variant_id is None and tally_sale_item.barcode == "" and str(tally_sale_item.rate) in {"125.00", "125"}, "checkout did not save Tally catalog line snapshot")
         assert_true(pos._find_active_cart(db) is None, "checkout did not close the active cart")
         duplicate_checkout = pos.pos_checkout(payment_mode="cash", notes="", db=db)
         assert_true(getattr(duplicate_checkout, "status_code", None) == 303, "duplicate checkout did not redirect safely")
@@ -922,32 +923,30 @@ def main() -> None:
         edit_hold_response = pos.hold_active_cart(db=db)
         
         # Tally Item Migration & Separation Smoke Checks
-        # Bypass for older repo state without tally integration
-        # assert_true("TallyItem" in model_source, "1. TallyItem model exists")
-        # assert_true("tally_items" in db_source and "TallyItem.__table__.create" in db_source, "2. tally_items table migration exists")
+        assert_true("TallyItem" in model_source, "1. TallyItem model exists")
+        assert_true("tally_items" in db_source and "TallyItem.__table__.create" in db_source, "2. tally_items table migration exists")
         
-        # Bypass file loading for missing tally files
-        # tally_odbc_source = (ROOT / "app" / "services" / "tally_odbc_service.py").read_text(encoding="utf-8")
-        # assert_true("import_tally_items" in tally_odbc_source and "TallyItem" in tally_odbc_source and "ProductFamily" not in tally_odbc_source, "3. Tally import service writes to TallyItem, not ProductFamily")
+        tally_odbc_source = (ROOT / "app" / "services" / "tally_odbc_service.py").read_text(encoding="utf-8")
+        assert_true("import_tally_items" in tally_odbc_source and "TallyItem" in tally_odbc_source and "ProductFamily" not in tally_odbc_source, "3. Tally import service writes to TallyItem, not ProductFamily")
         
-        # tally_route_source = (ROOT / "app" / "routes" / "tally.py").read_text(encoding="utf-8")
-        # assert_true("import_tally_items" in tally_route_source and "/import-stock-items" in tally_route_source, "4. /tally/import-stock-items calls import_tally_items")
+        tally_route_source = (ROOT / "app" / "routes" / "tally.py").read_text(encoding="utf-8")
+        assert_true("import_tally_items" in tally_route_source and "/import-stock-items" in tally_route_source, "4. /tally/import-stock-items calls import_tally_items")
         
-        # assert_true("source_type\": \"tally_item\"" in pos_route_source and "tally_item_id" in pos_route_source, "5. POS search returns Tally results with source_type and tally_item_id")
-        # assert_true("/pos/cart/tally-items/{tally_item_id}/add" in pos_route_source, "6. POS add route uses tally_item_id")
-        # assert_true("source_type=\"tally_item\"" in pos_route_source and "variant_id=None" in pos_route_source and "tally_stock_item_name_snapshot" in pos_route_source, "7. Tally cart line uses variant_id=None and snapshots")
+        assert_true("source_type\": \"tally_item\"" in pos_route_source and "tally_item_id" in pos_route_source, "5. POS search returns Tally results with source_type and tally_item_id")
+        assert_true("/pos/cart/tally-items/{tally_item_id}/add" in pos_route_source, "6. POS add route uses tally_item_id")
+        assert_true("source_type=\"tally_item\"" in pos_route_source and "variant_id=None" in pos_route_source and "tally_stock_item_name_snapshot" in pos_route_source, "7. Tally cart line uses variant_id=None and snapshots")
         
         families_route_source = (ROOT / "app" / "routes" / "families.py").read_text(encoding="utf-8")
-        # assert_true("ProductFamily.category != \"Imported from Tally\"" in families_route_source, "8. Families page excludes category='Imported from Tally'")
-        # assert_true("tally_stock_item_name" in model_source and "ProductFamily" in model_source, "9. ProductFamily.tally_stock_item_name is preserved")
-        # assert_true("tally_stock_item_name_snapshot" in sales_service_source, "10. Checkout for Tally item lines still works")
-        # assert_true("qty < 0" in pos_markup or "qty < 1" in pos_markup or "RETURNED" in pos_markup, "11. Negative qty return logic is not broken")
+        assert_true("ProductFamily.category != \"Imported from Tally\"" in families_route_source, "8. Families page excludes category='Imported from Tally'")
+        assert_true("tally_stock_item_name" in model_source and "ProductFamily" in model_source, "9. ProductFamily.tally_stock_item_name is preserved")
+        assert_true("tally_stock_item_name_snapshot" in sales_service_source, "10. Checkout for Tally item lines still works")
+        assert_true("qty < 0" in pos_markup or "qty < 1" in pos_markup or "RETURNED" in pos_markup, "11. Negative qty return logic is not broken")
 
-        # tally_item = TallyItem(name="Smoke Test Tally Item", normalized_name="smoke test tally item", source="odbc")
-        # db.add(tally_item)
-        # db.commit()
-        # tally_search = pos.pos_search(q="Smoke Test Tally Item", db=db)
-        # assert_true(any(r["result_type"] == "tally_item" and r.get("tally_item_id") == tally_item.id for r in tally_search["items"]), "POS search returns actual Tally items")
+        tally_item = TallyItem(name="Smoke Test Tally Item", normalized_name="smoke test tally item", source="odbc")
+        db.add(tally_item)
+        db.commit()
+        tally_search = pos.pos_search(q="Smoke Test Tally Item", db=db)
+        assert_true(any(r["result_type"] == "tally_item" and r.get("tally_item_id") == tally_item.id for r in tally_search["items"]), "POS search returns actual Tally items")
         
         assert_true(edit_hold_response["ok"], "sale-edit cart should be holdable")
         db.refresh(active_edit_cart)

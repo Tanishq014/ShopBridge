@@ -24,7 +24,7 @@ def ensure_directories() -> None:
 
 def init_db() -> None:
     ensure_directories()
-    from app.models import ProductFamily, TemplateMaster
+    from app.models import ProductFamily, TemplateMaster, TallyItem
     from app.services.template_folder_service import scan_bartender_template_folder
 
     Base.metadata.create_all(bind=engine)
@@ -49,7 +49,7 @@ def init_db() -> None:
             )
             db.commit()
 
-        _seed_demo_tally_items(db, ProductFamily)
+        _seed_demo_tally_items(db, TallyItem)
         scan_bartender_template_folder(db)
 
 
@@ -57,13 +57,43 @@ def _migrate_existing_sqlite() -> None:
     if not DATABASE_URL.startswith("sqlite"):
         return
 
-    from app.models import PosCartItem, Sale, SaleItem
+    from app.models import PosCartItem, Sale, SaleItem, TallyItem
 
     Sale.__table__.create(bind=engine, checkfirst=True)
     SaleItem.__table__.create(bind=engine, checkfirst=True)
+    TallyItem.__table__.create(bind=engine, checkfirst=True)
 
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
+
+    if "tally_items" in table_names and "product_families" in table_names:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO tally_items (name, normalized_name, active_status, source, created_at, updated_at)
+                    SELECT 
+                        tally_stock_item_name, 
+                        LOWER(TRIM(tally_stock_item_name)), 
+                        'active', 
+                        'odbc', 
+                        MIN(created_at), 
+                        MAX(updated_at)
+                    FROM product_families 
+                    WHERE category = 'Imported from Tally'
+                      AND tally_stock_item_name IS NOT NULL
+                      AND TRIM(tally_stock_item_name) != ''
+                      AND LOWER(TRIM(tally_stock_item_name)) NOT IN (SELECT normalized_name FROM tally_items WHERE normalized_name IS NOT NULL)
+                    GROUP BY LOWER(TRIM(tally_stock_item_name)), tally_stock_item_name
+                    """
+                )
+            )
+            
+    if "tally_items" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("tally_items")}
+        if "aliases" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE tally_items ADD COLUMN aliases TEXT"))
 
     if "label_variants" in table_names:
         columns = {column["name"] for column in inspector.get_columns("label_variants")}
@@ -170,28 +200,26 @@ def _migrate_existing_sqlite() -> None:
                 connection.execute(text("PRAGMA foreign_keys=ON"))
 
 
-def _seed_demo_tally_items(db, ProductFamily) -> None:
+def _seed_demo_tally_items(db, TallyItem) -> None:
     demo_names = [
-        ("Demo Tally Shirt", "Demo Tally Shirt"),
-        ("Demo Tally Pant", "Demo Tally Pant"),
-        ("Demo Tally Socks", "Demo Tally Socks"),
+        "Demo Tally Shirt",
+        "Demo Tally Pant",
+        "Demo Tally Socks",
     ]
     existing_names = {
-        (family.family_name or "").strip().lower()
-        for family in db.query(ProductFamily).all()
+        (item.name or "").strip().lower()
+        for item in db.query(TallyItem).all()
     }
     added = False
-    for family_name, tally_name in demo_names:
-        if family_name.strip().lower() in existing_names:
+    for name in demo_names:
+        if name.strip().lower() in existing_names:
             continue
         db.add(
-            ProductFamily(
-                family_name=family_name,
-                tally_stock_item_name=tally_name,
-                category="Demo",
-                default_tax_rate=0,
-                default_unit="PCS",
-                active_status=True,
+            TallyItem(
+                name=name,
+                normalized_name=name.strip().lower(),
+                active_status="active",
+                source="demo"
             )
         )
         added = True

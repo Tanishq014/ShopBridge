@@ -55,8 +55,8 @@
   </section>
 
   <section class="panel">
-    <h2>Import Stock Items as Families</h2>
-    <p class="muted-text">This only reads Tally stock item names and creates missing Product Families in ShopBridge.</p>
+    <h2>Import Tally Items</h2>
+    <p class="muted-text">This only reads Tally stock item names and stores them locally as Tally Items. It does not create ShopBridge Product Families.</p>
     <form class="form-grid inline-form" method="post" action="/tally/import-stock-items">
       <label>
         ODBC DSN
@@ -68,7 +68,26 @@
     </form>
     {% if import_result %}
       <div class="notice">
-        Imported {{ import_result.imported }}, skipped {{ import_result.skipped }}, seen {{ import_result.total_seen }} using {{ import_result.source_query }}.
+        Created {{ import_result.created }}, updated {{ import_result.updated }}, skipped {{ import_result.skipped }}.
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>CSV Alias Import</h2>
+    <p class="secondary-text">Upload a CSV file containing <strong>Item Name</strong> and <strong>Aliases</strong> columns.</p>
+    <form class="form-grid inline-form" method="post" action="/tally/import-csv" enctype="multipart/form-data">
+      <label>
+        CSV File
+        <input type="file" name="file" accept=".csv" required>
+      </label>
+      <div class="form-actions">
+        <button class="button primary" type="submit">Upload CSV</button>
+      </div>
+    </form>
+    {% if csv_result %}
+      <div class="notice">
+        Processed {{ csv_result.total }} rows. Created {{ csv_result.created }}, updated {{ csv_result.updated }}.
       </div>
     {% endif %}
   </section>

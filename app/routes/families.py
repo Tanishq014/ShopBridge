@@ -38,7 +38,9 @@ def list_families(
     db: Session = Depends(get_db),
 ):
     families = db.execute(
-        select(ProductFamily).order_by(ProductFamily.active_status.desc(), ProductFamily.family_name)
+        select(ProductFamily)
+        .where((ProductFamily.category != "Imported from Tally") | (ProductFamily.category.is_(None)))
+        .order_by(ProductFamily.active_status.desc(), ProductFamily.family_name)
     ).scalars().all()
     template_choices = db.execute(
         select(TemplateMaster).order_by(TemplateMaster.template_name)

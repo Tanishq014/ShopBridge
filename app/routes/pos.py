@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.config import TEMPLATES_DIR
 from app.db import get_db
-from app.models import LabelVariant, PosCart, PosCartItem, ProductFamily, Sale
+from app.models import LabelVariant, PosCart, PosCartItem, ProductFamily, Sale, TallyItem
 from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
 from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
@@ -241,9 +241,9 @@ def _apply_variant_to_cart_item(item: PosCartItem, variant: LabelVariant, preser
     item.is_manual_line = False
 
 
-def _apply_family_to_cart_item(item: PosCartItem, family: ProductFamily, preserve_values: bool = False) -> None:
-    item_name = family.family_name or family.tally_stock_item_name or "Tally item"
-    tally_name = family.tally_stock_item_name or item_name
+def _apply_tally_item_to_cart_item(item: PosCartItem, tally_item: TallyItem, preserve_values: bool = False) -> None:
+    item_name = tally_item.name or "Tally item"
+    tally_name = tally_item.name or item_name
     item.variant = None
     item.variant_id = None
     item.unit_price = None
@@ -386,7 +386,7 @@ def _variant_search_payload(variant: LabelVariant, *, exact_barcode: bool = Fals
 def _family_search_payload(family: ProductFamily) -> dict[str, object]:
     display_name = family.family_name or family.tally_stock_item_name or ""
     return {
-        "result_type": "tally_item",
+        "result_type": "family",
         "id": family.id,
         "barcode": "",
         "billing_item": display_name,
@@ -830,19 +830,6 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         .order_by(LabelVariant.updated_at.desc(), LabelVariant.id.desc())
         .limit(40)
     ).scalars().all()
-    families = db.execute(
-        select(ProductFamily)
-        .where(ProductFamily.active_status.is_(True))
-        .where(
-            or_(
-                func.lower(ProductFamily.family_name).like(like),
-                func.lower(ProductFamily.tally_stock_item_name).like(like),
-            )
-        )
-        .order_by(ProductFamily.updated_at.desc(), ProductFamily.id.desc())
-        .limit(40)
-    ).scalars().all()
-
     def rank(variant: LabelVariant) -> tuple[int, str]:
         exact_barcode = clean_barcode and variant.barcode == clean_barcode
         barcode_start = clean_barcode and variant.barcode and variant.barcode.startswith(clean_barcode)
@@ -862,33 +849,50 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
 
     variants.sort(key=rank)
 
-    def family_rank(family: ProductFamily) -> tuple[int, str]:
-        starts = any(
-            (value or "").lower().startswith(lowered)
-            for value in (family.family_name, family.tally_stock_item_name)
-        )
-        return (1 if starts else 3, (family.family_name or family.tally_stock_item_name or "").lower())
-
-    families.sort(key=family_rank)
     variant_results = [
         _variant_search_payload(variant, exact_barcode=bool(clean_barcode and variant.barcode == clean_barcode))
         for variant in variants[:12]
     ]
-    shown_family_ids = {variant.family_id for variant in variants[:12] if variant.family_id}
-    family_results: list[dict[str, object]] = []
-    for family in families:
-        if len(family_results) >= 12:
-            break
-        if family.id in shown_family_ids:
-            continue
-        family_results.append(_family_search_payload(family))
+
+    tally_items = db.execute(
+        select(TallyItem)
+        .where(TallyItem.active_status == "active")
+        .where(
+            or_(
+                func.lower(TallyItem.name).like(like),
+                func.lower(TallyItem.aliases).like(like)
+            )
+        )
+        .order_by(TallyItem.updated_at.desc(), TallyItem.id.desc())
+        .limit(40)
+    ).scalars().all()
+
+    def tally_rank(item: TallyItem) -> tuple[int, str]:
+        starts = (item.name or "").lower().startswith(lowered)
+        alias_starts = (item.aliases or "").lower().startswith(lowered)
+        return (1 if (starts or alias_starts) else 3, (item.name or "").lower())
+
+    tally_items.sort(key=tally_rank)
+    tally_results = [
+        {
+            "id": item.id,
+            "source_type": "tally_item",
+            "tally_item_id": item.id,
+            "label": item.name,
+            "name": item.name,
+            "barcode": "",
+            "item_name": item.name,
+            "result_type": "tally_item",
+        }
+        for item in tally_items[:12]
+    ]
 
     if barcode_like:
-        results = variant_results + family_results
+        results = variant_results + tally_results
     else:
         exact_results = [result for result in variant_results if result["exact_barcode"]]
         non_exact_variants = [result for result in variant_results if not result["exact_barcode"]]
-        results = exact_results + family_results + non_exact_variants
+        results = exact_results + non_exact_variants + tally_results
     return {
         "ok": True,
         "items": results[:12],
@@ -1063,26 +1067,21 @@ async def pos_lookup_barcodes(request: Request, db: Session = Depends(get_db)):
     return {"ok": True, "matches": matches}
 
 
-@router.post("/pos/cart/tally-items/{family_id}/add")
-def add_tally_item_to_cart(family_id: int, db: Session = Depends(get_db)):
-    family = db.get(ProductFamily, family_id)
-    if not family or not family.active_status:
+@router.post("/pos/cart/tally-items/{tally_item_id}/add")
+def add_tally_item_to_cart(tally_item_id: int, db: Session = Depends(get_db)):
+    tally_item = db.get(TallyItem, tally_item_id)
+    if not tally_item or tally_item.active_status != "active":
         return _json_error("Tally item was not found.", status_code=404, status="not_found")
 
-    item_name = family.family_name or family.tally_stock_item_name or "Tally item"
-    tally_name = family.tally_stock_item_name or item_name
+    item_name = tally_item.name
     cart = _active_cart(db)
     item = PosCartItem(
         cart_id=cart.id,
         variant_id=None,
         qty=1,
-        unit_price=None,
-        item_name_snapshot=item_name,
-        barcode_snapshot="",
-        tally_stock_item_name_snapshot=tally_name,
-        mrp_snapshot=None,
-        rate_snapshot=None,
         source_type="tally_item",
+        item_name_snapshot=item_name,
+        tally_stock_item_name_snapshot=item_name,
         is_manual_line=False,
     )
     db.add(item)
@@ -1095,6 +1094,7 @@ def add_tally_item_to_cart(family_id: int, db: Session = Depends(get_db)):
         "item": _cart_item_payload(item),
         "cart": _cart_payload(db, cart),
     }
+
 
 
 @router.post("/pos/cart/manual/add")
@@ -1247,19 +1247,19 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
             else:
                 _apply_variant_to_cart_item(item, variant, preserve_values=True)
     elif result_type == "tally_item":
-        family = db.get(ProductFamily, result_id)
-        if not family or not family.active_status:
+        tally_item = db.get(TallyItem, result_id)
+        if not tally_item or not tally_item.active_status:
             return _json_error("Tally item was not found.", status_code=404, status="not_found")
-        tally_name = family.tally_stock_item_name or family.family_name or "Tally item"
+        tally_name = tally_item.name or "Tally item"
         if item.source_type == "tally_item" and item.tally_stock_item_name_snapshot == tally_name:
             pass
         else:
-            qty_sign = 1 if (item.qty or 1) > 0 else -1
-            duplicate = _duplicate_tally_item(db, cart_id=item.cart_id, tally_name=tally_name, exclude_item_id=item.id, qty_sign=qty_sign)
-            if duplicate:
-                merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate)
-            else:
-                _apply_family_to_cart_item(item, family, preserve_values=True)
+            _apply_tally_item_to_cart_item(item, tally_item, preserve_values=True)
+    elif result_type == "family":
+        family = db.get(ProductFamily, result_id)
+        if not family or not family.active_status:
+            return _json_error("Product family was not found.", status_code=404, status="not_found")
+        _apply_family_to_cart_item(item, family, preserve_values=True)
     else:
         return _json_error("Choose a valid item to replace this line.", status_code=400, status="invalid_item")
 

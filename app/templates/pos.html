@@ -1540,6 +1540,7 @@
         await addTallyItem(item.id);
         return;
       }
+
       searchInput.value = item.barcode;
       await addBarcode(item.barcode, !!item.missing_price);
     }
@@ -2239,8 +2240,8 @@
       return true;
     }
 
-    async function addTallyItem(familyId) {
-      if (!familyId) {
+    async function addTallyItem(tallyItemId) {
+      if (!tallyItemId) {
         setStatus("Tally item was not found.", "error");
         focusItemInput(false);
         return;
@@ -2250,7 +2251,7 @@
         return;
       }
       try {
-        const response = await fetch(`/pos/cart/tally-items/${familyId}/add`, {method: "POST"});
+        const response = await fetch(`/pos/cart/tally-items/${tallyItemId}/add`, {method: "POST"});
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.message || "Could not add Tally item.");

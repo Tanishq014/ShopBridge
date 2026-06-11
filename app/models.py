@@ -36,6 +36,21 @@ class TemplateMaster(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class TallyItem(Base):
+    __tablename__ = "tally_items"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(250), unique=True, nullable=False, index=True)
+    normalized_name = Column(String(250), index=True)
+    active_status = Column(String(40), default="active", nullable=False)
+    tally_guid = Column(String(120), nullable=True, index=True)
+    stock_group = Column(String(120), nullable=True)
+    unit_name = Column(String(80), nullable=True)
+    aliases = Column(Text, nullable=True)
+    source = Column(String(40), default="odbc", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
 class ProductFamily(Base):
     __tablename__ = "product_families"
 
