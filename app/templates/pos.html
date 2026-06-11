@@ -91,7 +91,7 @@
             </thead>
             <tbody id="cartRows">
               <tr class="pos-empty-row">
-                <td colspan="8">Cart is empty.</td>
+                <td colspan="7">Cart is empty.</td>
               </tr>
             </tbody>
             <tfoot>
@@ -1616,7 +1616,7 @@
         const row = document.createElement("tr");
         row.className = "pos-empty-row";
         const cell = document.createElement("td");
-        cell.colSpan = 8;
+        cell.colSpan = 7;
         cell.textContent = "Cart is empty.";
         row.appendChild(cell);
         cartRows.appendChild(row);
