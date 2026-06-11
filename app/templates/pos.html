@@ -340,14 +340,21 @@
       clearRowSelection();
       const addRow = document.querySelector(".pos-add-row");
       if (addRow) addRow.classList.add("selected");
-      window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
         state.selectedIndex = -1;
         clearRowSelection();
+        if (addRow) {
+          window.scrollTo({
+            top: document.body.scrollHeight,
+            behavior: "smooth"
+          });
+          addRow.scrollIntoView({ block: "end", behavior: "smooth" });
+        }
         searchInput.focus();
         if (selectText) {
           searchInput.select();
         }
-      });
+      }, 50);
     }
 
     function lineEditIsActive() {
