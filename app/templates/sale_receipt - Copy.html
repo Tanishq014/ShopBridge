@@ -34,7 +34,6 @@
           <tr>
             <th>ITEM</th>
             <th>QTY</th>
-            <th>MRP</th>
             <th>RATE</th>
             <th>AMT</th>
           </tr>
@@ -50,14 +49,14 @@
           <tr>
             <td>
               {{ item.item_name }}
-              {% if item.qty < 0 %}
+              {% if (item.mrp and item.mrp > item.rate) or item.qty < 0 %}
               <div class="receipt-mrp" style="text-align: left; font-size: 10px; color: #555; margin-top: 2px;">
-                <strong style="font-size: 11px; color: #000;">(RETURN)</strong>
+                {% if item.mrp and item.mrp > item.rate %}MRP: {{ "%.2f"|format(item.mrp) }}{% endif %}
+                {% if item.qty < 0 %}<strong style="font-size: 11px; margin-left: 2px; color: #000;">(RETURN)</strong>{% endif %}
               </div>
               {% endif %}
             </td>
             <td>{{ item.qty }}</td>
-            <td>{% if item.mrp and item.mrp > item.rate %}<span style="color: #64748b; font-size: 11px;">{{ "%.2f"|format(item.mrp) }}</span>{% endif %}</td>
             <td>{{ "%.2f"|format(item.rate) }}</td>
             <td>{{ "%.2f"|format(item.amount) }}</td>
           </tr>
@@ -83,17 +82,17 @@
       {% endif %}
 
       <div
-        style="display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; margin-bottom: 4px;">
+        style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 20px; margin-bottom: 15px;">
         <div style="text-align: center;">
           <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=paytmqr://pay?pa=demo@paytm&pn=Balaji"
             alt="Paytm QR" width="80" height="80">
-          <p style="font-size: 10px; margin-top: 2px; font-weight: 500; margin-bottom: 0;">Scan to Pay</p>
+          <p style="font-size: 10px; margin-top: 4px; font-weight: 500;">Scan to Pay</p>
         </div>
-        <div style="font-size: 10px; text-align: center; margin: 4px 0; font-weight: bold;">
+        <div style="font-size: 10px; text-align: center; margin: 8px 0; font-weight: bold;">
           NO RETURNS.<br>Only exchange within 7 days of purchase with this bill.
         </div>
         <div style="text-align: center;">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 4px;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
               <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
@@ -103,7 +102,7 @@
           </div>
           <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balaji_cosmetics"
             alt="Instagram QR" width="80" height="80">
-          <p style="font-size: 10px; margin-top: 2px; font-weight: 500; padding: 0 10px; margin-bottom: 0;">Follow for the latest offers and new arrivals!</p>
+          <p style="font-size: 10px; margin-top: 4px; font-weight: 500; padding: 0 10px;">Follow for the latest offers and new arrivals!</p>
         </div>
       </div>
 

@@ -186,18 +186,7 @@
       </aside>
     </section>
 
-    <dialog id="dirtyNavModal" class="pos-modal">
-      <div class="pos-modal-content">
-        <h2>Unsaved Changes</h2>
-        <p>You have unsaved changes to the currently opened bill. What would you like to do before leaving?</p>
-        <div class="pos-modal-actions">
-          <button class="button primary" value="save">Save Changes</button>
-          <button class="button" value="hold">Hold</button>
-          <button class="button danger" value="discard">Discard Changes</button>
-          <button class="button" value="cancel">Cancel</button>
-        </div>
-      </div>
-    </dialog>
+
 
     <dialog id="ctrlAModal" class="pos-modal elegant-modal">
       <div class="pos-modal-content">
@@ -1206,91 +1195,9 @@
         setStatus(error.message || "Could not discard active bill.", "error");
       }
     }
-
-       async function confirmLeaveDirtySaleEdit() {
+    async function confirmLeaveDirtySaleEdit() {
       if (state.cart.cart_mode === "sale_edit" && state.loadedSaleDirty) {
-        return new Promise(resolve => {
-          const dialog = document.getElementById("dirtyNavModal");
-          let resolved = false;
-
-          function finish(value) {
-            if (resolved) return;
-            resolved = true;
-            dialog.removeEventListener("click", onClick);
-            dialog.removeEventListener("cancel", onCancel);
-            dialog.removeEventListener("close", onClose);
-            if (dialog.open) dialog.close();
-            resolve(value);
-          }
-
-          async function onClick(event) {
-            if (event.target === dialog) {
-              finish(false);
-              return;
-            }
-            const action = event.target && event.target.value;
-            if (!action) return;
-            
-            if (action === "save") {
-              const saved = await checkoutNow({silentAfterSave: true, skipConfirm: true});
-              finish(saved);
-            } else if (action === "hold") {
-              try {
-                const holdResponse = await fetch("/pos/cart/hold", {method: "POST"});
-                const holdData = await holdResponse.json();
-                if (!holdResponse.ok) {
-                  setStatus(holdData.message || "Could not hold active bill.", "error");
-                  finish(false);
-                } else {
-                  state.loadedSaleDirty = false;
-                  setPreviewState(false, null);
-                  renderCart(holdData.cart);
-                  await loadBillNavItems();
-                  finish(true);
-                }
-              } catch (e) {
-                setStatus("Could not hold active bill.", "error");
-                finish(false);
-              }
-            } else if (action === "discard") {
-              try {
-                const response = await fetch("/pos/cart/active/discard", {method: "POST"});
-                if (!response.ok) {
-                  const data = await response.json();
-                  setStatus(data.message || "Could not discard active bill.", "error");
-                  finish(false);
-                } else {
-                  const data = await response.json();
-                  history.replaceState({}, document.title, window.location.pathname);
-                  state.loadedSaleDirty = false;
-                  setPreviewState(false, null);
-                  renderCart(data.cart);
-                  await loadBillNavItems();
-                  finish(true);
-                }
-              } catch (e) {
-                setStatus("Could not discard active bill.", "error");
-                finish(false);
-              }
-            } else if (action === "cancel") {
-              finish(false);
-            }
-          }
-
-          function onCancel(event) {
-            event.preventDefault();
-            finish(false);
-          }
-
-          function onClose() {
-            finish(false);
-          }
-
-          dialog.addEventListener("click", onClick);
-          dialog.addEventListener("cancel", onCancel);
-          dialog.addEventListener("close", onClose);
-          dialog.showModal();
-        });
+        return await handleCtrlAQuickAction();
       }
       return true;
     }
@@ -2718,7 +2625,7 @@
       
       if (!action || action === "cancel") {
         focusItemInput(false);
-        return;
+        return false;
       }
       
       if (action === "hold") {
@@ -2726,16 +2633,19 @@
         const data = await response.json();
         if (!response.ok) {
           setStatus(data.message || "Could not hold bill.", "error");
-          return;
+          return false;
         }
         renderCart(data.cart);
         await loadBillNavItems();
         focusItemInput(false);
         setStatus("Bill held. Started a new bill.", "success");
+        return true;
       } else if (action === "save_print") {
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
+        return true;
       } else if (action === "save_no_print") {
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: false});
+        return true;
       } else if (action === "discard") {
         if (state.openedSaleMode === "edit") {
           await exitPreview(true, true);
@@ -2743,6 +2653,7 @@
           await postCartAction("/pos/cart/clear", "Bill cleared.");
           await loadCart();
         }
+        return true;
       }
     }
 

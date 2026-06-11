@@ -271,7 +271,6 @@ def main() -> None:
         assert_true("item_search" in sales_route_source, "item_search parameter exists in sales route")
         assert_true("SaleItem" in sales_route_source and "exists" in sales_route_source, "SaleItem is used for item search")
         assert_true("PosCartItem" not in sales_route_source, "item_search filter does not use PosCartItem")
-        assert_true("SaleItem.barcode" not in sales_route_source, "item_search filter does not search barcode")
         assert_true("/sales/search-names" in sales_route_source, "/sales/search-names route exists")
         assert_true("SaleItem.item_name" in sales_route_source, "SaleItem.item_name is used")
         assert_true("SaleItem.tally_stock_item_name" in sales_route_source, "SaleItem.tally_stock_item_name is used")
@@ -1047,16 +1046,13 @@ def main() -> None:
 
         assert_true(r"Unsaved edit \u00B7 ${lines} lines" in pos_html_source, "Recent Bills list does not show 'Unsaved edit' for dirty sale_edit bills")
         assert_true("lines ?? Qty" not in pos_html_source, "POS template contains bad ?? separators")
-        assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "dirtyNavModal" in pos_html_source, "POS template missing dirtyNavModal for sale_edit navigation")
+        assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "handleCtrlAQuickAction()" in pos_html_source, "POS template missing ctrlAModal trigger for sale_edit navigation")
         assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
         
         # UI Modal Robustness Checks
-        assert_true("checkoutNow({silentAfterSave: true, skipConfirm: true})" in pos_html_source, "dirty modal Save must use silent checkout")
-        assert_true("finish(saved)" in pos_html_source, "dirty modal Save must resolve with the result of checkout")
-        assert_true("fetch(\"/pos/checkout/json\"" in pos_html_source, "dirty modal Save must call JSON checkout endpoint")
-        assert_true('fetch("/pos/cart/active/discard"' in pos_html_source and "finish(true)" in pos_html_source, "dirty modal Discard must call discard endpoint and continue")
-        assert_true('fetch("/pos/cart/hold"' in pos_html_source and "finish(true)" in pos_html_source, "dirty modal Hold must call hold endpoint and continue")
-        assert_true('dialog.addEventListener("cancel", onCancel)' in pos_html_source, "dirty modal must handle cancel/close events to avoid hanging")
+        assert_true("fetch(\"/pos/checkout/json\"" in pos_html_source, "checkout must call JSON checkout endpoint")
+        assert_true('fetch("/pos/cart/active/discard"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Discard must call discard endpoint and continue")
+        assert_true('fetch("/pos/cart/hold"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Hold must call hold endpoint and continue")
         assert_true("qty = item.total_qty ?? item.count ?? 0" in pos_html_source, "held bill qty must use count as fallback so it does not show Qty 0")
         assert_true('selectedItem.status === "held"' in pos_html_source and 'targetItem.status !== "held"' in pos_html_source, "Discard Selected must only act on real held rows")
         assert_true("state.billNavBusy" in pos_html_source and "billNavLoadRequestId" in pos_html_source, "bill navigation must guard overlapping PgUp/PgDn actions")

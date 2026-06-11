@@ -116,6 +116,7 @@ def list_sales(
         term = item_search.strip()
         if term:
             like = f"%{term.lower()}%"
+            barcode_prefix = f"{term}%"
             q = q.where(
                 exists(
                     select(SaleItem.id).where(
@@ -123,6 +124,8 @@ def list_sales(
                         or_(
                             func.lower(SaleItem.item_name).like(like),
                             func.lower(SaleItem.tally_stock_item_name).like(like),
+                            SaleItem.barcode == term,
+                            SaleItem.barcode.like(barcode_prefix),
                         ),
                     )
                 )

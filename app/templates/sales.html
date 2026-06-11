@@ -366,6 +366,18 @@
         return; // default dialog behavior handles this
       }
 
+      if (isModalOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        if (rangeModal.open) {
+          e.preventDefault();
+          if (active.id === "rangeDateFrom") {
+            document.getElementById("rangeDateTo").focus();
+          } else {
+            document.getElementById("rangeDateFrom").focus();
+          }
+        }
+        return;
+      }
+
       if (active === itemSearchInput && !itemSearchSuggestions.hidden) {
         const items = Array.from(itemSearchSuggestions.querySelectorAll(".sales-item-suggestion"));
         let selectedIndex = items.findIndex(el => el.classList.contains("selected"));
