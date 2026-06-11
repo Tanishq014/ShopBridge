@@ -806,27 +806,31 @@
       const openCount = state.billNavItems.filter(i => i.type === "open").length;
       const heldCount = state.billNavItems.filter(i => i.type === "held").length;
       const previousCount = state.billNavItems.filter(i => i.type === "recent_sale" || i.type === "sale").length;
-      heldBillCount.textContent = `${openCount} open / ${heldCount} held / ${previousCount} previous`;
+      heldBillCount.textContent = `${openCount} open / ${heldCount} held / ${previousCount} today`;
       
       heldBillList.innerHTML = "";
       
       let normalHeldDisplayNo = 0;
       let lastSection = null;
       
+      const renderHeader = (text) => {
+        const header = document.createElement("div");
+        header.style.fontSize = "12px";
+        header.style.fontWeight = "800";
+        header.style.color = "var(--muted)";
+        header.style.margin = "12px 4px 6px 4px";
+        header.style.textTransform = "uppercase";
+        header.textContent = text;
+        heldBillList.appendChild(header);
+        return text;
+      };
+      
       state.billNavItems.forEach((item, index) => {
         const isPrevious = item.type === "recent_sale" || item.type === "sale";
-        const currentSection = isPrevious ? "Previous Bills" : "Open / Held Bills";
+        const currentSection = isPrevious ? "Today's Bills" : "Open / Held Bills";
         
         if (currentSection !== lastSection) {
-          const header = document.createElement("div");
-          header.style.fontSize = "12px";
-          header.style.fontWeight = "800";
-          header.style.color = "var(--muted)";
-          header.style.margin = "12px 4px 6px 4px";
-          header.style.textTransform = "uppercase";
-          header.textContent = currentSection;
-          heldBillList.appendChild(header);
-          lastSection = currentSection;
+          lastSection = renderHeader(currentSection);
         }
 
         const row = document.createElement("button");
@@ -902,6 +906,18 @@
         row.addEventListener("dblclick", () => openBillNavItemAt(index));
         heldBillList.appendChild(row);
       });
+
+      if (previousCount === 0) {
+        if (lastSection !== "Today's Bills") {
+          renderHeader("Today's Bills");
+        }
+        const emptyState = document.createElement("div");
+        emptyState.style.fontSize = "13px";
+        emptyState.style.color = "var(--muted)";
+        emptyState.style.margin = "4px 4px 12px 4px";
+        emptyState.textContent = "No bills yet today";
+        heldBillList.appendChild(emptyState);
+      }
       
       const selectedItem = state.heldSelectionActive ? state.billNavItems[state.billNavIndex] : null;
       const isDiscardable = selectedItem && (

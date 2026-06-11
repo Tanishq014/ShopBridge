@@ -11,6 +11,136 @@
     </div>
   </section>
 
+  <style>
+    .quick-filter-btn {
+      cursor: pointer; 
+      border: 1px solid #cbd5e1; 
+      background: #f8fafc; 
+      color: #334155; 
+      transition: all 0.2s;
+    }
+    .quick-filter-btn:hover {
+      background: #f1f5f9;
+    }
+    .quick-filter-btn.active {
+      background: #0f172a;
+      color: #fff;
+      border-color: #0f172a;
+    }
+  </style>
+  <div class="quick-filters" style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
+    <span style="font-size: 13px; font-weight: 600; color: #64748b; margin-right: 8px;">Quick Filters:</span>
+    <button type="button" class="badge quick-filter-btn" data-period="today" onclick="applyQuickFilter('today')">Today</button>
+    <button type="button" class="badge quick-filter-btn" data-period="yesterday" onclick="applyQuickFilter('yesterday')">Yesterday</button>
+    <button type="button" class="badge quick-filter-btn" data-period="week" onclick="applyQuickFilter('week')">This Week</button>
+    <button type="button" class="badge quick-filter-btn" data-period="month" onclick="applyQuickFilter('month')">This Month</button>
+    <button type="button" class="badge quick-filter-btn" data-period="all" onclick="applyQuickFilter('all')">All</button>
+  </div>
+
+  <script>
+    function formatLocalDate(date) {
+      // Create a local date string in YYYY-MM-DD format
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    function applyQuickFilter(period) {
+      const startInput = document.getElementById('start_date');
+      const endInput = document.getElementById('end_date');
+      const now = new Date();
+      
+      let start = null;
+      let end = null;
+      
+      if (period === 'today') {
+        start = end = now;
+      } else if (period === 'yesterday') {
+        start = end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      } else if (period === 'week') {
+        const day = now.getDay() || 7; // Get current day number, treating Sunday as 7
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1); // Monday
+        end = now;
+      } else if (period === 'month') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Last day of month
+      } else if (period === 'all') {
+        startInput.value = '';
+        endInput.value = '';
+        document.querySelector('.sales-filter-form').submit();
+        return;
+      }
+      
+      startInput.value = formatLocalDate(start);
+      endInput.value = formatLocalDate(end);
+      document.querySelector('.sales-filter-form').submit();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const startVal = document.getElementById('start_date').value;
+      const endVal = document.getElementById('end_date').value;
+      const now = new Date();
+      
+      let activePeriod = 'all';
+      
+      if (startVal || endVal) {
+        const todayStr = formatLocalDate(now);
+        const yesterdayStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+        
+        const day = now.getDay() || 7;
+        const weekStartStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1));
+        const monthStartStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
+        const monthEndStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+        
+        if (startVal === todayStr && endVal === todayStr) {
+          activePeriod = 'today';
+        } else if (startVal === yesterdayStr && endVal === yesterdayStr) {
+          activePeriod = 'yesterday';
+        } else if (startVal === weekStartStr && endVal === todayStr) {
+          activePeriod = 'week';
+        } else if (startVal === monthStartStr && endVal === monthEndStr) {
+          activePeriod = 'month';
+        } else {
+          activePeriod = null; // Custom dates
+        }
+      }
+      
+      if (activePeriod) {
+        const btn = document.querySelector(`.quick-filter-btn[data-period="${activePeriod}"]`);
+        if (btn) btn.classList.add('active');
+      }
+    });
+  </script>
+
+  <form class="sales-filter-form" method="GET" action="/sales" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; padding: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; align-items: flex-end;">
+    <div class="form-group" style="margin: 0; min-width: 150px; flex: 1;">
+      <label for="start_date" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Start Date</label>
+      <input type="date" id="start_date" name="start_date" value="{{ filters.start_date }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+    </div>
+    <div class="form-group" style="margin: 0; min-width: 150px; flex: 1;">
+      <label for="end_date" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">End Date</label>
+      <input type="date" id="end_date" name="end_date" value="{{ filters.end_date }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+    </div>
+    <div class="form-group" style="margin: 0; min-width: 150px; flex: 1;">
+      <label for="payment_mode" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Payment Mode</label>
+      <select id="payment_mode" name="payment_mode" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+        <option value="">All</option>
+        <option value="cash" {% if filters.payment_mode == 'cash' %}selected{% endif %}>Cash</option>
+        <option value="upi" {% if filters.payment_mode == 'upi' %}selected{% endif %}>UPI</option>
+        <option value="card" {% if filters.payment_mode == 'card' %}selected{% endif %}>Card</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin: 0; min-width: 150px; flex: 1;">
+      <label for="bill_number" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Bill Number</label>
+      <input type="text" id="bill_number" name="bill_number" placeholder="Search bill no..." value="{{ filters.bill_number }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+    </div>
+    <div class="form-actions" style="margin: 0; display: flex; gap: 8px;">
+      <button type="submit" class="button primary" style="height: 38px;">Apply</button>
+      <a href="/sales" class="button" style="height: 38px; display: inline-flex; align-items: center;">Clear</a>
+    </div>
+  </form>
+
   <div class="table-wrap">
     <table>
       <thead>

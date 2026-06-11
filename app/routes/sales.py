@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from app.config import TEMPLATES_DIR
 from app.db import get_db
 from app.models import Sale
 from app.services.template_filters import register_template_filters
+from app.services.time_service import LOCAL_TIMEZONE
 
 
 router = APIRouter(tags=["sales"])
@@ -75,19 +77,56 @@ def _sale_payload(sale: Sale) -> dict[str, object]:
 
 
 @router.get("/sales", response_class=HTMLResponse)
-def list_sales(request: Request, db: Session = Depends(get_db)):
+def list_sales(
+    request: Request,
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    payment_mode: str | None = Query(None),
+    bill_number: str | None = Query(None),
+    db: Session = Depends(get_db)
+):
+    q = select(Sale).options(selectinload(Sale.items))
+    
+    if start_date:
+        try:
+            sd = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=LOCAL_TIMEZONE)
+            sd_utc = sd.astimezone(timezone.utc).replace(tzinfo=None)
+            q = q.where(Sale.created_at >= sd_utc)
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            ed = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=LOCAL_TIMEZONE)
+            # Filter through the full end date (start of next day)
+            ed_next = ed + timedelta(days=1)
+            ed_next_utc = ed_next.astimezone(timezone.utc).replace(tzinfo=None)
+            q = q.where(Sale.created_at < ed_next_utc)
+        except ValueError:
+            pass
+
+    if payment_mode:
+        q = q.where(Sale.payment_mode == payment_mode)
+
+    if bill_number:
+        q = q.where(Sale.bill_number.ilike(f"%{bill_number}%"))
+
     sales = db.execute(
-        select(Sale)
-        .options(selectinload(Sale.items))
-        .order_by(Sale.created_at.desc(), Sale.id.desc())
-        .limit(100)
+        q.order_by(Sale.created_at.desc(), Sale.id.desc()).limit(100)
     ).scalars().all()
+    
     return templates.TemplateResponse(
         request,
         "sales.html",
         {
             "request": request,
             "sales": sales,
+            "filters": {
+                "start_date": start_date or "",
+                "end_date": end_date or "",
+                "payment_mode": payment_mode or "",
+                "bill_number": bill_number or "",
+            }
         },
     )
 

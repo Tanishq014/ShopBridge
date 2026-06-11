@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from io import BytesIO
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -20,6 +21,7 @@ from app.services.billing_service import lookup_saved_price_by_barcode
 from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
 from app.services.sales_service import CheckoutError, checkout_cart
 from app.services.template_filters import register_template_filters
+from app.services.time_service import LOCAL_TIMEZONE
 
 
 router = APIRouter(tags=["pos"])
@@ -485,12 +487,22 @@ def list_held_carts(db: Session = Depends(get_db)):
 
 
 @router.get("/pos/recent-sales")
-def list_recent_sales(limit: int = 20, db: Session = Depends(get_db)):
+def list_recent_sales(db: Session = Depends(get_db)):
+    from datetime import timezone
+    now = datetime.now(LOCAL_TIMEZONE)
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_tomorrow = start_of_today + timedelta(days=1)
+
+    # Convert to naive UTC for SQLAlchemy comparison since DB stores naive UTC
+    start_utc = start_of_today.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = start_of_tomorrow.astimezone(timezone.utc).replace(tzinfo=None)
+
     sales = db.scalars(
         select(Sale)
         .options(selectinload(Sale.items))
+        .where(Sale.created_at >= start_utc, Sale.created_at < end_utc)
         .order_by(Sale.id.desc())
-        .limit(limit)
+        .limit(200)
     ).all()
 
     # Only exclude sales that have a HELD sale_edit cart pointing at them.

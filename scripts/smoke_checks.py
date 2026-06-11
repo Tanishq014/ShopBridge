@@ -1036,7 +1036,7 @@ def main() -> None:
         
         assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
         assert_true("activeBillNavItem" in pos_markup and 'type: "open"' in pos_markup, "POS bill nav must keep the current active bill visible locally")
-        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} previous" in pos_markup, "POS bill nav must separate open, held, and previous counts")
+        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} today" in pos_markup, "POS bill nav must separate open, held, and previous counts")
         assert_true('if (item.type === "open") return 2;' in pos_markup, "Open bill must sort with held bills, not always at the top")
         assert_true('item.type === "open" && item.id === state.cart.cart_id' in pos_markup, "POS bill nav must reselect the currently open bill after reload")
         assert_true('if (targetItem.type === "open")' in pos_markup, "Opening the active bill row should be a no-op, not a server call")
@@ -1066,6 +1066,12 @@ def main() -> None:
         assert_true('qty == 0' in pos_py_source and 'Quantity cannot be zero' in pos_py_source, "Qty zero must be rejected")
         assert_true('qty <= 0' not in pos_py_source.split('if "qty" in payload:')[1].split('item.qty = qty')[0], "Qty input must accept negative values")
 
+        assert_true("start_of_today = now.replace" in pos_py_source, "POS previous bills query uses today's sales, not hard limit 20")
+        assert_true('name="start_date"' in sales_markup and 'name="payment_mode"' in sales_markup, "Sales page has filter inputs for start/end/payment/bill number")
+        assert_true("start_date: str | None = Query(None)" in sales_route_source, "Sales route accepts filter query params")
+        assert_true('href="/sales/{{ sale.id }}/receipt"' in sale_detail_markup, "Sale detail page still links to receipt")
+        assert_true("{% for item in sale.items %}" in sale_detail_markup and "sale.total" in sale_detail_markup, "Sale detail page renders item rows and totals")
+        assert_true("Thank you" in sale_receipt_markup and "sale.items" in sale_receipt_markup, "Receipt print page still exists and renders sale items")
         print("Smoke checks passed")
     finally:
         db.close()
