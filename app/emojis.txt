@@ -1,0 +1,7 @@
+173: <span id="phoneVoiceDraftCount"></span> more item(s) waiting —
+214: <h2 id="phoneVoiceModalTitle">🎤 Voice Fill</h2>
+1657: // Voice Fill — phone-first push-to-talk form filler
+2254: // Both rate and coded price present — check for mismatch
+2269: // Code present but not decodable — needs review
+2385: // near the button after the modal closes — we'll update pvDraftQueue visibility.
+2408: ? "Voice Fill — tap to speak item details"
