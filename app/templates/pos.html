@@ -290,6 +290,8 @@
       activeEditField: null,
       activeEditOriginalValue: null,
       activeEditDirty: false,
+      recentSalesOffset: 0,
+      hasMoreRecentSales: true,
     };
 
     function currentFieldIsActuallyEditing(input = document.activeElement) {
@@ -828,18 +830,37 @@
         row.className = `pos-held-row${isSelected ? " selected" : ""}`;
         row.dataset.navIndex = index;
 
-        // Top row: badge + label + total, all in one flex line
-        const top = document.createElement("div");
-        top.className = "pos-held-row-top";
+        // Grid layout
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.justifyContent = "space-between";
+        row.style.padding = "10px 12px";
+        row.style.gap = "12px";
+        row.style.textAlign = "left";
+
+        const left = document.createElement("div");
+        left.style.display = "flex";
+        left.style.alignItems = "center";
+        left.style.gap = "16px";
+        left.style.flex = "1";
+        left.style.minWidth = "0";
+
+        // Col 1: Badge (Top), Label (Bottom)
+        const col1 = document.createElement("div");
+        col1.style.display = "flex";
+        col1.style.flexDirection = "column";
+        col1.style.alignItems = "flex-start";
+        col1.style.gap = "4px";
+        col1.style.minWidth = "70px";
 
         const badge = document.createElement("span");
         badge.className = `badge ${item.type === "held" || item.type === "open" ? "ok" : "muted"}`;
         badge.textContent = item.type === "open" ? "Open" : item.type === "held" ? "Held" : "Prev";
+        badge.style.flexShrink = "0";
+        badge.style.padding = "2px 6px";
+        badge.style.fontSize = "10px";
 
         const isEdit = item.type === "held" && item.cart_mode === "sale_edit";
-        const label = document.createElement("span");
-        label.className = "pos-held-row-label";
-        
         let labelText;
         if (isEdit) {
           labelText = item.bill_number || `Sale #${item.source_sale_id}`;
@@ -852,29 +873,94 @@
           labelText = item.bill_number || `Sale #${item.id}`;
         }
         
+        const label = document.createElement("span");
+        label.style.fontWeight = "700";
+        label.style.fontSize = "13px";
+        label.style.color = "var(--text)";
+        label.style.whiteSpace = "nowrap";
+        label.style.overflow = "hidden";
+        label.style.textOverflow = "ellipsis";
+        label.style.maxWidth = "110px";
         label.textContent = labelText;
 
-        const total = document.createElement("span");
-        total.className = "pos-held-row-total";
-        total.textContent = money(item.total || "0.00");
+        col1.appendChild(badge);
+        col1.appendChild(label);
 
-        top.appendChild(badge);
-        top.appendChild(label);
-        top.appendChild(total);
-        row.appendChild(top);
+        // Col 2: Items (Top), Qty (Bottom)
+        const col2 = document.createElement("div");
+        col2.style.display = "flex";
+        col2.style.flexDirection = "column";
+        col2.style.alignItems = "flex-start";
+        col2.style.gap = "4px";
 
-        const sub = document.createElement("div");
-        sub.className = "pos-held-row-sub";
         const lines = item.item_count ?? item.lines ?? 0;
         const qty = item.total_qty ?? item.count ?? 0;
+        
+        const itemsTop = document.createElement("span");
+        itemsTop.style.fontSize = "12px";
+        itemsTop.style.fontWeight = "600";
+        itemsTop.style.color = "var(--text)";
+        itemsTop.style.whiteSpace = "nowrap";
+        itemsTop.textContent = isEdit ? `Edit (Items ${lines})` : `Items ${lines}`;
+
+        const qtyBottom = document.createElement("span");
+        qtyBottom.style.fontSize = "11px";
+        qtyBottom.style.color = "var(--muted)";
+        qtyBottom.style.whiteSpace = "nowrap";
+        qtyBottom.textContent = `Qty ${qty}`;
+
+        col2.appendChild(itemsTop);
+        col2.appendChild(qtyBottom);
+
+        // Col 3: Date (Top), Time (Bottom)
+        const col3 = document.createElement("div");
+        col3.style.display = "flex";
+        col3.style.flexDirection = "column";
+        col3.style.alignItems = "flex-start";
+        col3.style.gap = "4px";
+
         const d = new Date(item.updated_at || item.created_at);
-        const dateStr = !isNaN(d) ? `${String(d.getMonth()+1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}, ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "";
-        if (isEdit) {
-          sub.textContent = `Unsaved edit \u00B7 ${lines} lines \u00B7 Qty ${qty}`;
-        } else {
-          sub.textContent = `${lines} lines \u00B7 Qty ${qty} \u00B7 ${dateStr}`;
-        }
-        row.appendChild(sub);
+        const isToday = !isNaN(d) && d.toDateString() === new Date().toDateString();
+        const dateStr = !isNaN(d) ? (isToday ? "Today" : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth()+1).padStart(2, "0")}`) : "";
+        const timeStr = !isNaN(d) ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "";
+
+        const dateTop = document.createElement("span");
+        dateTop.style.fontSize = "12px";
+        dateTop.style.fontWeight = "600";
+        dateTop.style.color = "var(--text)";
+        dateTop.style.whiteSpace = "nowrap";
+        dateTop.textContent = dateStr;
+
+        const timeBottom = document.createElement("span");
+        timeBottom.style.fontSize = "11px";
+        timeBottom.style.color = "var(--muted)";
+        timeBottom.style.whiteSpace = "nowrap";
+        timeBottom.textContent = timeStr;
+
+        col3.appendChild(dateTop);
+        col3.appendChild(timeBottom);
+
+        left.appendChild(col1);
+        left.appendChild(col2);
+        left.appendChild(col3);
+
+        const right = document.createElement("div");
+        right.style.display = "flex";
+        right.style.alignItems = "center";
+        right.style.justifyContent = "flex-end";
+        right.style.flexShrink = "0";
+
+        const total = document.createElement("span");
+        total.style.fontWeight = "800";
+        total.style.fontSize = "14px";
+        total.style.color = "var(--text)";
+        total.style.whiteSpace = "nowrap";
+        total.textContent = money(item.total || "0.00");
+
+        right.appendChild(total);
+
+        row.appendChild(left);
+        row.appendChild(right);
 
         row.addEventListener("click", () => {
           if (state.billNavBusy) {
@@ -954,19 +1040,22 @@
 
     async function loadBillNavItems() {
       const requestId = ++state.billNavLoadRequestId;
+      const fetchLimit = state.recentSalesOffset + 10;
       try {
         const [heldRes, recentRes] = await Promise.all([
             fetch("/pos/cart/held", {cache: "no-store"}),
-            fetch("/pos/recent-sales", {cache: "no-store"})
+            fetch(`/pos/recent-sales?offset=0&limit=${fetchLimit}`, {cache: "no-store"})
         ]);
         if (requestId !== state.billNavLoadRequestId) {
           return;
         }
         const heldData = heldRes.ok ? await heldRes.json() : {items: []};
-        const recentData = recentRes.ok ? await recentRes.json() : {items: []};
+        const recentData = recentRes.ok ? await recentRes.json() : {items: [], has_more: false};
         if (requestId !== state.billNavLoadRequestId) {
           return;
         }
+        
+        state.hasMoreRecentSales = recentData.has_more ?? (recentData.items && recentData.items.length === fetchLimit);
         
         const activeItem = activeBillNavItem();
         const combined = [
@@ -1328,6 +1417,29 @@
       }
     }
 
+    async function loadMoreRecentSales() {
+      if (!state.hasMoreRecentSales || state.billNavBusy) return;
+      state.billNavBusy = true;
+      try {
+        state.recentSalesOffset += 10;
+        const res = await fetch(`/pos/recent-sales?offset=${state.recentSalesOffset}&limit=10`, {cache: "no-store"});
+        if (res.ok) {
+          const data = await res.json();
+          if (data.items && data.items.length > 0) {
+            state.billNavItems.push(...data.items);
+            renderBillNavItems();
+          }
+          state.hasMoreRecentSales = data.has_more ?? (!data.items || data.items.length < 10 ? false : true);
+        } else {
+          state.hasMoreRecentSales = false;
+        }
+      } catch (error) {
+        state.hasMoreRecentSales = false;
+      } finally {
+        state.billNavBusy = false;
+      }
+    }
+
     async function navigateBillList(delta) {
       if (state.billNavBusy) {
         return;
@@ -1365,6 +1477,13 @@
         return;
       }
       if (nextIndex >= state.billNavItems.length) {
+        if (state.hasMoreRecentSales) {
+          await loadMoreRecentSales();
+          if (nextIndex < state.billNavItems.length) {
+            await openBillNavItemAt(nextIndex);
+            return;
+          }
+        }
         setStatus("End of bill list.", "info");
         focusItemInput(false);
         return;

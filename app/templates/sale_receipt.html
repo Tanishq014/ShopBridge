@@ -109,13 +109,15 @@
         style="display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; margin-bottom: 4px;">
         {% if sale.upi_vpa %}
         <div style="text-align: center;">
-          <img src="/sales/{{ sale.id }}/upi-qr.png" alt="UPI QR" width="80" height="80">
-          <p style="font-size: 12px; margin-top: 2px; font-weight: bold; margin-bottom: 0; color: #000;">Scan to Pay</p>
-          <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 4px;">
+          <p style="font-size: 12px; margin-bottom: 4px; font-weight: bold; margin-top: 0; color: #000;">Scan to Pay</p>
+          <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 6px;">
             <img src="https://cdn.simpleicons.org/googlepay/black" alt="GPay" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
             <img src="https://cdn.simpleicons.org/phonepe/black" alt="PhonePe" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
             <img src="https://cdn.simpleicons.org/paytm/black" alt="Paytm" width="24" height="18" style="filter: grayscale(100%) contrast(1000%);">
+            <img src="https://cdn.simpleicons.org/whatsapp/black" alt="WhatsApp Pay" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
+            <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 18'%3E%3Ctext x='0' y='14' font-family='sans-serif' font-weight='900' font-size='12' fill='black'%3EBHIM%3C/text%3E%3C/svg%3E" alt="BHIM" width="30" height="18">
           </div>
+          <img src="/sales/{{ sale.id }}/upi-qr.png" alt="UPI QR" width="80" height="80">
         </div>
         {% endif %}
         <div style="font-size: 10px; text-align: center; margin: 4px 0; font-weight: bold;">

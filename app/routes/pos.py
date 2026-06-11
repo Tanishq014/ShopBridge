@@ -489,22 +489,13 @@ def list_held_carts(db: Session = Depends(get_db)):
 
 
 @router.get("/pos/recent-sales")
-def list_recent_sales(db: Session = Depends(get_db)):
-    from datetime import timezone
-    now = datetime.now(LOCAL_TIMEZONE)
-    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_of_tomorrow = start_of_today + timedelta(days=1)
-
-    # Convert to naive UTC for SQLAlchemy comparison since DB stores naive UTC
-    start_utc = start_of_today.astimezone(timezone.utc).replace(tzinfo=None)
-    end_utc = start_of_tomorrow.astimezone(timezone.utc).replace(tzinfo=None)
-
+def list_recent_sales(offset: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     sales = db.scalars(
         select(Sale)
         .options(selectinload(Sale.items))
-        .where(Sale.created_at >= start_utc, Sale.created_at < end_utc)
         .order_by(Sale.id.desc())
-        .limit(200)
+        .offset(offset)
+        .limit(limit)
     ).all()
 
     # Only exclude sales that have a HELD sale_edit cart pointing at them.
@@ -535,9 +526,9 @@ def list_recent_sales(db: Session = Depends(get_db)):
             "total": str(sale.total),
             "item_count": len(sale.items),
             "total_qty": sum(item.qty for item in sale.items),
-            "created_at": sale.created_at.isoformat() if sale.created_at else "",
+            "created_at": sale.created_at.isoformat() + "Z" if sale.created_at else "",
         })
-    return {"ok": True, "items": items}
+    return {"ok": True, "items": items, "has_more": len(sales) == limit}
 
 
 @router.post("/pos/cart/hold")
