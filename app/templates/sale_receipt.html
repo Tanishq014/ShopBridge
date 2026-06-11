@@ -5,7 +5,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ sale.bill_number }} Receipt - ShopBridge</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v={{ range(1, 10000) | random }}">
+  <style>
+    .receipt-table th, .receipt-table td {
+      padding: 4px 4px !important;
+    }
+    .receipt-table th:first-child, .receipt-table td:first-child {
+      padding-left: 0 !important;
+      text-align: left !important;
+    }
+    .receipt-table th:last-child, .receipt-table td:last-child {
+      padding-right: 0 !important;
+    }
+    .receipt-table th:nth-child(2), .receipt-table td:nth-child(2),
+    .receipt-table th:nth-child(3), .receipt-table td:nth-child(3),
+    .receipt-table th:nth-child(4), .receipt-table td:nth-child(4),
+    .receipt-table th:nth-child(5), .receipt-table td:nth-child(5) {
+      text-align: right !important;
+    }
+  </style>
 </head>
 
 <body class="receipt-body">
@@ -16,13 +34,18 @@
     </div>
 
     <section class="receipt">
-      <header class="receipt-header">
-        <h1>Balaji</h1>
-        <p>Local POS Receipt</p>
+      <header class="receipt-header" style="margin-bottom: 6px;">
+        <h1 style="font-size: 16px; margin-bottom: 2px;">POS Receipt</h1>
+        <div style="border-top: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="font-size: 12px; font-weight: bold; margin-bottom: 1px;">✈️ GLOBAL COURIER 📦</div>
+        <p style="font-size: 10px; font-weight: 600; line-height: 1.2; margin: 0; padding: 0 4px;">
+          Shipping internationally?<br>
+          <span style="font-weight: normal; font-size: 9px;">Ask us about fast & secure worldwide delivery at unbeatable rates!</span>
+        </p>
       </header>
 
       <dl class="receipt-meta">
-        <dt>Bill No</dt>
+        <dt>Bill</dt>
         <dd>{{ sale.bill_number }}</dd>
         <dt>Date</dt>
         <dd>{{ sale.created_at|local_time }}</dd>
@@ -78,17 +101,23 @@
 
       {% if ns.total_saved > 0 %}
       <div class="receipt-savings">
-        YOU SAVED Rs. {{ "%.2f"|format(ns.total_saved) }} TODAY!
+        YOU SAVED ₹{{ "%.2f"|format(ns.total_saved) }} TODAY!
       </div>
       {% endif %}
 
       <div
         style="display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; margin-bottom: 4px;">
+        {% if sale.upi_vpa %}
         <div style="text-align: center;">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=paytmqr://pay?pa=demo@paytm&pn=Balaji"
-            alt="Paytm QR" width="80" height="80">
-          <p style="font-size: 10px; margin-top: 2px; font-weight: 500; margin-bottom: 0;">Scan to Pay</p>
+          <img src="/sales/{{ sale.id }}/upi-qr.png" alt="UPI QR" width="80" height="80">
+          <p style="font-size: 12px; margin-top: 2px; font-weight: bold; margin-bottom: 0; color: #000;">Scan to Pay</p>
+          <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 4px;">
+            <img src="https://cdn.simpleicons.org/googlepay/black" alt="GPay" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
+            <img src="https://cdn.simpleicons.org/phonepe/black" alt="PhonePe" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
+            <img src="https://cdn.simpleicons.org/paytm/black" alt="Paytm" width="24" height="18" style="filter: grayscale(100%) contrast(1000%);">
+          </div>
         </div>
+        {% endif %}
         <div style="font-size: 10px; text-align: center; margin: 4px 0; font-weight: bold;">
           NO RETURNS.<br>Only exchange within 7 days of purchase with this bill.
         </div>
@@ -101,14 +130,14 @@
             </svg>
             <span style="font-size: 10px; font-weight: bold;">balajicosmeticskkr</span>
           </div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balaji_cosmetics"
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balajicosmeticskkr"
             alt="Instagram QR" width="80" height="80">
           <p style="font-size: 10px; margin-top: 2px; font-weight: 500; padding: 0 10px; margin-bottom: 0;">Follow for the latest offers and new arrivals!</p>
         </div>
       </div>
 
       <footer class="receipt-footer">
-        <p>Thankyu for shopping with us</p>
+        <p>Thank you for shopping with us</p>
         <span>{{ sale.bill_number }}</span>
       </footer>
     </section>

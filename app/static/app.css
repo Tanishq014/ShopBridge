@@ -1928,8 +1928,18 @@ tbody tr:last-child td {
 .receipt-table th,
 .receipt-table td {
   border: 0;
-  padding: 3px 0;
+  padding: 3px 4px;
   vertical-align: top;
+}
+
+.receipt-table th:first-child,
+.receipt-table td:first-child {
+  padding-left: 0;
+}
+
+.receipt-table th:last-child,
+.receipt-table td:last-child {
+  padding-right: 0;
 }
 
 .receipt-table th:nth-child(2),
@@ -1937,7 +1947,9 @@ tbody tr:last-child td {
 .receipt-table th:nth-child(3),
 .receipt-table td:nth-child(3),
 .receipt-table th:nth-child(4),
-.receipt-table td:nth-child(4) {
+.receipt-table td:nth-child(4),
+.receipt-table th:nth-child(5),
+.receipt-table td:nth-child(5) {
   text-align: right;
 }
 

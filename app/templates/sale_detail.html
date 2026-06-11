@@ -217,6 +217,9 @@
         <dt>Payment Mode</dt>
         <dd>
           <span class="sd-badge info">{{ sale.payment_mode|title }}</span>
+          {% if sale.payment_mode == 'upi' and sale.upi_vpa %}
+            <span class="mono" style="margin-left: 6px; font-size: 12px; color: #64748b;">{{ sale.upi_vpa }}</span>
+          {% endif %}
         </dd>
         <dt>Print Status</dt><dd>{{ sale.print_status|title }}</dd>
         <dt>Tally Sync Status</dt><dd>{{ sale.tally_sync_status|title }}</dd>

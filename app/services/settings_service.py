@@ -29,6 +29,20 @@ PRICE_CODE_DIGIT_MAP_KEY = "price_code_digit_map"
 ALLOW_PRICE_CODE_EXTRACTION_KEY = "allow_price_code_extraction"
 EMPTY_PRICE_CODE_DIGIT_MAP = {str(digit): "" for digit in range(10)}
 
+UPI_VPA_1_KEY = "upi_vpa_1"
+UPI_KEY_1_KEY = "upi_key_1"
+UPI_VPA_2_KEY = "upi_vpa_2"
+UPI_KEY_2_KEY = "upi_key_2"
+UPI_DEFAULT_VPA_KEY = "upi_default_vpa"
+
+@dataclass(frozen=True)
+class UpiSettings:
+    vpa_1: str
+    key_1: str
+    vpa_2: str
+    key_2: str
+    default_vpa: str
+
 
 @dataclass(frozen=True)
 class BarTenderSettings:
@@ -160,6 +174,21 @@ def ensure_default_settings() -> None:
         changed = True
     if ALLOW_PRICE_CODE_EXTRACTION_KEY not in settings:
         settings[ALLOW_PRICE_CODE_EXTRACTION_KEY] = "true"
+        changed = True
+    if UPI_VPA_1_KEY not in settings:
+        settings[UPI_VPA_1_KEY] = ""
+        changed = True
+    if UPI_KEY_1_KEY not in settings:
+        settings[UPI_KEY_1_KEY] = "1"
+        changed = True
+    if UPI_VPA_2_KEY not in settings:
+        settings[UPI_VPA_2_KEY] = ""
+        changed = True
+    if UPI_KEY_2_KEY not in settings:
+        settings[UPI_KEY_2_KEY] = "2"
+        changed = True
+    if UPI_DEFAULT_VPA_KEY not in settings:
+        settings[UPI_DEFAULT_VPA_KEY] = ""
         changed = True
     if changed:
         _write_settings(settings)
@@ -333,3 +362,55 @@ def save_price_code_settings(
     settings[ALLOW_PRICE_CODE_EXTRACTION_KEY] = _bool_text(allow_extraction)
     _write_settings(settings)
     return get_price_code_settings()
+
+
+def get_upi_settings() -> UpiSettings:
+    ensure_default_settings()
+    settings = _read_settings()
+    return UpiSettings(
+        vpa_1=settings.get(UPI_VPA_1_KEY, ""),
+        key_1=settings.get(UPI_KEY_1_KEY, "1"),
+        vpa_2=settings.get(UPI_VPA_2_KEY, ""),
+        key_2=settings.get(UPI_KEY_2_KEY, "2"),
+        default_vpa=settings.get(UPI_DEFAULT_VPA_KEY, ""),
+    )
+
+
+def save_upi_settings(
+    *,
+    vpa_1: str,
+    key_1: str,
+    vpa_2: str,
+    key_2: str,
+    default_vpa: str,
+) -> UpiSettings:
+    clean_vpa_1 = vpa_1.strip()
+    clean_key_1 = key_1.strip().lower()
+    clean_vpa_2 = vpa_2.strip()
+    clean_key_2 = key_2.strip().lower()
+
+    reserved_keys = {"enter", "escape", "esc", "ctrl", "alt", "shift", "n", "h", "x", "y"}
+
+    if clean_vpa_1:
+        if not clean_key_1 or len(clean_key_1) != 1:
+            raise ValueError("Hotkey 1 must be exactly one visible character.")
+        if clean_key_1 in reserved_keys:
+            raise ValueError(f"Hotkey 1 cannot be a reserved key: '{clean_key_1}'")
+            
+    if clean_vpa_2:
+        if not clean_key_2 or len(clean_key_2) != 1:
+            raise ValueError("Hotkey 2 must be exactly one visible character.")
+        if clean_key_2 in reserved_keys:
+            raise ValueError(f"Hotkey 2 cannot be a reserved key: '{clean_key_2}'")
+
+    if clean_vpa_1 and clean_vpa_2 and clean_key_1 == clean_key_2:
+        raise ValueError("Hotkeys cannot be the same if both VPAs are filled.")
+
+    settings = _read_settings()
+    settings[UPI_VPA_1_KEY] = clean_vpa_1
+    settings[UPI_KEY_1_KEY] = clean_key_1 if clean_vpa_1 else (clean_key_1 or "1")
+    settings[UPI_VPA_2_KEY] = clean_vpa_2
+    settings[UPI_KEY_2_KEY] = clean_key_2 if clean_vpa_2 else (clean_key_2 or "2")
+    settings[UPI_DEFAULT_VPA_KEY] = default_vpa.strip()
+    _write_settings(settings)
+    return get_upi_settings()

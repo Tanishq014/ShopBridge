@@ -172,6 +172,46 @@
     </form>
   </section>
 
+  <section class="panel setup-panel">
+    <div class="section-line">
+      <h2>UPI / Paytm QR Settings</h2>
+    </div>
+    <form class="form-grid three" method="post" action="/settings/upi">
+      <label>
+        VPA 1
+        <input name="upi_vpa_1" value="{{ upi_settings.vpa_1 }}" placeholder="e.g., 9999999999@paytm">
+      </label>
+      <label>
+        Hotkey 1
+        <input name="upi_key_1" value="{{ upi_settings.key_1 }}" maxlength="1">
+      </label>
+      <div></div>
+
+      <label>
+        VPA 2
+        <input name="upi_vpa_2" value="{{ upi_settings.vpa_2 }}" placeholder="e.g., store@ybl">
+      </label>
+      <label>
+        Hotkey 2
+        <input name="upi_key_2" value="{{ upi_settings.key_2 }}" maxlength="1">
+      </label>
+      <div></div>
+
+      <label class="span-two">
+        Default VPA (used on Enter)
+        <select name="upi_default_vpa">
+          <option value="cash" {% if upi_settings.default_vpa == 'cash' or not upi_settings.default_vpa %}selected{% endif %}>Consider the bill Cash</option>
+          <option value="{{ upi_settings.vpa_1 }}" {% if upi_settings.default_vpa == upi_settings.vpa_1 and upi_settings.vpa_1 %}selected{% endif %}>VPA 1</option>
+          <option value="{{ upi_settings.vpa_2 }}" {% if upi_settings.default_vpa == upi_settings.vpa_2 and upi_settings.vpa_2 %}selected{% endif %}>VPA 2</option>
+        </select>
+      </label>
+
+      <div class="form-actions">
+        <button class="button primary" type="submit">Save UPI Settings</button>
+      </div>
+    </form>
+  </section>
+
   <section class="status-strip">
     <div class="status-tile ok">
       <span>Ready templates</span>

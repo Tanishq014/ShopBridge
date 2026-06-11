@@ -168,6 +168,7 @@ class Sale(Base):
     tally_voucher_number = Column(String(120), nullable=True)
     tally_voucher_guid = Column(String(120), nullable=True)
     tally_last_error = Column(Text, nullable=True)
+    upi_vpa = Column(String(200), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

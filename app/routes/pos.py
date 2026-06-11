@@ -20,6 +20,7 @@ from app.services.barcode_service import normalize_barcode
 from app.services.billing_service import lookup_saved_price_by_barcode
 from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
 from app.services.sales_service import CheckoutError, checkout_cart
+from app.services.settings_service import get_upi_settings
 from app.services.template_filters import register_template_filters
 from app.services.time_service import LOCAL_TIMEZONE
 
@@ -428,6 +429,7 @@ def pos_page(
             "error": checkout_error,
             "initial_sale_id": sale_id,
             "held_carts": _held_carts_payload(db),
+            "upi_settings": __import__("dataclasses").asdict(get_upi_settings()),
         },
     )
 
@@ -933,6 +935,20 @@ async def pos_checkout_json(
         payload = {}
     payment = (payload.get("payment_mode") or "cash").strip().lower() or "cash"
     notes = str(payload.get("notes") or "").strip()
+    upi_vpa = str(payload.get("upi_vpa") or "").strip()
+
+    if upi_vpa and upi_vpa != "cash":
+        payment = "upi"
+        from app.services.settings_service import get_upi_settings
+        upi_settings = get_upi_settings()
+        valid_vpas = {v.strip() for v in (upi_settings.vpa_1, upi_settings.vpa_2, upi_settings.default_vpa) if v.strip()}
+        if upi_vpa not in valid_vpas:
+            upi_vpa = ""
+            payment = "cash"
+    else:
+        upi_vpa = ""
+        payment = "cash"
+
     if payment not in ALLOWED_PAYMENT_MODES:
         return _json_error("Choose Cash, UPI, or Card payment.", status_code=400, status="invalid_payment")
     cart = _find_active_cart(db, normalize_duplicates=True)
@@ -941,9 +957,9 @@ async def pos_checkout_json(
     try:
         if cart.cart_mode == "sale_edit":
             from app.services.sales_service import save_sale_edit_cart
-            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes)
+            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes, upi_vpa=upi_vpa)
         else:
-            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
+            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes, upi_vpa=upi_vpa)
     except CheckoutError as exc:
         extra = {}
         if exc.cart_item_id is not None:

@@ -4,8 +4,11 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from io import BytesIO
+import qrcode
+import urllib.parse
 from sqlalchemy import select, exists, or_, func
 from sqlalchemy.orm import Session, selectinload
 
@@ -213,3 +216,33 @@ def sale_receipt(sale_id: int, request: Request, db: Session = Depends(get_db)):
 def sale_data(sale_id: int, db: Session = Depends(get_db)):
     sale = _sale_or_404(db, sale_id)
     return {"ok": True, "sale": _sale_payload(sale)}
+
+
+@router.get("/sales/{sale_id}/upi-qr.png")
+def sale_upi_qr(sale_id: int, db: Session = Depends(get_db)):
+    sale = _sale_or_404(db, sale_id)
+    if not sale.upi_vpa:
+        raise HTTPException(status_code=404, detail="No UPI VPA associated with this sale.")
+        
+    amount = f"{Decimal(str(sale.total)).quantize(Decimal('0.01')):.2f}"
+    name = urllib.parse.quote("Store")
+    vpa = urllib.parse.quote(sale.upi_vpa, safe='@')
+    
+    upi_url = f"upi://pay?pa={vpa}&pn={name}&am={amount}&cu=INR"
+    
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=0,
+    )
+    qr.add_data(upi_url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    
+    return Response(content=buf.getvalue(), media_type="image/png")

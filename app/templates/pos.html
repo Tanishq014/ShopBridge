@@ -127,7 +127,7 @@
                 <strong id="cartTotal">Rs. 0.00</strong>
               </div>
               <div class="pos-total-compact-stats-right">
-                <div class="stat-row"><span>Lines</span> <strong id="summaryLines">0</strong></div>
+                <div class="stat-row"><span>items</span> <strong id="summaryLines">0</strong></div>
                 <div class="stat-row"><span>Qty</span> <strong id="cartCount">0</strong></div>
               </div>
             </div>
@@ -136,20 +136,6 @@
               Checkout - Rs. 0.00
             </button>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" id="checkoutFormExtra">
-              <label class="pos-summary-field" style="margin-bottom: 0;">
-                Payment
-                <select name="payment_mode" id="paymentMode" form="checkoutForm">
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI</option>
-                  <option value="card">Card</option>
-                </select>
-              </label>
-              <label class="pos-summary-field" style="margin-bottom: 0;">
-                Notes
-                <input name="notes" id="checkoutNotes" placeholder="Optional" form="checkoutForm">
-              </label>
-            </div>
           </form>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; margin-bottom: 8px;">
@@ -213,6 +199,10 @@
             <kbd>X</kbd>
           </button>
         </div>
+        <div id="upiShortcutsHint" style="margin-top: 16px; font-size: 11px; color: #64748b; text-align: center; display: none; background: #f8fafc; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0;"></div>
+        <form method="dialog" style="text-align: center; margin-top: 16px;">
+          <button class="button small outline" type="submit" value="cancel">Cancel (Esc)</button>
+        </form>
       </div>
     </dialog>
 
@@ -283,6 +273,8 @@
       previewSaleIndex: -1,
       loadedSaleBillNumber: "",
       loadedSaleDirty: false,
+      selectedUpiVpa: null,
+      upiSettings: {{ upi_settings|default(None)|tojson }},
       loadedSaleCheckoutConfirmed: false,
       billNavItems: initialHeldCarts || [],
       billNavIndex: -1,
@@ -2348,6 +2340,9 @@
       if (silentAfterSave) {
         try {
           const formData = new FormData(checkoutForm);
+          if (state.selectedUpiVpa) {
+            formData.append("upi_vpa", state.selectedUpiVpa);
+          }
           const payload = Object.fromEntries(formData.entries());
           const response = await fetch("/pos/checkout/json", {
             method: "POST",
@@ -2576,6 +2571,23 @@
         if (discardText) discardText.textContent = "Clear Bill";
       }
       
+      const upi = state.upiSettings || {};
+      const upiHint = document.getElementById("upiShortcutsHint");
+      if (upi.vpa_1 || upi.vpa_2) {
+        let hints = [];
+        if (upi.vpa_1) hints.push(`Press <strong>${upi.key_1.toUpperCase()}</strong> for VPA 1`);
+        if (upi.vpa_2) hints.push(`Press <strong>${upi.key_2.toUpperCase()}</strong> for VPA 2`);
+        if (upi.default_vpa === 'cash' || !upi.default_vpa) {
+          hints.push(`<strong>Enter</strong> = Cash`);
+        } else {
+          hints.push(`<strong>Enter</strong> = Default UPI`);
+        }
+        upiHint.innerHTML = "✨ " + hints.join(" &nbsp;|&nbsp; ");
+        upiHint.style.display = "block";
+      } else {
+        if (upiHint) upiHint.style.display = "none";
+      }
+      
       const action = await new Promise(resolve => {
         let resolved = false;
         function finish(value) {
@@ -2593,22 +2605,62 @@
           if (val) finish(val);
         }
         function onKeyDown(event) {
-          if (event.key === "Enter" || event.key.toLowerCase() === "y") {
+          if (event.key === "ArrowDown" || event.key === "ArrowRight") {
             event.preventDefault();
             event.stopPropagation();
-            finish("save_print");
+            const btns = Array.from(ctrlAModal.querySelectorAll("button:not([disabled])"));
+            const idx = btns.indexOf(document.activeElement);
+            if (idx >= 0 && idx < btns.length - 1) btns[idx + 1].focus();
+            else if (btns.length > 0) btns[0].focus();
+            return;
+          }
+          if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+            event.preventDefault();
+            event.stopPropagation();
+            const btns = Array.from(ctrlAModal.querySelectorAll("button:not([disabled])"));
+            const idx = btns.indexOf(document.activeElement);
+            if (idx > 0) btns[idx - 1].focus();
+            else if (btns.length > 0) btns[btns.length - 1].focus();
+            return;
+          }
+
+          if (event.key === "Enter" && document.activeElement && document.activeElement.closest("button")) {
+            const btn = document.activeElement.closest("button");
+            if (btn.value && btn.value !== "save_print") {
+              event.preventDefault();
+              event.stopPropagation();
+              return finish(btn.value === "cancel" ? null : {action: btn.value});
+            }
+          }
+
+          const upi = state.upiSettings || {};
+          let matchedUpiVpa = null;
+          let isEnter = event.key === "Enter" || event.key.toLowerCase() === "y";
+          
+          if (upi.key_1 && event.key.toLowerCase() === upi.key_1.toLowerCase() && !isEnter) {
+            matchedUpiVpa = upi.vpa_1;
+          } else if (upi.key_2 && event.key.toLowerCase() === upi.key_2.toLowerCase() && !isEnter) {
+            matchedUpiVpa = upi.vpa_2;
+          } else if (isEnter) {
+            matchedUpiVpa = (!upi.default_vpa || upi.default_vpa === "cash") ? "" : upi.default_vpa;
+          }
+
+          if (matchedUpiVpa !== null || isEnter) {
+            event.preventDefault();
+            event.stopPropagation();
+            finish({action: "save_print", upi_vpa: matchedUpiVpa || ""});
           } else if (event.key.toLowerCase() === "n") {
             event.preventDefault();
             event.stopPropagation();
-            finish("save_no_print");
+            finish({action: "save_no_print"});
           } else if (event.key.toLowerCase() === "h") {
             event.preventDefault();
             event.stopPropagation();
-            finish("hold");
+            finish({action: "hold"});
           } else if (event.key.toLowerCase() === "x") {
             event.preventDefault();
             event.stopPropagation();
-            finish("discard");
+            finish({action: "discard"});
           } else if (event.key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
@@ -2623,12 +2675,15 @@
         ctrlAModal.showModal();
       });
       
-      if (!action || action === "cancel") {
+      if (!action || (typeof action === "string" ? action : action.action) === "cancel") {
         focusItemInput(false);
         return false;
       }
       
-      if (action === "hold") {
+      const actionName = typeof action === "string" ? action : action.action;
+      state.selectedUpiVpa = action.upi_vpa || null;
+      
+      if (actionName === "hold") {
         const response = await fetch("/pos/cart/hold", {method: "POST"});
         const data = await response.json();
         if (!response.ok) {
@@ -2640,13 +2695,13 @@
         focusItemInput(false);
         setStatus("Bill held. Started a new bill.", "success");
         return true;
-      } else if (action === "save_print") {
+      } else if (actionName === "save_print") {
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
         return true;
-      } else if (action === "save_no_print") {
+      } else if (actionName === "save_no_print") {
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: false});
         return true;
-      } else if (action === "discard") {
+      } else if (actionName === "discard") {
         if (state.openedSaleMode === "edit") {
           await exitPreview(true, true);
         } else {

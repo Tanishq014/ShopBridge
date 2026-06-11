@@ -53,6 +53,7 @@ def checkout_cart(
     *,
     payment_mode: str = "cash",
     notes: str | None = None,
+    upi_vpa: str | None = None,
 ) -> Sale:
     if not cart or cart.status != "active":
         raise CheckoutError("No active cart to checkout.")
@@ -120,6 +121,7 @@ def checkout_cart(
     *,
     payment_mode: str = "cash",
     notes: str | None = None,
+    upi_vpa: str | None = None,
 ) -> Sale:
     if not cart or cart.status != "active":
         raise CheckoutError("No active cart to checkout.")
@@ -140,6 +142,7 @@ def checkout_cart(
             total=money(subtotal),
             payment_mode=payment,
             notes=clean_notes,
+            upi_vpa=upi_vpa,
             print_status="not_printed",
             tally_sync_status="not_started",
         )
@@ -178,6 +181,7 @@ def save_sale_edit_cart(
     *,
     payment_mode: str = "cash",
     notes: str | None = None,
+    upi_vpa: str | None = None,
 ) -> Sale:
     if not cart or cart.status != "active":
         raise CheckoutError("No active cart to checkout.")
@@ -200,6 +204,7 @@ def save_sale_edit_cart(
     sale.total = money(subtotal)
     sale.payment_mode = payment
     sale.notes = clean_notes
+    sale.upi_vpa = upi_vpa
     cart.status = "discarded"
     db.add(sale)
     db.add(cart)

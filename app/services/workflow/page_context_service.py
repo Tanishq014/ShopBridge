@@ -12,6 +12,7 @@ from app.services.settings_service import (
     get_bartender_settings,
     get_price_code_settings,
     get_pricing_settings,
+    get_upi_settings,
 )
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 from app.services.field_config import parse_required_fields
@@ -106,6 +107,7 @@ def settings_context(
         "barcode_settings": get_barcode_settings(),
         "pricing_settings": get_pricing_settings(),
         "price_code_settings": get_price_code_settings(),
+        "upi_settings": get_upi_settings(),
         "settings_saved": bool(settings_saved),
         "settings_error": settings_error,
         "scanner_url": scanner,

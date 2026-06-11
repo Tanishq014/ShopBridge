@@ -22,6 +22,7 @@ from app.services.settings_service import (
     save_bartender_settings,
     save_price_code_settings,
     save_pricing_settings,
+    save_upi_settings,
 )
 from app.services.template_folder_service import template_path_exists
 from app.services.template_preview_service import cached_template_preview_path
@@ -668,4 +669,26 @@ def update_bartender_settings(
         allowed_chars=barcode_allowed_chars,
     )
     save_pricing_settings(mrp_rounding=mrp_rounding, mrp_truncate_decimal=mrp_truncate_decimal)
+    return RedirectResponse("/settings?settings_saved=1", status_code=303)
+
+
+@router.post("/settings/upi")
+def update_upi_settings(
+    upi_vpa_1: str = Form(""),
+    upi_key_1: str = Form("1"),
+    upi_vpa_2: str = Form(""),
+    upi_key_2: str = Form("2"),
+    upi_default_vpa: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    try:
+        save_upi_settings(
+            vpa_1=upi_vpa_1,
+            key_1=upi_key_1,
+            vpa_2=upi_vpa_2,
+            key_2=upi_key_2,
+            default_vpa=upi_default_vpa,
+        )
+    except ValueError as exc:
+        return RedirectResponse(f"/settings?{urlencode({'settings_error': str(exc)})}", status_code=303)
     return RedirectResponse("/settings?settings_saved=1", status_code=303)
