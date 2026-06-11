@@ -1,9 +1,12 @@
 from pathlib import Path
 import os
-
+from dotenv import load_dotenv
 
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
+
+# Explicitly load .env file from the project root
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -38,3 +41,9 @@ SHOW_BARTENDER_WINDOW = os.getenv("SHOPBRIDGE_SHOW_BARTENDER_WINDOW", "").strip(
     "yes",
     "on",
 }
+
+# Gemini Voice Fill
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_VOICE_MODEL = os.getenv("GEMINI_VOICE_MODEL", "gemini-3.1-flash-lite")
+GEMINI_VOICE_FALLBACK_MODEL = os.getenv("GEMINI_VOICE_FALLBACK_MODEL", "gemini-3.5-flash")
+GEMINI_VOICE_TIMEOUT_SECONDS = int(os.getenv("GEMINI_VOICE_TIMEOUT_SECONDS", "15"))
