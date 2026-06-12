@@ -1615,6 +1615,9 @@
       phonePrintCopiesConfirmed = false;
       phoneCloseCopiesDialog();
       phoneSaveState();
+      
+      event.preventDefault(); // Never reload the page natively!
+      
       phonePrinting = true;
       phonePrintButton.disabled = true;
       phoneStickyPrintButton.disabled = true;
@@ -1622,6 +1625,82 @@
       phonePrintButton.textContent = "Printing...";
       phoneStickyPrintButton.textContent = "Printing...";
       phoneSetStatus("working", "Printing...", "Command sent to the laptop.");
+      
+      fetch(phoneForm.action, {
+        method: phoneForm.method,
+        body: new FormData(phoneForm)
+      }).then(async resp => {
+        phonePrinting = false;
+        phonePrintButton.disabled = false;
+        phoneStickyPrintButton.disabled = false;
+        phoneConfirmCopiesButton.disabled = false;
+        phonePrintButton.textContent = "Print Label";
+        phoneStickyPrintButton.textContent = "Print";
+        
+        let serverMessage = null;
+        let isServerError = false;
+
+        const finalUrl = new URL(resp.url);
+        if (finalUrl.searchParams.has("print_error")) {
+            serverMessage = finalUrl.searchParams.get("print_error");
+            isServerError = true;
+        } else if (!resp.ok) {
+            serverMessage = "Server returned " + resp.status;
+            isServerError = true;
+        }
+
+        try {
+            const text = await resp.text();
+            if (text) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, "text/html");
+                const statusDiv = doc.getElementById("phonePrintStatus");
+                if (statusDiv) {
+                    if (statusDiv.classList.contains("error")) {
+                        const span = statusDiv.querySelector("span");
+                        if (span && span.textContent && span.textContent.trim()) {
+                            serverMessage = span.textContent.trim();
+                            isServerError = true;
+                        } else if (!serverMessage) {
+                            serverMessage = "Print validation failed on server.";
+                            isServerError = true;
+                        }
+                    } else if (statusDiv.classList.contains("ok")) {
+                        const span = statusDiv.querySelector("span");
+                        if (span && span.textContent && span.textContent.trim()) {
+                            // Prefer the server's success message (e.g. "Print job #123 sent to BarTender.")
+                            serverMessage = span.textContent.trim();
+                            isServerError = false;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // Ignore parse errors
+        }
+
+        if (isServerError) {
+           phoneSetStatus("error", "Error", serverMessage || "An unknown error occurred.");
+        } else {
+           phoneSetStatus("success", "Printed", serverMessage || "Job sent to printer.");
+           if (typeof pvDraftItems !== "undefined" && pvDraftItems.length > 0) {
+             if (typeof pvLoadNextDraftItem === "function") pvLoadNextDraftItem();
+           } else if (typeof phoneVariantSearch !== "undefined" && phoneVariantSearch) {
+             window.setTimeout(() => {
+               phoneVariantSearch.focus();
+               phoneVariantSearch.select();
+             }, 50);
+           }
+        }
+      }).catch(err => {
+        phonePrinting = false;
+        phonePrintButton.disabled = false;
+        phoneStickyPrintButton.disabled = false;
+        phoneConfirmCopiesButton.disabled = false;
+        phonePrintButton.textContent = "Print Label";
+        phoneStickyPrintButton.textContent = "Print";
+        phoneSetStatus("error", "Error", "Network error.");
+      });
     });
 
     const phoneHasSubmittedValues = Boolean(Object.keys(phoneSubmittedValues || {}).length);
