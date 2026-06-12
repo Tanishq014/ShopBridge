@@ -7,20 +7,30 @@
   <title>{{ sale.bill_number }} Receipt - ShopBridge</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v={{ range(1, 10000) | random }}">
   <style>
-    .receipt-table th, .receipt-table td {
+    .receipt-table th,
+    .receipt-table td {
       padding: 4px 4px !important;
     }
-    .receipt-table th:first-child, .receipt-table td:first-child {
+
+    .receipt-table th:first-child,
+    .receipt-table td:first-child {
       padding-left: 0 !important;
       text-align: left !important;
     }
-    .receipt-table th:last-child, .receipt-table td:last-child {
+
+    .receipt-table th:last-child,
+    .receipt-table td:last-child {
       padding-right: 0 !important;
     }
-    .receipt-table th:nth-child(2), .receipt-table td:nth-child(2),
-    .receipt-table th:nth-child(3), .receipt-table td:nth-child(3),
-    .receipt-table th:nth-child(4), .receipt-table td:nth-child(4),
-    .receipt-table th:nth-child(5), .receipt-table td:nth-child(5) {
+
+    .receipt-table th:nth-child(2),
+    .receipt-table td:nth-child(2),
+    .receipt-table th:nth-child(3),
+    .receipt-table td:nth-child(3),
+    .receipt-table th:nth-child(4),
+    .receipt-table td:nth-child(4),
+    .receipt-table th:nth-child(5),
+    .receipt-table td:nth-child(5) {
       text-align: right !important;
     }
   </style>
@@ -37,12 +47,24 @@
       <header class="receipt-header" style="margin-bottom: 6px;">
         <h1 style="font-size: 16px; margin-bottom: 2px;">POS Receipt</h1>
         <div style="border-top: 1px dashed #000; margin: 4px 0;"></div>
-        <div style="font-size: 12px; font-weight: bold; margin-bottom: 1px;">✈️ GLOBAL COURIER 📦</div>
-        <p style="font-size: 10px; font-weight: 600; line-height: 1.2; margin: 0; padding: 0 4px;">
-          Shipping internationally?<br>
-          <span style="font-weight: normal; font-size: 9px;">Ask us about fast & secure worldwide delivery at unbeatable rates!</span>
-        </p>
       </header>
+
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; margin-bottom: 6px; overflow: hidden;">
+        <div style="width: 45px; display: flex; justify-content: flex-start; align-items: center;">
+          <img src="https://cdn.simpleicons.org/dhl/black" alt="DHL" width="45"
+            style="filter: grayscale(100%) contrast(1000%); transform: scale(1.25); transform-origin: left center;">
+        </div>
+        <div style="text-align: center; font-size: 9px; line-height: 1.2; flex: 1; padding: 0 4px;">
+          <strong style="font-size: 10px; text-transform: uppercase;">International Courier Service</strong><br>
+          Canada &bull; Australia &bull; UK &bull; USA<br>
+          UPS &bull; FedEx &bull; DTDC &bull; DHL
+        </div>
+        <div style="width: 45px; display: flex; justify-content: flex-end; align-items: center;">
+          <img src="https://cdn.simpleicons.org/fedex/black" alt="FedEx" width="45"
+            style="filter: grayscale(100%) contrast(1000%); transform: translateX(6px) scale(1.25); transform-origin: right center;">
+        </div>
+      </div>
 
       <dl class="receipt-meta">
         <dt>Bill</dt>
@@ -73,14 +95,15 @@
           <tr>
             <td>
               {{ item.item_name }}
-              {% if item.qty < 0 %}
-              <div class="receipt-mrp" style="text-align: left; font-size: 10px; color: #555; margin-top: 2px;">
+              {% if item.qty < 0 %} <div class="receipt-mrp"
+                style="text-align: left; font-size: 10px; color: #555; margin-top: 2px;">
                 <strong style="font-size: 11px; color: #000;">(RETURN)</strong>
-              </div>
-              {% endif %}
+                </div>
+                {% endif %}
             </td>
             <td>{{ item.qty }}</td>
-            <td>{% if item.mrp and item.mrp > item.rate %}<span style="color: #64748b; font-size: 11px;">{{ "%.2f"|format(item.mrp) }}</span>{% endif %}</td>
+            <td>{% if item.mrp and item.mrp > item.rate %}<span style="color: #64748b; font-size: 11px;">{{
+                "%.2f"|format(item.mrp) }}</span>{% endif %}</td>
             <td>{{ "%.2f"|format(item.rate) }}</td>
             <td>{{ "%.2f"|format(item.amount) }}</td>
           </tr>
@@ -111,35 +134,45 @@
         <div style="text-align: center;">
           <p style="font-size: 12px; margin-bottom: 4px; font-weight: bold; margin-top: 0; color: #000;">Scan to Pay</p>
           <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 6px;">
-            <img src="https://cdn.simpleicons.org/googlepay/black" alt="GPay" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
-            <img src="https://cdn.simpleicons.org/phonepe/black" alt="PhonePe" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
-            <img src="https://cdn.simpleicons.org/paytm/black" alt="Paytm" width="24" height="18" style="filter: grayscale(100%) contrast(1000%);">
-            <img src="https://cdn.simpleicons.org/whatsapp/black" alt="WhatsApp Pay" width="18" height="18" style="filter: grayscale(100%) contrast(1000%);">
-            <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 18'%3E%3Ctext x='0' y='14' font-family='sans-serif' font-weight='900' font-size='12' fill='black'%3EBHIM%3C/text%3E%3C/svg%3E" alt="BHIM" width="30" height="18">
+            <img src="https://cdn.simpleicons.org/googlepay/black" alt="GPay" width="18" height="18"
+              style="filter: grayscale(100%) contrast(1000%);">
+            <img src="https://cdn.simpleicons.org/phonepe/black" alt="PhonePe" width="18" height="18"
+              style="filter: grayscale(100%) contrast(1000%);">
+            <img src="https://cdn.simpleicons.org/paytm/black" alt="Paytm" width="24" height="18"
+              style="filter: grayscale(100%) contrast(1000%);">
+            <img src="https://cdn.simpleicons.org/whatsapp/black" alt="WhatsApp Pay" width="18" height="18"
+              style="filter: grayscale(100%) contrast(1000%);">
+            <img
+              src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 18'%3E%3Ctext x='0' y='14' font-family='sans-serif' font-weight='900' font-size='12' fill='black'%3EBHIM%3C/text%3E%3C/svg%3E"
+              alt="BHIM" width="30" height="18">
           </div>
           <img src="/sales/{{ sale.id }}/upi-qr.png" alt="UPI QR" width="80" height="80">
         </div>
         {% endif %}
         <div style="font-size: 10px; text-align: center; margin: 4px 0; font-weight: bold;">
-          NO RETURNS.<br>Only exchange within 7 days of purchase with this bill.
+          NO RETURNS, NO EXCHANGE.
         </div>
         <div style="text-align: center;">
           <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <span style="font-size: 10px; font-weight: bold;">Follow us on Instagram: </span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
               <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
               <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
             </svg>
-            <span style="font-size: 10px; font-weight: bold;">balajicosmeticskkr</span>
+            <span style="font-size: 10px; font-weight: bold;">@balajicosmeticskkr</span>
           </div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balajicosmeticskkr"
+          <img
+            src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balajicosmeticskkr"
             alt="Instagram QR" width="80" height="80">
-          <p style="font-size: 10px; margin-top: 2px; font-weight: 500; padding: 0 10px; margin-bottom: 0;">Follow for the latest offers and new arrivals!</p>
+          <p style="font-size: 10px; margin-top: 2px; font-weight: 500; padding: 0 10px; margin-bottom: 0;">For the
+            latest offers and new arrivals!</p>
         </div>
       </div>
 
       <footer class="receipt-footer">
-        <p>Thank you for shopping with us</p>
+        <p>Thankyu for shopping with us</p>
         <span>{{ sale.bill_number }}</span>
       </footer>
     </section>
