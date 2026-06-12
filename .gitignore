@@ -18,3 +18,4 @@ test_sales_filter.py
 status_before_voice_fix.txt
 status_before_voice_cleanup.txt
 bartender_templates/DEFAULT - Copy.btw
+shopbridge.db
