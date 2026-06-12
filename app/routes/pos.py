@@ -857,7 +857,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         .where(
             or_(
                 func.lower(TallyItem.name).like(like),
-                func.lower(TallyItem.aliases).like(like)
+                func.lower(TallyItem.aliases).like(f"%{lowered}%")
             )
         )
         .order_by(TallyItem.updated_at.desc(), TallyItem.id.desc())

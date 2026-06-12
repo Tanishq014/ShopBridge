@@ -2709,6 +2709,8 @@
       refreshBarcodeControls();
       updatePreview();
       focusBillingItem();
+    } else {
+      updatePreview();
     }
     focusBillingItem();
     window.addEventListener("beforeunload", saveWorkflowState);

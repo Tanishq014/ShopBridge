@@ -2412,11 +2412,13 @@
         setStatus("Enter rate for every bill line before checkout.", "error");
         playBeep(false);
         const missingIndex = (state.cart.items || []).findIndex(item => item.missing_price);
-        if (missingIndex >= 0) {
-          focusCartField(missingIndex, "rate", true);
-        } else {
-          focusItemInput(false);
-        }
+        setTimeout(() => {
+          if (missingIndex >= 0) {
+            focusCartField(missingIndex, "rate", true);
+          } else {
+            focusItemInput(false);
+          }
+        }, 50);
         return false;
       }
       if ((state.cart.items || []).some(item => item.source_type === "manual" || item.is_manual_line)) {
@@ -2493,7 +2495,7 @@
              if (data.cart_item_id && data.field_name) {
                const rowIndex = (state.cart.items || []).findIndex(item => String(item.id) === String(data.cart_item_id));
                if (rowIndex >= 0) {
-                 focusCartField(rowIndex, data.field_name, true);
+                 setTimeout(() => focusCartField(rowIndex, data.field_name, true), 50);
                }
              }
              return false;
