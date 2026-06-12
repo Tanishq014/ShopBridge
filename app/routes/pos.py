@@ -866,7 +866,8 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
 
     def tally_rank(item: TallyItem) -> tuple[int, str]:
         starts = (item.name or "").lower().startswith(lowered)
-        alias_starts = (item.aliases or "").lower().startswith(lowered)
+        alias_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip()]
+        alias_starts = any(a.startswith(lowered) for a in alias_list)
         return (0 if (starts or alias_starts) else 1, (item.name or "").lower())
 
     tally_items.sort(key=tally_rank)
