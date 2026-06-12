@@ -10,6 +10,12 @@
     .receipt-table th,
     .receipt-table td {
       padding: 4px 4px !important;
+      font-weight: bold !important;
+      color: #000 !important;
+    }
+
+    .receipt-table th {
+      font-weight: bold !important;
     }
 
     .receipt-table th:first-child,
@@ -49,20 +55,23 @@
         <div style="border-top: 1px dashed #000; margin: 4px 0;"></div>
       </header>
 
-      <div
-        style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; margin-bottom: 6px; overflow: hidden;">
-        <div style="width: 45px; display: flex; justify-content: flex-start; align-items: center;">
-          <img src="https://cdn.simpleicons.org/dhl/black" alt="DHL" width="45"
-            style="filter: grayscale(100%) contrast(1000%); transform: scale(1.25); transform-origin: left center;">
+      <div style="text-align: center; margin-bottom: 6px; padding-bottom: 6px;">
+        <div style="font-size: 12px; font-weight: 900; text-transform: uppercase; font-family: Arial, sans-serif; color: #000; margin-bottom: 2px; letter-spacing: 0.2px;">
+          International Courier Service
         </div>
-        <div style="text-align: center; font-size: 9px; line-height: 1.2; flex: 1; padding: 0 4px;">
-          <strong style="font-size: 10px; text-transform: uppercase;">International Courier Service</strong><br>
-          Canada &bull; Australia &bull; UK &bull; USA<br>
-          UPS &bull; FedEx &bull; DTDC &bull; DHL
-        </div>
-        <div style="width: 45px; display: flex; justify-content: flex-end; align-items: center;">
-          <img src="https://cdn.simpleicons.org/fedex/black" alt="FedEx" width="45"
-            style="filter: grayscale(100%) contrast(1000%); transform: translateX(6px) scale(1.25); transform-origin: right center;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="width: 55px; display: flex; justify-content: flex-start; align-items: center;">
+            <img src="https://cdn.simpleicons.org/dhl/black" alt="DHL" width="55"
+              style="filter: grayscale(100%) contrast(1000%); margin: -15px 0;">
+          </div>
+          <div style="text-align: center; font-size: 10px; font-weight: bold; color: #000; font-family: Arial, sans-serif; line-height: 1.2; flex: 1; padding: 0 4px;">
+            Canada &bull; Australia &bull; UK &bull; USA<br>
+            UPS &bull; FedEx &bull; DTDC &bull; DHL
+          </div>
+          <div style="width: 55px; display: flex; justify-content: flex-end; align-items: center;">
+            <img src="https://cdn.simpleicons.org/fedex/black" alt="FedEx" width="55"
+              style="filter: grayscale(100%) contrast(1000%); margin: -15px 0;">
+          </div>
         </div>
       </div>
 
@@ -94,25 +103,24 @@
           {% endif %}
           <tr>
             <td>
-              {{ item.item_name }}
-              {% if item.qty < 0 %} <div class="receipt-mrp"
-                style="text-align: left; font-size: 10px; color: #555; margin-top: 2px;">
-                <strong style="font-size: 11px; color: #000;">(RETURN)</strong>
-                </div>
-                {% endif %}
+              <strong style="font-size: 12px;">{{ item.item_name }}</strong>
+              {% if item.qty < 0 %}
+              <div class="receipt-mrp" style="text-align: left; font-size: 10px; color: #000; margin-top: 2px;">
+                <strong style="font-size: 11px; margin-left: 2px;">(RETURN)</strong>
+              </div>
+              {% endif %}
             </td>
             <td>{{ item.qty }}</td>
-            <td>{% if item.mrp and item.mrp > item.rate %}<span style="color: #64748b; font-size: 11px;">{{
-                "%.2f"|format(item.mrp) }}</span>{% endif %}</td>
+            <td>{% if item.mrp and item.mrp > item.rate %}{{ "%.2f"|format(item.mrp) }}{% endif %}</td>
             <td>{{ "%.2f"|format(item.rate) }}</td>
-            <td>{{ "%.2f"|format(item.amount) }}</td>
+            <td><strong>{{ "%.2f"|format(item.amount) }}</strong></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
 
       <div
-        style="text-align: center; font-size: 11px; font-weight: bold; margin-top: 6px; padding-top: 4px; border-top: 1px dashed #cbd5e1;">
+        style="text-align: center; font-size: 11px; font-weight: bold; margin-top: 6px; padding-top: 4px; border-top: 1px dashed #000;">
         Total Items: {{ sale.items|length }} | Total Qty: {{ ns.total_qty }}
       </div>
       <div class="receipt-rule" style="margin-top: 4px;"></div>
@@ -149,30 +157,35 @@
           <img src="/sales/{{ sale.id }}/upi-qr.png" alt="UPI QR" width="80" height="80">
         </div>
         {% endif %}
-        <div style="font-size: 10px; text-align: center; margin: 4px 0; font-weight: bold;">
-          NO RETURNS, NO EXCHANGE.
+        <div style="font-size: 10px; text-align: center; margin: 4px 0; padding-bottom: 6px; border-bottom: 1px dashed #000; font-weight: bold; color: #000; font-family: Arial, sans-serif;">
+          NO RETURNS, NO EXCHANGE.<br>
+          <span style="font-size: 9px; font-weight: bold; line-height: 1.2; display: inline-block; margin-top: 2px;">
+            (Exchange available for some items, ask at the time of billing. Original bill is required.)
+          </span>
         </div>
-        <div style="text-align: center;">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
-            <span style="font-size: 10px; font-weight: bold;">Follow us on Instagram: </span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        <div style="text-align: center; margin-top: 6px;">
+          <div style="font-size: 12px; font-weight: 900; color: #000; margin-bottom: 3px; letter-spacing: 0.5px; text-transform: uppercase;">
+            Follow us on Instagram
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"
               stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
               <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
               <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
             </svg>
-            <span style="font-size: 10px; font-weight: bold;">@balajicosmeticskkr</span>
+            <span style="font-size: 11px; font-weight: 900; color: #000;">@balajicosmeticskkr</span>
           </div>
           <img
             src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://instagram.com/balajicosmeticskkr"
             alt="Instagram QR" width="80" height="80">
-          <p style="font-size: 10px; margin-top: 2px; font-weight: 500; padding: 0 10px; margin-bottom: 0;">For the
+          <p style="font-size: 10px; margin-top: 2px; font-weight: bold; color: #000; font-family: Arial, sans-serif; padding: 0 10px; margin-bottom: 0;">For the
             latest offers and new arrivals!</p>
         </div>
       </div>
 
       <footer class="receipt-footer">
-        <p>Thankyu for shopping with us</p>
+        <p style="font-weight: bold; color: #000;">Thank you for shopping with us</p>
         <span>{{ sale.bill_number }}</span>
       </footer>
     </section>
