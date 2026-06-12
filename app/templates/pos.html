@@ -1560,7 +1560,7 @@
       }
 
       searchInput.value = item.barcode;
-      await addBarcode(item.barcode, !!item.missing_price);
+      await addBarcode(item.barcode, !!item.missing_price, false);
     }
 
     function renderCart(cart) {
@@ -2281,7 +2281,6 @@
         searchInput.value = "";
         closeSuggestions(false);
         setStatus(`Added: ${data.item.billing_item || data.item.item_name || "Tally item"} - enter rate`, "success");
-        playBeep(true);
         focusNextBillingField(data.item && data.item.id, "qty");
       } catch (error) {
         setStatus(error.message || "Could not add Tally item.", "error");
@@ -2290,7 +2289,7 @@
       }
     }
 
-    async function addBarcode(barcode, allowMissingPrice = false) {
+    async function addBarcode(barcode, allowMissingPrice = false, playAudio = true) {
       const clean = (barcode || "").trim();
       if (!clean) {
         setStatus("Type or scan an item first.", "error");
@@ -2312,7 +2311,7 @@
           if (response.status === 409 && !allowMissingPrice) {
             const confirmAdd = window.confirm(`${data.message || "Selling price is missing."}\nAdd this item anyway?`);
             if (confirmAdd) {
-              await addBarcode(clean, true);
+              await addBarcode(clean, true, playAudio);
             } else {
               setStatus(data.message || "Selling price is missing.", "error");
               playBeep(false);
@@ -2337,7 +2336,9 @@
         closeSuggestions(false);
         const actionText = data.status === "updated" ? `Updated Qty to ${data.item.qty} for:` : "Added:";
         setStatus(`${actionText} ${data.item.billing_item || data.item.item_name || clean} - ${money(data.item.selling_price)}`, "success");
-        playBeep(true);
+        if (playAudio) {
+          playBeep(true);
+        }
         focusNextBillingField(data.item && data.item.id);
       } catch (error) {
         setStatus(error.message || "Could not add item.", "error");
