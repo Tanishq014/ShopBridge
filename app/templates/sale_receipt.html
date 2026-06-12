@@ -186,10 +186,14 @@
 
       <footer class="receipt-footer">
         <p style="font-weight: bold; color: #000;">Thank you for shopping with us</p>
-        <span>{{ sale.bill_number }}</span>
       </footer>
     </section>
   </main>
+  <script>
+    window.onload = () => {
+      window.print();
+    }
+  </script>
 </body>
 
 </html>

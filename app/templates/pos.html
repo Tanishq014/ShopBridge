@@ -441,9 +441,9 @@
       if (!await saveFocusedLineInput()) {
         return;
       }
-      
+
       const endpoint = `/pos/cart/load-sale/${saleId}/edit`;
-      
+
       try {
         const response = await fetch(endpoint, {method: "POST"});
         const data = await response.json();
@@ -708,7 +708,7 @@
         } else {
           rateSpan.textContent = money(item.selling_price);
         }
-        
+
         const metaSpan = option.querySelector(".pos-search-item-meta");
         if (item.exact_barcode || item.barcode) {
            metaSpan.textContent = `Barcode: ${item.barcode || item.exact_barcode}` + (item.mrp ? ` | MRP ${money(item.mrp)}` : "");
@@ -792,17 +792,17 @@
           state.billNavIndex = 0;
         }
       }
-      
+
       const openCount = state.billNavItems.filter(i => i.type === "open").length;
       const heldCount = state.billNavItems.filter(i => i.type === "held").length;
       const previousCount = state.billNavItems.filter(i => i.type === "recent_sale" || i.type === "sale").length;
       heldBillCount.textContent = `${openCount} open / ${heldCount} held / ${previousCount} today`;
-      
+
       heldBillList.innerHTML = "";
-      
+
       let normalHeldDisplayNo = 0;
       let lastSection = null;
-      
+
       const renderHeader = (text) => {
         const header = document.createElement("div");
         header.style.fontSize = "12px";
@@ -814,18 +814,18 @@
         heldBillList.appendChild(header);
         return text;
       };
-      
+
       state.billNavItems.forEach((item, index) => {
         const isPrevious = item.type === "recent_sale" || item.type === "sale";
         const currentSection = isPrevious ? "Today's Bills" : "Open / Held Bills";
-        
+
         if (currentSection !== lastSection) {
           lastSection = renderHeader(currentSection);
         }
 
         const row = document.createElement("button");
         row.type = "button";
-        
+
         const isSelected = index === state.billNavIndex && state.heldSelectionActive;
         row.className = `pos-held-row${isSelected ? " selected" : ""}`;
         row.dataset.navIndex = index;
@@ -872,7 +872,7 @@
         } else {
           labelText = item.bill_number || `Sale #${item.id}`;
         }
-        
+
         const label = document.createElement("span");
         label.style.fontWeight = "700";
         label.style.fontSize = "13px";
@@ -895,7 +895,7 @@
 
         const lines = item.item_count ?? item.lines ?? 0;
         const qty = item.total_qty ?? item.count ?? 0;
-        
+
         const itemsTop = document.createElement("span");
         itemsTop.style.fontSize = "12px";
         itemsTop.style.fontWeight = "600";
@@ -992,7 +992,7 @@
         emptyState.textContent = "No bills yet today";
         heldBillList.appendChild(emptyState);
       }
-      
+
       const selectedItem = state.heldSelectionActive ? state.billNavItems[state.billNavIndex] : null;
       const isDiscardable = selectedItem && (
         (selectedItem.type === "held" && selectedItem.status === "held") ||
@@ -1016,7 +1016,7 @@
         const index = parseInt(row.dataset.navIndex, 10);
         const item = state.billNavItems[index];
         if (!item) return;
-        
+
         let isOpened = false;
         if (state.cart && state.cart.status === "active") {
           if (item.type === "open" && item.id === state.cart.cart_id) {
@@ -1029,7 +1029,7 @@
             isOpened = true;
           }
         }
-        
+
         if (isOpened) {
           row.classList.add("opened");
         } else {
@@ -1040,7 +1040,7 @@
 
     async function loadBillNavItems() {
       const requestId = ++state.billNavLoadRequestId;
-      const fetchLimit = state.recentSalesOffset + 10;
+      const fetchLimit = state.recentSalesOffset + 20;
       try {
         const [heldRes, recentRes] = await Promise.all([
             fetch("/pos/cart/held", {cache: "no-store"}),
@@ -1054,9 +1054,9 @@
         if (requestId !== state.billNavLoadRequestId) {
           return;
         }
-        
+
         state.hasMoreRecentSales = recentData.has_more ?? (recentData.items && recentData.items.length === fetchLimit);
-        
+
         const activeItem = activeBillNavItem();
         const combined = [
           ...(activeItem ? [activeItem] : []),
@@ -1086,7 +1086,7 @@
                 item.id === state.cart.source_sale_id) return true;
             return false;
           });
-          
+
           if (activeIndex >= 0) {
             state.billNavIndex = activeIndex;
             state.heldSelectionActive = true;
@@ -1407,9 +1407,9 @@
 
       history.replaceState({}, document.title, window.location.pathname);
       setPreviewState(false, null);
-      
+
       focusItemInput(false);
-      
+
       if (wasNormalWithItems) {
         setStatus("Current bill held. Started new bill.", "success");
       } else {
@@ -1421,8 +1421,8 @@
       if (!state.hasMoreRecentSales || state.billNavBusy) return;
       state.billNavBusy = true;
       try {
-        state.recentSalesOffset += 10;
-        const res = await fetch(`/pos/recent-sales?offset=${state.recentSalesOffset}&limit=10`, {cache: "no-store"});
+        state.recentSalesOffset += 20;
+        const res = await fetch(`/pos/recent-sales?offset=${state.recentSalesOffset}&limit=20`, {cache: "no-store"});
         if (res.ok) {
           const data = await res.json();
           if (data.items && data.items.length > 0) {
@@ -1452,7 +1452,7 @@
         focusItemInput(false);
         return;
       }
-      
+
       const hasActiveNav = state.billNavIndex >= 0;
 
       let nextIndex;
@@ -1471,7 +1471,7 @@
       } else {
         nextIndex = state.billNavIndex + delta;
       }
-      
+
       if (nextIndex < 0) {
         await startNewBillSafe();
         return;
@@ -1488,7 +1488,7 @@
         focusItemInput(false);
         return;
       }
-      
+
       await openBillNavItemAt(nextIndex);
     }
 
@@ -1568,7 +1568,7 @@
       state.skipNextChangeSaveFor = null;
       state.cart = cart || {items: [], count: 0, total: "0.00"};
       const saleEditBadge = document.getElementById("saleEditBadge");
-      
+
       if (saleEditBadge) saleEditBadge.hidden = true;
 
       if (state.cart.cart_mode === "sale_edit" && state.cart.source_sale_id) {
@@ -1604,16 +1604,16 @@
       if (summarySubtotal) { summarySubtotal.textContent = money(state.cart.total || "0.00"); }
       state.hasMissingRate = items.some(item => item.missing_price);
       checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
-      
+
       if (state.cart.cart_mode === "sale_edit") {
         checkoutButton.textContent = `Save Bill Changes - ${money(state.cart.total || "0.00")}`;
       } else {
         checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
       }
-      
+
       clearCartButton.disabled = state.billNavBusy || items.length === 0;
       holdBillButton.disabled = state.billNavBusy || items.length === 0;
-      
+
       const posEmptyHelper = document.getElementById("posEmptyHelper");
       if (posEmptyHelper) {
         posEmptyHelper.hidden = items.length > 0;
@@ -1678,7 +1678,7 @@
           badge.textContent = "RETURNED";
           wrapper.appendChild(badge);
         }
-        
+
         itemCell.appendChild(wrapper);
 
         const barcode = document.createElement("td");
@@ -1756,7 +1756,7 @@
           }
         }, 900);
       }
-      
+
       updateOpenedBillIndicator();
     }
 
@@ -1902,11 +1902,11 @@
       setLineEditActive(true);
       state.lastLineEdit = {itemId, fieldName};
       state.selectedIndex = rowIndex;
-      
+
       state.activeEditField = input;
       state.activeEditOriginalValue = input.value;
       state.activeEditDirty = false;
-      
+
       if (typeof input.select === "function") {
         input.select();
       }
@@ -1928,11 +1928,11 @@
         return;
       }
       setLineEditActive(true);
-      
+
       if (state.activeEditField === input) {
         state.activeEditDirty = input.value !== state.activeEditOriginalValue;
       }
-      
+
       const rowIndex = Number(input.dataset.cartRowIndex);
       state.lastLineEdit = {itemId: input.dataset.cartItemId, fieldName: input.dataset.cartField};
       state.selectedIndex = rowIndex;
@@ -1984,7 +1984,7 @@
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
         return;
       }
-      
+
       if (event.key === "Backspace" && !currentFieldIsActuallyEditing()) {
         event.preventDefault();
         event.stopPropagation();
@@ -2235,7 +2235,7 @@
         state.lastLineEdit = null;
         return true;
       }
-      
+
       if (fieldName === "item") {
         const item = cartItemAt(rowIndex);
         const expectedLabel = previewItemLabel(item);
@@ -2458,7 +2458,7 @@
       state.checkoutSubmitting = true;
       checkoutButton.disabled = true;
       checkoutButton.textContent = "Checking out...";
-      
+
       if (silentAfterSave) {
         try {
           const formData = new FormData(checkoutForm);
@@ -2492,7 +2492,7 @@
              state.checkoutSubmitting = false;
              checkoutButton.disabled = false;
              checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
-             
+
              if (data.cart_item_id && data.field_name) {
                const rowIndex = (state.cart.items || []).findIndex(item => String(item.id) === String(data.cart_item_id));
                if (rowIndex >= 0) {
@@ -2540,9 +2540,9 @@
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopPropagation();
-        
+
         const text = searchInput.value.trim();
-        
+
         if (state.heldSelectionActive && !text) {
           if (state.billNavBusy) {
             return;
@@ -2556,7 +2556,7 @@
           state.heldSelectionActive = false;
           renderBillNavItems();
         }
-        
+
         if (!text) {
           const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
           if (hasItems) {
@@ -2564,7 +2564,7 @@
             return;
           }
         }
-        
+
         await submitItemInput();
         return;
       }
@@ -2679,12 +2679,12 @@
         focusItemInput(false);
         return;
       }
-      
+
       const isEdit = state.cart.cart_mode === "sale_edit";
       const ctrlAModal = document.getElementById("ctrlAModal");
       const title = document.getElementById("ctrlAModalTitle");
       const discardText = document.getElementById("discardActionText");
-      
+
       if (isEdit) {
         title.textContent = "Edit Bill Action";
         if (discardText) discardText.textContent = "Discard Edits";
@@ -2692,7 +2692,7 @@
         title.textContent = "Bill Action";
         if (discardText) discardText.textContent = "Clear Bill";
       }
-      
+
       const upi = state.upiSettings || {};
       const upiHint = document.getElementById("upiShortcutsHint");
       if (upi.vpa_1 || upi.vpa_2) {
@@ -2709,7 +2709,7 @@
       } else {
         if (upiHint) upiHint.style.display = "none";
       }
-      
+
       const action = await new Promise(resolve => {
         let resolved = false;
         function finish(value) {
@@ -2758,7 +2758,7 @@
           const upi = state.upiSettings || {};
           let matchedUpiVpa = null;
           let isEnter = event.key === "Enter" || event.key.toLowerCase() === "y";
-          
+
           if (upi.key_1 && event.key.toLowerCase() === upi.key_1.toLowerCase() && !isEnter) {
             matchedUpiVpa = upi.vpa_1;
           } else if (upi.key_2 && event.key.toLowerCase() === upi.key_2.toLowerCase() && !isEnter) {
@@ -2790,21 +2790,21 @@
           }
         }
         function onClose() { finish(null); }
-        
+
         ctrlAModal.addEventListener("click", onClick);
         ctrlAModal.addEventListener("close", onClose);
         document.addEventListener("keydown", onKeyDown, true);
         ctrlAModal.showModal();
       });
-      
-      if (!action || (typeof action === "string" ? action : action.action) === "cancel") {
+
+      if (!action || action === "cancel" || action.action === "cancel") {
         focusItemInput(false);
         return false;
       }
-      
+
       const actionName = typeof action === "string" ? action : action.action;
       state.selectedUpiVpa = action.upi_vpa || null;
-      
+
       if (actionName === "hold") {
         const response = await fetch("/pos/cart/hold", {method: "POST"});
         const data = await response.json();
@@ -2839,7 +2839,7 @@
         const searchPanel = document.getElementById("posSearchPanel");
         const anyModalOpen = Array.from(document.querySelectorAll("dialog")).some(d => d.open);
         const searchPanelOpen = searchPanel && !searchPanel.hidden;
-        
+
         if (searchPanelOpen || state.billNavBusy || state.checkoutSubmitting || anyModalOpen) {
           // let default Select All work
         } else {
@@ -3037,4 +3037,3 @@
     window.setInterval(() => loadCart(true), 1000);
   </script>
 {% endblock %}
-

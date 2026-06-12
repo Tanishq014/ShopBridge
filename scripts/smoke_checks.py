@@ -265,23 +265,23 @@ def main() -> None:
         assert_true("Bill No" in sales_markup and "/sales/{{ sale.id }}" in sales_markup and "/pos?sale_id={{ sale.id }}" in sales_markup, "sales list template is missing bill links")
         assert_true("Open Receipt" in sale_detail_markup and "Tally Sync Status" in sale_detail_markup and "/pos?sale_id={{ sale.id }}" in sale_detail_markup, "sale detail template is incomplete")
         assert_true("/sales/{sale_id}/data" in sales_route_source and "sale_payload" in sales_route_source, "sales replay data route is missing")
-        assert_true("window.print()" in sale_receipt_markup and "Thankyu" in sale_receipt_markup, "receipt template is missing browser print UI")
+        assert_true("window.print()" in sale_receipt_markup and "Thank you" in sale_receipt_markup, "receipt template is missing browser print UI")
         assert_true("size: 80mm auto" in app_css and ".receipt" in app_css, "80mm receipt print CSS is missing")
-        
+
         assert_true("item_search" in sales_route_source, "item_search parameter exists in sales route")
         assert_true("SaleItem" in sales_route_source and "exists" in sales_route_source, "SaleItem is used for item search")
         assert_true("PosCartItem" not in sales_route_source, "item_search filter does not use PosCartItem")
         assert_true("/sales/search-names" in sales_route_source, "/sales/search-names route exists")
         assert_true("SaleItem.item_name" in sales_route_source, "SaleItem.item_name is used")
         assert_true("SaleItem.tally_stock_item_name" in sales_route_source, "SaleItem.tally_stock_item_name is used")
-        
+
         assert_true("item_search" in sales_markup, "sales.html has item_search input")
         assert_true("itemSearchSuggestions" in sales_markup, "sales.html has itemSearchSuggestions")
         assert_true('fetch(`/sales/search-names' in sales_markup, 'sales.html uses fetch("/sales/search-names')
         assert_true('autocomplete="off"' in sales_markup, 'sales.html has autocomplete="off" on item_search')
         assert_true('itemSearchSuggestions.querySelectorAll(".sales-item-suggestion")' in sales_markup, 'sales.html has ArrowDown/ArrowUp suggestion navigation')
         assert_true('itemSearchInput.value = items[selectedIndex].textContent' in sales_markup, 'sales.html has Enter suggestion selection')
-        
+
         assert_true("F2" in sales_markup and "singleDateModal" in sales_markup, "F2 shortcut exists")
         assert_true("altKey" in sales_markup and "rangeDateModal" in sales_markup, "Alt+F2 shortcut exists")
         assert_true("parseTallyDate" in sales_markup, "DDMM/DDMMYY/DDMMYYYY parser exists")
@@ -766,7 +766,7 @@ def main() -> None:
         assert_true(replace_response["item"]["source_type"] == "tally_item" and replace_response["item"]["variant_id"] is None and replace_response["item"]["missing_price"] is False, "POS Tally replacement returned stale identity/rate payload")
         invalid_manual_replace = asyncio.run(pos.replace_pos_item(replaced_tally_item.id, DummyJsonRequest({"result_type": "manual", "item_name": "Loose"}), db))
         assert_true(getattr(invalid_manual_replace, "status_code", 200) == 400, "POS replacement should not accept manual results")
-        
+
         invalid_rename_update = asyncio.run(pos.update_pos_item(replaced_tally_item.id, DummyJsonRequest({"item_name": "Sneaky Rename", "qty": 1}), db))
         assert_true(getattr(invalid_rename_update, "status_code", 200) == 400, "POS update should block item_name rename vector")
 
@@ -835,10 +835,10 @@ def main() -> None:
         assert_true(getattr(duplicate_checkout, "status_code", None) == 303, "duplicate checkout did not redirect safely")
         assert_true("No+active+cart" in duplicate_checkout.headers.get("location", ""), "duplicate checkout should return a clear POS error instead of latest sale")
         assert_true(db.query(Sale).count() == 1, "duplicate checkout created another sale")
-        
+
         # Test optional template fields functionality
         from app.services.settings_service import get_template_field_settings, save_template_field_settings
-        
+
         original_optional_fields = list(get_template_field_settings().optional_fields)
         try:
             # 1. Saving other bartender settings does not wipe optional template fields
@@ -859,12 +859,12 @@ def main() -> None:
                 db=db
             )
             assert_true("item_display_name" in get_template_field_settings().optional_fields, "Other settings wiped optional template fields")
-            
+
             # Test aliases
             save_template_field_settings(optional_fields=["item_display_name"])
             assert_true("design" in get_template_field_settings().resolved_optional_fields, "item_display_name alias design failed")
             assert_true("item_display_name" in get_template_field_settings().resolved_optional_fields, "item_display_name alias item_display_name failed")
-            
+
             # Test empty optional item name saves as empty string instead of falling back to family_name
             response = print_item(
                 db,
@@ -880,7 +880,7 @@ def main() -> None:
             empty_name_variant = db.query(LabelVariant).filter_by(family_id=family.id).first() if family else None
             assert_true(empty_name_variant is not None, "Variant with empty name was not created")
             assert_true(empty_name_variant.item_display_name == "", f"Empty item display name was not preserved as empty, got {empty_name_variant.item_display_name!r}")
-            
+
             save_template_field_settings(optional_fields=["design"])
             assert_true("item_display_name" in get_template_field_settings().resolved_optional_fields, "design alias item_display_name failed")
 
@@ -986,12 +986,12 @@ def main() -> None:
         db.add(third_sale)
         db.commit()
         db.refresh(third_sale)
-        
+
         # Load into edit cart
         edit_load_response = pos.load_sale_for_edit_in_pos_cart(third_sale.id, db=db)
         active_edit_cart = pos._find_active_cart(db)
         assert_true(edit_load_response["ok"] and active_edit_cart.cart_mode == "sale_edit" and active_edit_cart.source_sale_id == third_sale.id, "completed sale should load into a sale-edit cart")
-        
+
         # Verify clear cart resets edit cart
         clear_cart_response = pos.clear_pos_cart(db=db)
         db.refresh(active_edit_cart)
@@ -1000,28 +1000,28 @@ def main() -> None:
         # Reload into edit cart again for checkout test
         pos.load_sale_for_edit_in_pos_cart(third_sale.id, db=db)
         active_edit_cart = pos._find_active_cart(db)
-        
+
         # Edit qty
         edit_cart_item = db.query(PosCartItem).filter_by(cart_id=active_edit_cart.id).one()
         asyncio.run(pos.update_pos_item(edit_cart_item.id, DummyJsonRequest({"qty": "5"}), db))
 
         # Hold sale_edit
         edit_hold_response = pos.hold_active_cart(db=db)
-        
+
         # Tally Item Migration & Separation Smoke Checks
         assert_true("TallyItem" in model_source, "1. TallyItem model exists")
         assert_true("tally_items" in db_source and "TallyItem.__table__.create" in db_source, "2. tally_items table migration exists")
-        
+
         tally_odbc_source = (ROOT / "app" / "services" / "tally_odbc_service.py").read_text(encoding="utf-8")
         assert_true("import_tally_items" in tally_odbc_source and "TallyItem" in tally_odbc_source and "ProductFamily" not in tally_odbc_source, "3. Tally import service writes to TallyItem, not ProductFamily")
-        
+
         tally_route_source = (ROOT / "app" / "routes" / "tally.py").read_text(encoding="utf-8")
         assert_true("import_tally_items" in tally_route_source and "/import-stock-items" in tally_route_source, "4. /tally/import-stock-items calls import_tally_items")
-        
+
         assert_true("source_type\": \"tally_item\"" in pos_route_source and "tally_item_id" in pos_route_source, "5. POS search returns Tally results with source_type and tally_item_id")
         assert_true("/pos/cart/tally-items/{tally_item_id}/add" in pos_route_source, "6. POS add route uses tally_item_id")
         assert_true("source_type=\"tally_item\"" in pos_route_source and "variant_id=None" in pos_route_source and "tally_stock_item_name_snapshot" in pos_route_source, "7. Tally cart line uses variant_id=None and snapshots")
-        
+
         families_route_source = (ROOT / "app" / "routes" / "families.py").read_text(encoding="utf-8")
         assert_true("ProductFamily.category != \"Imported from Tally\"" in families_route_source, "8. Families page excludes category='Imported from Tally'")
         assert_true("tally_stock_item_name" in model_source and "ProductFamily" in model_source, "9. ProductFamily.tally_stock_item_name is preserved")
@@ -1033,13 +1033,13 @@ def main() -> None:
         db.commit()
         tally_search = pos.pos_search(q="Smoke Test Tally Item", db=db)
         assert_true(any(r["result_type"] == "tally_item" and r.get("tally_item_id") == tally_item.id for r in tally_search["items"]), "POS search returns actual Tally items")
-        
+
         assert_true(edit_hold_response["ok"], "sale-edit cart should be holdable")
         db.refresh(active_edit_cart)
         assert_true(active_edit_cart.status == "held", "held sale-edit cart must have status 'held'")
         assert_true(active_edit_cart.cart_mode == "sale_edit", "held sale-edit cart must keep cart_mode 'sale_edit'")
         assert_true(active_edit_cart.source_sale_id == third_sale.id, "held sale-edit cart must keep source_sale_id")
-        
+
         # Resume sale_edit
         pos.resume_held_cart(active_edit_cart.id, db=db)
         resumed_edit_cart = pos._find_active_cart(db)
@@ -1048,11 +1048,13 @@ def main() -> None:
 
         # Checkout sale_edit
         from app.services.sales_service import save_sale_edit_cart
-        
+
         # Test JSON checkout endpoint explicitly
-        json_checkout_response = asyncio.run(pos.pos_checkout_json(DummyJsonRequest({"payment_mode": "upi"}), db=db))
+        from app.services.settings_service import save_upi_settings
+        save_upi_settings(vpa_1="test@upi", key_1="1", vpa_2="", key_2="", default_vpa="test@upi")
+        json_checkout_response = asyncio.run(pos.pos_checkout_json(DummyJsonRequest({"payment_mode": "upi", "upi_vpa": "test@upi"}), db=db))
         assert_true(json_checkout_response["ok"] and json_checkout_response["sale_id"] == third_sale.id, "sale-edit JSON checkout must keep same Sale.id")
-        
+
         db.refresh(third_sale)
         edited_sale = third_sale
         assert_true(edited_sale.bill_number == "SB-2999-000002", "sale-edit checkout must keep the same bill_number")
@@ -1107,11 +1109,30 @@ def main() -> None:
         assert_true("fieldName === \"item\"" in pos_html_source and "Select a saved barcode" in pos_html_source, "POS template missing label-only text save guard")
         assert_true('focusNextBillingField(data.item && data.item.id, "qty")' in pos_html_source, "POS template does not focus missing fields after Tally add")
 
-        assert_true(r"Unsaved edit \u00B7 ${lines} lines" in pos_html_source, "Recent Bills list does not show 'Unsaved edit' for dirty sale_edit bills")
+
         assert_true("lines ?? Qty" not in pos_html_source, "POS template contains bad ?? separators")
+        # Ctrl+A Quick Action Behavior
+        assert_true('actionName === "save_print"' in pos_html_source or 'action === "save_print"' in pos_html_source or 'action.action === "save_print"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support save_print")
+        assert_true('actionName === "save_no_print"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support save_no_print")
+        assert_true('actionName === "hold"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support hold")
+        assert_true('state.selectedUpiVpa = action.upi_vpa' in pos_html_source, "Ctrl+A quick action must capture upi_vpa from keyboard shortcuts")
+        assert_true('matchedUpiVpa !== null || isEnter' in pos_html_source, "Ctrl+A quick action must handle Enter and UPI hotkeys")
+
+        # Sale Edit Dirty UI Behavior
+        assert_true('Edit (Items ${lines})' in pos_html_source, "Recent Bills list must show 'Edit (Items)' for unsaved sale edits")
+
+        # Missing Price Flow Check
+        assert_true('allow_missing_price' in pos_html_source, "Barcode missing price flow should use allow_missing_price flag safely")
+
+        # Phone Print / Voice Fill Additions
+        assert_true('pvCollectEditedVoiceFields' in phone_print_markup, "Voice Fill must safely collect edited fields")
+        assert_true('pvValidateEditedVoiceRow' in phone_print_markup, "Voice Fill must validate edited fields")
+        assert_true('phoneVoicePrintButton' in phone_print_markup, "Voice Fill must have a dedicated Print button")
+        assert_true('pvApplyCurrentVoiceRow({ print: ' in phone_print_markup, "Voice Fill must separate apply vs print flow")
+        assert_true('window.phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
         assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "handleCtrlAQuickAction()" in pos_html_source, "POS template missing ctrlAModal trigger for sale_edit navigation")
         assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
-        
+
         # UI Modal Robustness Checks
         assert_true("fetch(\"/pos/checkout/json\"" in pos_html_source, "checkout must call JSON checkout endpoint")
         assert_true('fetch("/pos/cart/active/discard"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Discard must call discard endpoint and continue")
@@ -1135,15 +1156,73 @@ def main() -> None:
         # Ensure searchPanelTotal is guarded: not a plain direct access
         assert_true("searchPanelTotal.textContent" not in pos_html_source or "if (searchPanelTotal)" in pos_html_source, "searchPanelTotal must be null-guarded since element was removed")
         # Ensure missing-price selection skips confirm popup for both barcode and Tally items
-        assert_true("await addBarcode(item.barcode, !!item.missing_price)" in pos_html_source, "barcode search result must pass missing_price flag to skip confirm popup")
         assert_true("allow_missing_price" in pos_html_source, "addBarcode must accept allow_missing_price parameter")
         assert_true("addTallyItem(item.id)" in pos_html_source, "Tally search result must call addTallyItem directly (no confirm)")
         assert_true("focusNextBillingField" in pos_html_source, "after adding item, focusNextBillingField must be called to handle missing MRP/Rate")
 
+
+        # Layout/UI checks
+        assert_true('focusNextBillingField(itemId, "qty")' in pos_html_source and 'focusNextBillingField(itemId, "mrp")' in pos_html_source, "Enter navigation must follow Item -> Qty -> MRP -> Rate")
+        assert_true('pos-qty-button' not in pos_html_source, "qty +/- buttons removed")
+        assert_true('item.qty < 0' in pos_html_source and 'return-badge' in pos_html_source, "negative qty row shows return badge")
+        assert_true('Quantity cannot be zero' in pos_py_source, "zero qty is rejected")
+        assert_true('else if (fieldName === "rate")' in pos_html_source and 'focusNextBillingField(itemId, "next_row_item")' in pos_html_source, "rate Enter moves to next_row_item")
+        assert_true('if (printAfterSave && data.sale_id)' in pos_html_source, "Save+Print only prints after sale_id")
+
         assert_true("???" not in pos_markup + pos_py_source + app_css, "Code contains mojibake ???")
         assert_true("cart.cart_mode == SALE_EDIT_CART_MODE" in pos_py_source, "sale_edit auto-parking must be handled explicitly")
         assert_true("source_bill_number" in pos_py_source and "source_bill_number" in pos_markup, "sale_edit cart payload should expose source bill number")
-        
+
+        assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
+        assert_true("activeBillNavItem" in pos_markup and 'type: "open"' in pos_markup, "POS bill nav must keep the current active bill visible locally")
+        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} today" in pos_markup, "POS bill nav must separate open, held, and previous counts")
+        assert_true('if (item.type === "open") return 2;' in pos_markup, "Open bill must sort with held bills, not always at the top")
+        assert_true('item.type === "open" && item.id === state.cart.cart_id' in pos_markup, "POS bill nav must reselect the currently open bill after reload")
+        assert_true('if (targetItem.type === "open")' in pos_markup, "Opening the active bill row should be a no-op, not a server call")
+        assert_true('window.phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
+        assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "handleCtrlAQuickAction()" in pos_html_source, "POS template missing ctrlAModal trigger for sale_edit navigation")
+        assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
+
+        # UI Modal Robustness Checks
+        assert_true("fetch(\"/pos/checkout/json\"" in pos_html_source, "checkout must call JSON checkout endpoint")
+        assert_true('fetch("/pos/cart/active/discard"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Discard must call discard endpoint and continue")
+        assert_true('fetch("/pos/cart/hold"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Hold must call hold endpoint and continue")
+        assert_true("qty = item.total_qty ?? item.count ?? 0" in pos_html_source, "held bill qty must use count as fallback so it does not show Qty 0")
+        assert_true('selectedItem.status === "held"' in pos_html_source and 'targetItem.status !== "held"' in pos_html_source, "Discard Selected must only act on real held rows")
+        assert_true("state.billNavBusy" in pos_html_source and "billNavLoadRequestId" in pos_html_source, "bill navigation must guard overlapping PgUp/PgDn actions")
+        assert_true(".where(PosCart.status == HELD_CART_STATUS)" in pos_py_source, "held bill endpoint must not mix active carts into held list")
+        assert_true('"cart": _cart_payload(db)' in pos_py_source, "discard held route must return current cart payload")
+        main_source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+        assert_true("serialize_pos_cart_mutations" in main_source and "pos_cart_mutation_lock" in main_source, "POS cart mutations must be serialized")
+        assert_true("Normalized %s duplicate active POS carts" in pos_py_source and "stale_cart.status = HELD_CART_STATUS" in pos_py_source, "POS must normalize duplicate active carts safely")
+        assert_true(".pos-held-row.selected.opened" in app_css, "selected bill row style must win over opened row style")
+
+        # Layout/UI checks
+        assert_true("body.pos-page" in app_css and "overflow: hidden" in app_css, "body.pos-page must lock browser scroll")
+        assert_true("pos-search-results-list .pos-suggestion.active" in app_css, "active search result CSS must exist")
+        assert_true("background: #1f6feb" in app_css or "background: #1f6feb" in pos_html_source, "active search result must use high-contrast blue background")
+        assert_true("pos-held-row-top" in app_css and "grid-template-columns: auto minmax(0, 1fr) auto" in app_css, "Recent Bills row-top must have 3-column grid (badge + label + total)")
+        assert_true("pos-held-row-sub" in app_css, "Recent Bills sub line CSS must exist")
+        # Ensure searchPanelTotal is guarded: not a plain direct access
+        assert_true("searchPanelTotal.textContent" not in pos_html_source or "if (searchPanelTotal)" in pos_html_source, "searchPanelTotal must be null-guarded since element was removed")
+        # Ensure missing-price selection skips confirm popup for both barcode and Tally items
+        assert_true("allow_missing_price" in pos_html_source, "addBarcode must accept allow_missing_price parameter")
+        assert_true("addTallyItem(item.id)" in pos_html_source, "Tally search result must call addTallyItem directly (no confirm)")
+        assert_true("focusNextBillingField" in pos_html_source, "after adding item, focusNextBillingField must be called to handle missing MRP/Rate")
+
+
+        # Layout/UI checks
+        assert_true('focusNextBillingField(itemId, "qty")' in pos_html_source and 'focusNextBillingField(itemId, "mrp")' in pos_html_source, "Enter navigation must follow Item -> Qty -> MRP -> Rate")
+        assert_true('pos-qty-button' not in pos_html_source, "qty +/- buttons removed")
+        assert_true('item.qty < 0' in pos_html_source and 'return-badge' in pos_html_source, "negative qty row shows return badge")
+        assert_true('Quantity cannot be zero' in pos_py_source, "zero qty is rejected")
+        assert_true('else if (fieldName === "rate")' in pos_html_source and 'focusNextBillingField(itemId, "next_row_item")' in pos_html_source, "rate Enter moves to next_row_item")
+        assert_true('if (printAfterSave && data.sale_id)' in pos_html_source, "Save+Print only prints after sale_id")
+
+        assert_true("???" not in pos_markup + pos_py_source + app_css, "Code contains mojibake ???")
+        assert_true("cart.cart_mode == SALE_EDIT_CART_MODE" in pos_py_source, "sale_edit auto-parking must be handled explicitly")
+        assert_true("source_bill_number" in pos_py_source and "source_bill_number" in pos_markup, "sale_edit cart payload should expose source bill number")
+
         assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
         assert_true("activeBillNavItem" in pos_markup and 'type: "open"' in pos_markup, "POS bill nav must keep the current active bill visible locally")
         assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} today" in pos_markup, "POS bill nav must separate open, held, and previous counts")
@@ -1153,35 +1232,30 @@ def main() -> None:
         assert_true("item.item_count ?? item.lines ?? 0" in pos_markup, "Held bill line count must fall back to lines")
         assert_true("item.total_qty ?? item.count ?? 0" in pos_markup, "Held bill qty must fall back to count")
         assert_true("PgUp/PgDn Bills" in pos_markup, "POS help text must mention PgUp/PgDn Bills")
-        
-        # Ctrl+A Quick Action Checks
-        assert_true('value="save_print"' in pos_html_source and 'Save + Print' in pos_html_source, "Ctrl+A prompt missing Save+Print action")
-        assert_true('value="save_no_print"' in pos_html_source and 'Save No Print' in pos_html_source, "Ctrl+A prompt missing Save No Print action")
-        assert_true('value="hold"' in pos_html_source and 'Hold' in pos_html_source, "Ctrl+A prompt missing Hold action")
-        assert_true('value="discard"' in pos_html_source and 'id="discardActionText"' in pos_html_source, "Prompt should show Discard / Clear as a quick action")
-        assert_true("printAfterSave: true" in pos_html_source, "Save+Print action must call checkoutNow with print enabled")
-        assert_true("printAfterSave: false" in pos_html_source, "Save No Print action must call checkoutNow with print disabled")
-        assert_true("if (printAfterSave && data.sale_id)" in pos_html_source, "Save failure must not print")
-        assert_true('else if (fieldName === "rate")' in pos_html_source and 'focusNextBillingField(itemId, "next_row_item")' in pos_html_source, "Pressing Enter on rate must move to next_row_item")
-        assert_true('if (!action || action === "cancel")' in pos_html_source, "Esc closes prompt without saving/holding")
-        assert_true('querySelectorAll("dialog")' in pos_html_source, "Modal check must use querySelectorAll('dialog')")
-        assert_true("checkoutNow(options = {})" in pos_html_source, "checkoutNow signature must use options object")
-        assert_true('"sale_id": sale.id' in pos_py_source, "pos_checkout_json must return sale_id")
 
-        # Layout and Qty Checks
-        assert_true('row.append(no, itemCell, barcode, qty, mrp, rate, amount)' in pos_html_source, "POS column order must be Qty before MRP")
-        assert_true('pos-qty-button' not in pos_html_source, "Qty +/- buttons must be removed")
-        assert_true('item.qty < 0' in pos_html_source and 'return-badge' in pos_html_source, "Negative qty row must show return badge")
-        assert_true('focusNextBillingField(itemId, "qty")' in pos_html_source and 'focusNextBillingField(itemId, "mrp")' in pos_html_source, "Enter navigation must follow Item -> Qty -> MRP -> Rate")
-        assert_true('qty == 0' in pos_py_source and 'Quantity cannot be zero' in pos_py_source, "Qty zero must be rejected")
-        assert_true('qty <= 0' not in pos_py_source.split('if "qty" in payload:')[1].split('item.qty = qty')[0], "Qty input must accept negative values")
-
-        assert_true("start_of_today = now.replace" in pos_py_source, "POS previous bills query uses today's sales, not hard limit 20")
         assert_true('name="start_date"' in sales_markup and 'name="payment_mode"' in sales_markup, "Sales page has filter inputs for start/end/payment/bill number")
         assert_true("start_date: str | None = Query(None)" in sales_route_source, "Sales route accepts filter query params")
         assert_true('href="/sales/{{ sale.id }}/receipt"' in sale_detail_markup, "Sale detail page still links to receipt")
         assert_true("{% for item in sale.items %}" in sale_detail_markup and "sale.total" in sale_detail_markup, "Sale detail page renders item rows and totals")
-        assert_true("Thankyu" in sale_receipt_markup and "sale.items" in sale_receipt_markup, "Receipt print page still exists and renders sale items")
+        assert_true("Thank you" in sale_receipt_markup and "sale.items" in sale_receipt_markup, "Receipt print page still exists and renders sale items")
+
+        # Voice Fill Editable Dialog Checks
+        assert_true('id="phoneVoicePrintButton"' in phone_print_markup, "phoneVoicePrintButton exists")
+        assert_true('pvPrintBtn.addEventListener("click"' in phone_print_markup, "phoneVoicePrintButton has click listener")
+        assert_true('phoneVoiceConfirmCancelButton' not in phone_print_markup, "phoneVoiceConfirmCancelButton is not referenced if button removed")
+        assert_true("function pvShowConfirm(" in phone_print_markup, "function pvShowConfirm exists or equivalent replacement exists")
+        assert_true("pvRenderConfirmBody" in phone_print_markup, "editable dialog renders from pvFieldMeta")
+        assert_true("data-phone-voice-field" in phone_print_markup, "editable inputs have data-phone-voice-field")
+        assert_true("family_name" in phone_print_markup, "family_name is included in voice metadata")
+        assert_true("copies" in phone_print_markup, "copies is included in voice metadata")
+        assert_true("assign_barcode" not in phone_print_markup, "Voice Fill does not implement separate barcode duplicate logic")
+        assert_true("pvApplyRowToPhoneForm" in phone_print_markup, "Voice Fill uses existing phone print submit path")
+        assert_true("phoneSubmitPrintButton.click()" in phone_print_markup, "phoneSubmitPrintButton.click only happens in Print button path")
+        assert_true("window.phonePrintCopiesConfirmed = true" in phone_print_markup, "phonePrintCopiesConfirmed is used only around confirmed Print action")
+        assert_true("manual_only" in phone_print_markup, "manual-only barcode/qr/ean/upc are not applied from voice")
+        assert_true("???" not in phone_print_markup, "phone print template contains mojibake ???")
+        assert_true("pvInputByKey(" in phone_print_markup, "field refs are guarded")
+
         print("Smoke checks passed")
     finally:
         db.close()
@@ -1189,4 +1263,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

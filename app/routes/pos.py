@@ -489,7 +489,7 @@ def list_held_carts(db: Session = Depends(get_db)):
 
 
 @router.get("/pos/recent-sales")
-def list_recent_sales(offset: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+def list_recent_sales(offset: int = 0, limit: int = 20, db: Session = Depends(get_db)):
     sales = db.scalars(
         select(Sale)
         .options(selectinload(Sale.items))
