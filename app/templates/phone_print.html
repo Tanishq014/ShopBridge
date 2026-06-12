@@ -1690,10 +1690,21 @@
                     } else if (statusDiv.classList.contains("ok")) {
                         const span = statusDiv.querySelector("span");
                         if (span && span.textContent && span.textContent.trim()) {
-                            // Prefer the server's success message (e.g. "Print job #123 sent to BarTender.")
                             serverMessage = span.textContent.trim();
                             isServerError = false;
                         }
+                    }
+                }
+                
+                // If successful, extract the updated variants array so we can find any newly assigned barcodes
+                if (!isServerError) {
+                    const variantsMatch = text.match(/const phoneVariants = (\[.*?\]);/s);
+                    if (variantsMatch) {
+                        try {
+                            const newVariants = JSON.parse(variantsMatch[1]);
+                            phoneVariants.length = 0;
+                            phoneVariants.push(...newVariants);
+                        } catch(e) {}
                     }
                 }
             }
@@ -1705,6 +1716,19 @@
            phoneSetStatus("error", "Error", serverMessage || "An unknown error occurred.");
         } else {
            phoneSetStatus("success", "Printed", serverMessage || "Job sent to printer.");
+           
+           // If the server assigned a new barcode, fill the form with it so the user can see what was assigned
+           const loadVariantId = finalUrl.searchParams.get("load_variant_id");
+           if (loadVariantId) {
+             const newlyAssigned = phoneVariants.find(item => String(item.id) === String(loadVariantId));
+             if (newlyAssigned) {
+                 phoneFillVariant(newlyAssigned);
+                 if (typeof phoneRefreshPriceState === "function") phoneRefreshPriceState();
+                 if (typeof phoneRefreshReadyState === "function") phoneRefreshReadyState();
+                 phoneSaveState();
+             }
+           }
+
            if (typeof pvDraftItems !== "undefined" && pvDraftItems.length > 0) {
              if (typeof pvLoadNextDraftItem === "function") pvLoadNextDraftItem();
            } else if (typeof phoneVariantSearch !== "undefined" && phoneVariantSearch) {
@@ -2467,6 +2491,7 @@
       if (!focused && rowData.print_requested) {
         if (typeof phoneForm !== "undefined" && typeof phoneForm.reportValidity === "function" && phoneForm.reportValidity()) {
           if (typeof phoneSubmitPrintButton !== "undefined" && phoneSubmitPrintButton) {
+            phonePrintCopiesConfirmed = true; // Bypass copies dialog for voice auto-print
             phoneSubmitPrintButton.click();
           }
         }
