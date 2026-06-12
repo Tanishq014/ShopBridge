@@ -5,7 +5,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.barcode_service import normalize_barcode
-from app.services.settings_service import get_price_code_settings, get_pricing_settings
+from app.services.settings_service import (
+    get_price_code_settings,
+    get_pricing_settings,
+    get_template_field_settings,
+)
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 from app.services.workflow.form_state_service import family_payload, size_values, variant_payload
 from app.services.workflow.query_service import (
@@ -79,6 +83,7 @@ def workflow_context(
             "allow_extraction": price_code_settings.allow_extraction,
         },
         "pricing_fields_visible": pricing_fields_visible,
+        "optional_template_fields": list(get_template_field_settings().resolved_optional_fields),
         "template_path_exists": template_path_exists,
         "template_warning": (
             "No active template was found. Add one in Settings -> Templates."

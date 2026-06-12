@@ -8,7 +8,7 @@ from app.models import LabelVariant, PrintJob, TemplateMaster
 from app.services.barcode_service import assign_barcode, barcode_exists, normalize_barcode
 from app.services.field_config import field_label, parse_required_fields
 from app.services.price_code_service import extract_price_code_candidates, generate_coded_price
-from app.services.settings_service import get_price_code_settings
+from app.services.settings_service import get_price_code_settings, get_template_field_settings
 from app.services.template_folder_service import template_path_exists
 from app.services.workflow.form_state_service import format_extra_field_values, parse_extra_field_values
 from app.services.workflow.item_service import find_exact_variant, find_or_create_family
@@ -75,19 +75,29 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
 
     required_fields = parse_required_fields(template.required_fields)
     required_field_set = set(required_fields)
+    template_field_settings = get_template_field_settings()
+
+    def is_in_template(field_name: str) -> bool:
+        if field_name in {"article", "article_no"}:
+            return bool({"article", "article_no"} & required_field_set)
+        if field_name in {"item_display_name", "design"}:
+            return bool({"item_display_name", "design"} & required_field_set)
+        if field_name in {"selling_price", "rate"}:
+            return bool({"selling_price", "rate"} & required_field_set)
+        if field_name in {"batch_no", "shade", "shade_color"}:
+            return bool({"batch_no", "shade", "shade_color"} & required_field_set)
+        return field_name in required_field_set
 
     def field_is_required(field_name: str) -> bool:
-        if field_name == "article_no":
-            return "article_no" in required_field_set or "article" in required_field_set
-        if field_name == "item_display_name":
-            return "item_display_name" in required_field_set or "design" in required_field_set
-        return field_name in required_field_set
+        if template_field_settings.is_optional(field_name):
+            return False
+        return is_in_template(field_name)
 
     def value_or_preserved(field_name: str, raw_value: str, attr_name: str | None = None) -> str:
         clean_value = (raw_value or "").strip()
         if clean_value:
             return clean_value
-        if source_variant and not field_is_required(field_name):
+        if source_variant and not is_in_template(field_name):
             stored_value = getattr(source_variant, attr_name or field_name, None)
             return "" if stored_value is None else str(stored_value)
         return ""
@@ -98,11 +108,8 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
         raise WorkflowPrintError("Enter an item name.")
 
     brand_value = value_or_preserved("brand", data.brand)
-    item_name_value = (
-        data.item_display_name.strip()
-        or value_or_preserved("item_display_name", "", "item_display_name")
-        or final_family_name
-    )
+    item_name_raw = value_or_preserved("item_display_name", data.item_display_name)
+    item_name_value = final_family_name if (not item_name_raw and field_is_required("item_display_name")) else item_name_raw
     article_value = value_or_preserved("article_no", data.article_no)
     size_value = value_or_preserved("size", data.size)
     batch_value = value_or_preserved("batch_no", data.batch_no)
@@ -112,7 +119,7 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
     extra_values = parse_extra_field_values(data.extra_field_values)
     source_extra_values = parse_extra_field_values(source_variant.extra_field_values if source_variant else None)
     for field_name, field_value in source_extra_values.items():
-        if field_name not in extra_values and source_variant and not field_is_required(field_name):
+        if field_name not in extra_values and source_variant and not is_in_template(field_name):
             extra_values[field_name] = field_value
 
     price_code_settings = get_price_code_settings()
@@ -170,7 +177,7 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
     missing_fields = [
         field_label(field_name)
         for field_name in required_fields
-        if field_name != "barcode" and not str(field_values.get(field_name, "")).strip()
+        if field_name != "barcode" and field_is_required(field_name) and not str(field_values.get(field_name, "")).strip()
     ]
     if missing_fields:
         raise WorkflowPrintError("Required for selected template: " + ", ".join(missing_fields))

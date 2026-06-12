@@ -835,6 +835,69 @@ def main() -> None:
         assert_true(getattr(duplicate_checkout, "status_code", None) == 303, "duplicate checkout did not redirect safely")
         assert_true("No+active+cart" in duplicate_checkout.headers.get("location", ""), "duplicate checkout should return a clear POS error instead of latest sale")
         assert_true(db.query(Sale).count() == 1, "duplicate checkout created another sale")
+        
+        # Test optional template fields functionality
+        from app.services.settings_service import get_template_field_settings, save_template_field_settings
+        
+        original_optional_fields = list(get_template_field_settings().optional_fields)
+        try:
+            # 1. Saving other bartender settings does not wipe optional template fields
+            save_template_field_settings(optional_fields=["item_display_name"])
+            workflow.update_bartender_settings(
+                mode="pdf",
+                show_bartender_window=False,
+                barcode_generation_mode="template_length_safe_alphanumeric",
+                default_barcode_length=7,
+                barcode_allowed_chars="1234567890",
+                mrp_rounding="nearest_1",
+                mrp_truncate_decimal=False,
+                allow_price_code_extraction=True,
+                digit_0_code="Z", digit_1_code="A", digit_2_code="B", digit_3_code="C", digit_4_code="D",
+                digit_5_code="E", digit_6_code="F", digit_7_code="G", digit_8_code="H", digit_9_code="I",
+                optional_template_fields=[],
+                template_field_settings_form="",
+                db=db
+            )
+            assert_true("item_display_name" in get_template_field_settings().optional_fields, "Other settings wiped optional template fields")
+            
+            # Test aliases
+            save_template_field_settings(optional_fields=["item_display_name"])
+            assert_true("design" in get_template_field_settings().resolved_optional_fields, "item_display_name alias design failed")
+            assert_true("item_display_name" in get_template_field_settings().resolved_optional_fields, "item_display_name alias item_display_name failed")
+            
+            # Test empty optional item name saves as empty string instead of falling back to family_name
+            response = print_item(
+                db,
+                template,
+                item_display_name="",
+                family_name="Empty Name Family",
+                size="M",
+                mrp="10",
+                coded_price="ZZ",
+                barcode="EMPTYNAME123",
+            )
+            family = db.query(ProductFamily).filter_by(family_name="Empty Name Family").first()
+            empty_name_variant = db.query(LabelVariant).filter_by(family_id=family.id).first() if family else None
+            assert_true(empty_name_variant is not None, "Variant with empty name was not created")
+            assert_true(empty_name_variant.item_display_name == "", f"Empty item display name was not preserved as empty, got {empty_name_variant.item_display_name!r}")
+            
+            save_template_field_settings(optional_fields=["design"])
+            assert_true("item_display_name" in get_template_field_settings().resolved_optional_fields, "design alias item_display_name failed")
+
+            save_template_field_settings(optional_fields=["selling_price"])
+            assert_true("rate" in get_template_field_settings().resolved_optional_fields, "selling_price alias rate failed")
+
+            save_template_field_settings(optional_fields=["article"])
+            assert_true("article_no" in get_template_field_settings().resolved_optional_fields, "article alias article_no failed")
+        finally:
+            save_template_field_settings(optional_fields=original_optional_fields)
+
+        # UI Checks
+        phone_print_markup = (ROOT / "app" / "templates" / "phone_print.html").read_text(encoding="utf-8")
+        assert_true("const optionalTemplateFields = new Set" in phone_print_markup, "phone_print.html missing optionalTemplateFields")
+        assert_true("<script>\n  </script>" not in phone_print_markup and "<script>\r\n  </script>" not in phone_print_markup, "Empty script block left in phone_print.html")
+        assert_true("focusAndSelectMrp()" in workflow_markup, "Empty Margin + Enter does not focus MRP on desktop")
+        assert_true("phoneSelectTextOnEdit(" in phone_print_markup, "phoneSelectTextOnEdit not bound in phone_print")
 
         held_source_scan = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(held_source_scan["ok"], "POS did not create active cart before saved-bill load test")

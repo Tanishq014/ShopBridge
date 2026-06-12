@@ -23,6 +23,8 @@ from app.services.settings_service import (
     save_price_code_settings,
     save_pricing_settings,
     save_upi_settings,
+    get_template_field_settings,
+    save_template_field_settings,
 )
 from app.services.template_folder_service import template_path_exists
 from app.services.template_preview_service import cached_template_preview_path
@@ -639,6 +641,8 @@ def update_bartender_settings(
     digit_7_code: str = Form(""),
     digit_8_code: str = Form(""),
     digit_9_code: str = Form(""),
+    optional_template_fields: list[str] = Form(default_factory=list),
+    template_field_settings_form: str = Form(""),
     db: Session = Depends(get_db),
 ):
     try:
@@ -669,6 +673,8 @@ def update_bartender_settings(
         allowed_chars=barcode_allowed_chars,
     )
     save_pricing_settings(mrp_rounding=mrp_rounding, mrp_truncate_decimal=mrp_truncate_decimal)
+    if template_field_settings_form == "true":
+        save_template_field_settings(optional_fields=optional_template_fields)
     return RedirectResponse("/settings?settings_saved=1", status_code=303)
 
 

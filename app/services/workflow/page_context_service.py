@@ -13,6 +13,7 @@ from app.services.settings_service import (
     get_price_code_settings,
     get_pricing_settings,
     get_upi_settings,
+    get_template_field_settings,
 )
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
 from app.services.field_config import parse_required_fields
@@ -116,4 +117,5 @@ def settings_context(
         "phone_print_url": phone_print,
         "phone_print_qr_url": qr_url_for_phone_print(phone_print),
         "phone_print_ip_detected": phone_print_ip_detected,
+        "template_field_settings": get_template_field_settings(),
     }

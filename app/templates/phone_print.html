@@ -282,6 +282,7 @@
 
   <script>
     {% set phone_initial_notice = workflow_error|default('', true) or workflow_message|default('', true) %}
+    const optionalTemplateFields = new Set({{ optional_template_fields | tojson }});
     const phoneTemplates = {{ templates_json|tojson }};
     const phoneVariants = {{ variants_json|tojson }};
     const phoneFamilies = {{ families_json|default([], true)|tojson }};
@@ -476,6 +477,13 @@
           moveCursorToEnd();
         }
         nextClickSelects = !nextClickSelects;
+      });
+      field.addEventListener("focus", () => {
+        window.setTimeout(() => {
+          if (document.activeElement === field && typeof field.select === "function") {
+            field.select();
+          }
+        }, 30);
       });
       field.addEventListener("blur", () => {
         nextClickSelects = true;
@@ -1022,12 +1030,12 @@
       const requiresItem = required.has("item_display_name") || required.has("design");
       document.getElementById("phoneItemLabel").textContent = required.has("design") ? "Design" : "Sticker Name";
 
-      phoneSetFieldVisible("brand", ready && required.has("brand"), required.has("brand"));
-      phoneSetFieldVisible("item_display_name", ready && requiresItem, requiresItem);
-      phoneSetFieldVisible("article_no", ready && requiresArticle, requiresArticle);
-      phoneSetFieldVisible("size", ready && required.has("size"), required.has("size"));
-      phoneSetFieldVisible("batch_no", ready && required.has("batch_no"), required.has("batch_no"));
-      phoneSetFieldVisible("expiry", ready && required.has("expiry"), required.has("expiry"));
+      phoneSetFieldVisible("brand", ready && required.has("brand"), required.has("brand") && !optionalTemplateFields.has("brand"));
+      phoneSetFieldVisible("item_display_name", ready && requiresItem, requiresItem && !optionalTemplateFields.has("item_display_name") && !optionalTemplateFields.has("design"));
+      phoneSetFieldVisible("article_no", ready && requiresArticle, requiresArticle && !optionalTemplateFields.has("article_no") && !optionalTemplateFields.has("article"));
+      phoneSetFieldVisible("size", ready && required.has("size"), required.has("size") && !optionalTemplateFields.has("size"));
+      phoneSetFieldVisible("batch_no", ready && required.has("batch_no"), required.has("batch_no") && !optionalTemplateFields.has("batch_no"));
+      phoneSetFieldVisible("expiry", ready && required.has("expiry"), required.has("expiry") && !optionalTemplateFields.has("expiry"));
       phoneSetFieldVisible("coded_price", ready && required.has("coded_price"), false);
       phoneSetFieldVisible("mrp", ready, false);
       phoneSetFieldVisible("margin_percent", ready && required.has("coded_price"), false);
@@ -1052,7 +1060,7 @@
         const input = document.createElement("input");
         input.name = `extra_${fieldName}`;
         input.dataset.extraField = fieldName;
-        input.required = true;
+        input.required = !optionalTemplateFields.has(fieldName);
         input.value = currentExtras[fieldName] || "";
         input.placeholder = phoneTemplateDefault(template, fieldName);
         phoneSelectTextOnEdit(input);
@@ -1327,7 +1335,21 @@
       phoneMarginPreview.hidden = false;
     }
 
+    function phoneFocusAndSelectMrp() {
+      phoneFields.mrp.focus();
+      window.setTimeout(() => {
+        if (document.activeElement === phoneFields.mrp && typeof phoneFields.mrp.select === "function") {
+          phoneFields.mrp.select();
+        }
+      }, 30);
+    }
+
     function phoneCalculateMrpFromMargin() {
+      const marginRaw = String(phoneFields.margin.value || "").trim();
+      if (!marginRaw) {
+        phoneFocusAndSelectMrp();
+        return;
+      }
       const rawMrp = phoneMarginRawMrp();
       if (rawMrp === null) {
         phoneRefreshMarginPreview();

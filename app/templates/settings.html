@@ -126,6 +126,56 @@
 
   <section class="panel setup-panel">
     <div class="section-line">
+      <h2>Template Field Requirements</h2>
+    </div>
+    <p>Checked fields may be left blank while creating/printing labels. Unchecked fields stay required.</p>
+    <form class="form-grid" method="post" action="/settings/bartender">
+      <input type="hidden" name="template_field_settings_form" value="true">
+      <input type="hidden" name="mode" value="{{ bartender_settings.mode }}">
+      {% if bartender_settings.show_bartender_window %}
+        <input type="hidden" name="show_bartender_window" value="true">
+      {% endif %}
+      <input type="hidden" name="barcode_generation_mode" value="{{ barcode_settings.generation_mode }}">
+      <input type="hidden" name="default_barcode_length" value="{{ barcode_settings.default_length }}">
+      <input type="hidden" name="barcode_allowed_chars" value="{{ barcode_settings.allowed_chars }}">
+      <input type="hidden" name="mrp_rounding" value="{{ pricing_settings.mrp_rounding }}">
+      <input type="hidden" name="mrp_truncate_decimal" value="{{ 'true' if pricing_settings.mrp_truncate_decimal else 'false' }}">
+      {% if price_code_settings.allow_extraction %}
+        <input type="hidden" name="allow_price_code_extraction" value="true">
+      {% endif %}
+      {% for digit in range(10) %}
+        <input type="hidden" name="digit_{{ digit }}_code" value="{{ price_code_settings.digit_to_code.get(digit|string, '') }}">
+      {% endfor %}
+
+      <div class="digit-map-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+        {% set optional_list = template_field_settings.optional_fields %}
+        {% set available_fields = [
+            ("article", "Article No"),
+            ("brand", "Brand"),
+            ("item_display_name", "Product/Item Name"),
+            ("size", "Size"),
+            ("batch_no", "Shade/Color"),
+            ("mrp", "MRP"),
+            ("margin_percent", "Margin %"),
+            ("selling_price", "Rate"),
+            ("barcode", "Barcode"),
+            ("tally_item_name", "Tally Name")
+        ] %}
+        {% for field_key, field_label in available_fields %}
+          <label class="checkline">
+            <input type="checkbox" name="optional_template_fields" value="{{ field_key }}" {% if field_key in optional_list %}checked{% endif %}>
+            Allow empty: {{ field_label }}
+          </label>
+        {% endfor %}
+      </div>
+      <div class="form-actions" style="margin-top: 1rem;">
+        <button class="button primary" type="submit">Save Requirements</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel setup-panel">
+    <div class="section-line">
       <h2>Price Code Settings</h2>
       <span class="badge {{ 'ok' if price_code_settings.allow_extraction else 'warn' }}">{{ 'enabled' if price_code_settings.allow_extraction else 'off' }}</span>
     </div>
