@@ -1129,7 +1129,7 @@ def main() -> None:
         assert_true('pvValidateEditedVoiceRow' in phone_print_markup, "Voice Fill must validate edited fields")
         assert_true('phoneVoicePrintButton' in phone_print_markup, "Voice Fill must have a dedicated Print button")
         assert_true('pvApplyCurrentVoiceRow({ print: ' in phone_print_markup, "Voice Fill must separate apply vs print flow")
-        assert_true('window.phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
+        assert_true('phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
         assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "handleCtrlAQuickAction()" in pos_html_source, "POS template missing ctrlAModal trigger for sale_edit navigation")
         assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
 
@@ -1179,7 +1179,7 @@ def main() -> None:
         assert_true('if (item.type === "open") return 2;' in pos_markup, "Open bill must sort with held bills, not always at the top")
         assert_true('item.type === "open" && item.id === state.cart.cart_id' in pos_markup, "POS bill nav must reselect the currently open bill after reload")
         assert_true('if (targetItem.type === "open")' in pos_markup, "Opening the active bill row should be a no-op, not a server call")
-        assert_true('window.phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
+        assert_true('phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
         assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "handleCtrlAQuickAction()" in pos_html_source, "POS template missing ctrlAModal trigger for sale_edit navigation")
         assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
 
@@ -1251,7 +1251,7 @@ def main() -> None:
         assert_true("assign_barcode" not in phone_print_markup, "Voice Fill does not implement separate barcode duplicate logic")
         assert_true("pvApplyRowToPhoneForm" in phone_print_markup, "Voice Fill uses existing phone print submit path")
         assert_true("phoneSubmitPrintButton.click()" in phone_print_markup, "phoneSubmitPrintButton.click only happens in Print button path")
-        assert_true("window.phonePrintCopiesConfirmed = true" in phone_print_markup, "phonePrintCopiesConfirmed is used only around confirmed Print action")
+        assert_true("phonePrintCopiesConfirmed = true" in phone_print_markup, "phonePrintCopiesConfirmed is used only around confirmed Print action")
         assert_true("manual_only" in phone_print_markup, "manual-only barcode/qr/ean/upc are not applied from voice")
         assert_true("???" not in phone_print_markup, "phone print template contains mojibake ???")
         assert_true("pvInputByKey(" in phone_print_markup, "field refs are guarded")

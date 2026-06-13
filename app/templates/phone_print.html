@@ -2229,6 +2229,12 @@
 
         const input = document.createElement("input");
         input.type = "text";
+        if (["mrp", "copies", "rate", "selling_price"].includes(f.key)) {
+            input.inputMode = f.key === "copies" ? "numeric" : "decimal";
+            if (f.key === "copies") {
+                input.pattern = "[0-9]*";
+            }
+        }
         input.className = "outline-input phone-voice-edit-input";
         input.dataset.phoneVoiceField = f.key;
 
@@ -2239,30 +2245,71 @@
           val = fields[f.key] || "";
         }
 
-        // Normalize everything to uppercase
-        input.value = String(val).toUpperCase();
+          // Normalize everything to uppercase
+          input.value = String(val).toUpperCase();
 
-        input.addEventListener("input", e => {
-            // Force uppercase while typing too
-            const upperVal = e.target.value.toUpperCase();
-            e.target.value = upperVal;
+          phoneSelectTextOnEdit(input);
 
-            if (f.key === "copies") {
-                rowData.copies = upperVal;
-            } else {
-                fields[f.key] = upperVal;
-            }
+          input.addEventListener("input", e => {
+              // Force uppercase while typing too
+              const upperVal = e.target.value.toUpperCase();
+              e.target.value = upperVal;
 
-            // Clear conflict if user edits a conflicted field
-            if (conflicts.some(c => String(c.detail || c.field || c).toLowerCase().includes(f.key))) {
-                const idx = conflicts.findIndex(c => String(c.detail || c.field || c).toLowerCase().includes(f.key));
-                if (idx > -1) conflicts.splice(idx, 1);
-                pvApplyBtn.disabled = conflicts.length > 0;
-                if (typeof pvPrintBtn !== "undefined" && pvPrintBtn) pvPrintBtn.disabled = conflicts.length > 0;
-            }
-        });
+              if (f.key === "copies") {
+                  rowData.copies = upperVal;
+              }
+              fields[f.key] = upperVal;
 
-        if (missing.includes(f.key)) {
+              // Re-evaluate conflicts dynamically
+              rowData.conflicts = [];
+              pvVoiceLocalCodedPriceCheck(rowData);
+
+              // Update any dynamically modified fields in the DOM
+              Object.entries(fields).forEach(([k, v]) => {
+                  const sibling = section.querySelector(`[data-phone-voice-field="${k}"]`);
+                  if (sibling && String(sibling.value).toUpperCase() !== String(v).toUpperCase()) {
+                      sibling.value = String(v).toUpperCase();
+                  }
+              });
+
+              pvApplyBtn.disabled = rowData.conflicts.length > 0;
+              if (typeof pvPrintBtn !== "undefined" && pvPrintBtn) pvPrintBtn.disabled = rowData.conflicts.length > 0;
+
+              // Hide the conflicts UI if all are resolved
+              const cSection = pvConfirmBody.querySelector(".phone-voice-conflicts-section");
+              if (cSection) {
+                  cSection.hidden = rowData.conflicts.length === 0;
+                  // We could update the list of conflicts dynamically here too
+                  const existingRows = cSection.querySelectorAll(".phone-voice-conflict-row");
+                  existingRows.forEach(r => r.remove());
+                  rowData.conflicts.forEach(c => {
+                    const row = document.createElement("div");
+                    row.className = "phone-voice-conflict-row";
+                    row.textContent = "- " + String(c.detail || c.field || c);
+                    cSection.appendChild(row);
+                  });
+              }
+
+              // Update the notes UI dynamically
+              let nSection = pvConfirmBody.querySelector(".phone-voice-notes-section");
+              if (!nSection && rowData.notes.length > 0) {
+                  nSection = document.createElement("div");
+                  nSection.className = "phone-voice-notes-section";
+                  pvConfirmBody.appendChild(nSection);
+              }
+              if (nSection) {
+                  nSection.hidden = rowData.notes.length === 0;
+                  nSection.innerHTML = "<h4>Notes:</h4>";
+                  rowData.notes.forEach(n => {
+                      const row = document.createElement("div");
+                      row.className = "phone-voice-note-row";
+                      row.textContent = "- " + n;
+                      nSection.appendChild(row);
+                  });
+              }
+          });
+
+          if (missing.includes(f.key)) {
             input.classList.add("phone-voice-error-input");
         }
         if (needsReviewKeys.includes(f.key)) {
@@ -2278,21 +2325,36 @@
       });
       pvConfirmBody.appendChild(section);
 
-      // Conflicts
-      if (conflicts.length > 0) {
-        const cSection = document.createElement("div");
-        cSection.className = "phone-voice-conflicts-section";
-        const cLabel = document.createElement("p");
-        cLabel.className = "phone-voice-section-label phone-voice-conflict-label";
-        cLabel.textContent = "Conflicts (fix before applying):";
-        cSection.appendChild(cLabel);
-        conflicts.forEach(c => {
+      // Conflicts UI
+      const cSection = document.createElement("div");
+      cSection.className = "phone-voice-conflicts-section";
+      cSection.hidden = conflicts.length === 0;
+      const cTitle = document.createElement("h4");
+      cTitle.textContent = "Please resolve conflicts before applying:";
+      cSection.appendChild(cTitle);
+
+      conflicts.forEach(c => {
+        const row = document.createElement("div");
+        row.className = "phone-voice-conflict-row";
+        row.textContent = "- " + String(c.detail || c.field || c);
+        cSection.appendChild(row);
+      });
+      pvConfirmBody.appendChild(cSection);
+
+      // Notes UI
+      if (notes && notes.length > 0) {
+        const nSection = document.createElement("div");
+        nSection.className = "phone-voice-notes-section";
+        const nTitle = document.createElement("h4");
+        nTitle.textContent = "Notes:";
+        nSection.appendChild(nTitle);
+        notes.forEach(n => {
           const row = document.createElement("div");
-          row.className = "phone-voice-conflict-row";
-          row.textContent = "- " + String(c.detail || c.field || c);
-          cSection.appendChild(row);
+          row.className = "phone-voice-note-row";
+          row.textContent = "- " + n;
+          nSection.appendChild(row);
         });
-        pvConfirmBody.appendChild(cSection);
+        pvConfirmBody.appendChild(nSection);
       }
 
       // Unmatched text
@@ -2332,8 +2394,11 @@
     function pvVoiceLocalCodedPriceCheck(rowData) {
       const fields = rowData.fields || {};
       const needsReviewKeys = rowData.needs_review_fields = rowData.needs_review_fields || [];
-      const notes = rowData.notes = rowData.notes || [];
       const conflicts = rowData.conflicts = rowData.conflicts || [];
+      
+      // Filter out old injected decoded notes so we don't duplicate them on every keystroke
+      rowData.notes = (rowData.notes || []).filter(n => typeof n !== "string" || !n.includes("Decoded spoken price"));
+      const notes = rowData.notes;
 
       const spokenCode = String(fields["coded_price_spoken"] || fields["coded_price"] || "").trim().toUpperCase();
       const rateVal = String(fields["selling_price"] || fields["rate"] || "").trim();
@@ -2343,8 +2408,9 @@
       const decoded = typeof phoneDecodeGroup === "function" ? phoneDecodeGroup(spokenCode) : "";
 
       if (decoded) {
-        if (!rateVal) {
+        if (!rateVal || rateVal === String(rowData._auto_decoded_price)) {
           fields["selling_price"] = decoded;
+          rowData._auto_decoded_price = decoded;
           notes.push(`Decoded spoken price code locally: ${spokenCode} -> ${decoded}`);
         } else {
           const rateNum = Number(rateVal);
@@ -2538,9 +2604,8 @@
         }
 
         if (typeof phoneSubmitPrintButton !== "undefined" && phoneSubmitPrintButton) {
-          window.phonePrintCopiesConfirmed = true;
+          phonePrintCopiesConfirmed = true;
           phoneSubmitPrintButton.click();
-          window.phonePrintCopiesConfirmed = false;
         }
       }
     }
