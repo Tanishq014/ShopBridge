@@ -524,6 +524,81 @@ def phone_print_new_stock(
     return RedirectResponse(_phone_print_redirect_url(result.job, result.template, result.category), status_code=303)
 
 
+@router.post("/phone-print/print-json")
+def phone_print_new_stock_json(
+    request: Request,
+    workflow_mode: str = Form("print"),
+    existing_variant_id: str = Form(""),
+    family_id: str = Form(""),
+    family_name: str = Form(""),
+    category: str = Form("clothes"),
+    barcode: str = Form(""),
+    brand: str = Form(""),
+    item_display_name: str = Form(""),
+    article_no: str = Form(""),
+    size: str = Form(""),
+    batch_no: str = Form(""),
+    expiry: str = Form(""),
+    mrp: str = Form(""),
+    selling_price: str = Form(""),
+    margin_percent: str = Form(""),
+    coded_price: str = Form(""),
+    coded_price_manual_override: bool = Form(False),
+    extra_field_values: str = Form(""),
+    selected_price_code_key: str = Form(""),
+    print_without_billing_price: bool = Form(False),
+    show_pricing_fields_visible: str = Form("1"),
+    force_new_barcode: bool = Form(False),
+    template_id: int = Form(...),
+    copies: int = Form(1),
+    manual_barcode_override: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = process_new_stock_print(
+            db,
+            PrintNewStockInput(
+                workflow_mode=workflow_mode,
+                existing_variant_id=existing_variant_id,
+                family_id=family_id,
+                family_name=family_name,
+                category=category,
+                barcode=barcode,
+                brand=brand,
+                item_display_name=item_display_name,
+                article_no=article_no,
+                size=size,
+                batch_no=batch_no,
+                expiry=expiry,
+                mrp=mrp,
+                selling_price=selling_price,
+                coded_price=coded_price,
+                extra_field_values=extra_field_values,
+                selected_price_code_key=selected_price_code_key,
+                print_without_billing_price=print_without_billing_price,
+                force_new_barcode=force_new_barcode,
+                template_id=template_id,
+                copies=copies,
+                manual_barcode_override=manual_barcode_override,
+            ),
+        )
+    except WorkflowPrintError as exc:
+        return JSONResponse({"ok": False, "error": exc.message})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+    variant_id = result.job.variant_id if result.job else None
+    barcode_val = result.job.variant.barcode if result.job and result.job.variant else None
+
+    return JSONResponse({
+        "ok": True,
+        "barcode": barcode_val,
+        "variant_id": variant_id,
+        "message": "Printed"
+    })
+
+
+
 @router.post("/new-stock/quick-reprint")
 def quick_reprint(
     variant_id: int = Form(...),

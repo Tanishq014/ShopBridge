@@ -255,8 +255,11 @@
       <!-- ── Voice Fill: confirmation modal ──────────────────────────── -->
       <div class="phone-voice-modal-backdrop" id="phoneVoiceFillConfirmModal" hidden
            role="dialog" aria-modal="true" aria-labelledby="phoneVoiceConfirmTitle">
-        <div class="phone-voice-modal-panel">
-          <h2 id="phoneVoiceConfirmTitle">Voice Fill Result</h2>
+        <div class="phone-voice-modal-panel" style="max-height: 90vh; display: flex; flex-direction: column; width: 95%; max-width: 600px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h2 id="phoneVoiceConfirmTitle" style="margin: 0;">Voice Fill Result</h2>
+            <button class="button primary" type="button" id="phoneVoicePrintAllButton" style="display: none; padding: 4px 8px; font-size: 0.9em;">Print All Valid</button>
+          </div>
           <!-- Raw transcript -->
           <div class="phone-voice-transcript-block" id="phoneVoiceTranscriptBlock" hidden>
             <p class="phone-voice-section-label">Heard:</p>
@@ -264,16 +267,11 @@
           </div>
           <!-- Model warning (fallback model used) -->
           <div class="phone-voice-model-warning" id="phoneVoiceModelWarning" hidden></div>
-          <!-- Single or multi-row result cards -->
-          <!-- Single or multi-row result cards -->
-          <div id="phoneVoiceConfirmBody"></div>
-          <div class="form-actions phone-voice-modal-actions">
-            <button class="button" type="button" id="phoneVoiceApplyButton">
-              Apply to Form
-            </button>
-            <button class="button primary" type="button" id="phoneVoicePrintButton">
-              Print
-            </button>
+
+          <div id="phoneVoiceConfirmBody" style="overflow-y: auto; flex-grow: 1; padding-right: 5px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 15px;"></div>
+
+          <div class="form-actions phone-voice-modal-actions" style="margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border-light);">
+            <button class="button" type="button" id="phoneVoiceCloseConfirmButton">Close</button>
           </div>
         </div>
       </div>
@@ -1845,9 +1843,7 @@
              }
            }
 
-           if (typeof pvDraftItems !== "undefined" && pvDraftItems.length > 0) {
-             if (typeof pvLoadNextDraftItem === "function") pvLoadNextDraftItem();
-           } else if (typeof phoneVariantSearch !== "undefined" && phoneVariantSearch) {
+           if (typeof phoneVariantSearch !== "undefined" && phoneVariantSearch) {
              window.setTimeout(() => {
                phoneVariantSearch.focus();
                phoneVariantSearch.select();
@@ -1924,9 +1920,6 @@
     const pvConfirmBody     = document.getElementById("phoneVoiceConfirmBody");
     const pvDraftQueue      = document.getElementById("phoneVoiceDraftQueue");
     const pvDraftCount      = document.getElementById("phoneVoiceDraftCount");
-    const pvLoadNextBtn     = document.getElementById("phoneVoiceLoadNextButton");
-    const pvApplyBtn        = document.getElementById("phoneVoiceApplyButton");
-    const pvPrintBtn        = document.getElementById("phoneVoicePrintButton");
     // ── Voice mode classification ─────────────────────────────────────────────
     const PV_MANUAL      = new Set(["barcode","qr","qr_code","ean","upc"]);
     const PV_CODE_REVIEW = new Set([
@@ -2300,272 +2293,280 @@
     }
     // ── Render confirmation modal ─────────────────────────────────────────────
     function pvShowConfirm(data) {
-      pvModal.hidden = true;
-      // Transcript
-      const transcript = String(data.raw_transcript || "").trim();
-      if (transcript) {
-        pvTranscriptText.textContent = transcript;
-        pvTranscriptBlock.hidden = false;
-      } else {
-        pvTranscriptBlock.hidden = true;
-      }
-      // Model warning
-      const warning = String(data.model_warning || "").trim();
-      if (warning) {
-        pvModelWarning.textContent = `Check: ${warning}`;
-        pvModelWarning.hidden = false;
-      } else {
-        pvModelWarning.hidden = true;
-      }
-      // Items
-      const items = Array.isArray(data.items) ? data.items : [];
-      if (items.length === 0) {
-        pvShowError("Gemini returned no items. Try speaking again.");
-        pvModal.hidden = false;
-        return;
-      }
-      // Run local coded-price check on each item
-      items.forEach(item => pvVoiceLocalCodedPriceCheck(item));
-      // Show first item; stash the rest
-      pvCurrentRow = items[0];
-      pvDraftItems = items.slice(1);
-      pvRenderConfirmBody(pvCurrentRow, items.length);
-      pvUpdateDraftNotice();
-      pvConfirmModal.hidden = false;
-      pvApplyBtn.focus();
-    }
-    // ── Render a single item row card ─────────────────────────────────────────
-    function pvRenderConfirmBody(rowData, totalRows) {
-      pvConfirmBody.innerHTML = "";
-      const fields = rowData.fields || {};
-      const needsReviewKeys = rowData.needs_review_fields || [];
-      const conflicts = rowData.conflicts || [];
-      const missing = rowData.missing_required_fields || [];
-      const unmatched = rowData.unmatched_text || [];
-      const notes = rowData.notes || [];
-
-      // Header: row N of M
-      if (totalRows > 1) {
-        const header = document.createElement("p");
-        header.className = "phone-voice-row-header";
-        header.textContent = `Row ${rowData.row_no} of ${totalRows}`;
-        pvConfirmBody.appendChild(header);
-      }
-
-      // Editable Fields Form
-      const section = document.createElement("div");
-      section.className = "phone-voice-fields-section phone-voice-editable-form";
-
-      pvFieldMeta.forEach(f => {
-        if (pvVoiceMode(f.key) === "manual_only") return;
-
-        const row = document.createElement("div");
-        row.className = "phone-voice-edit-row";
-
-        const label = document.createElement("label");
-        label.className = "phone-voice-edit-label";
-        label.textContent = f.label;
-
-        const input = document.createElement("input");
-        input.type = "text";
-        if (["mrp", "copies", "rate", "selling_price"].includes(f.key)) {
-            input.inputMode = f.key === "copies" ? "numeric" : "decimal";
-            if (f.key === "copies") {
-                input.pattern = "[0-9]*";
-            }
-        }
-        input.className = "outline-input phone-voice-edit-input";
-        input.dataset.phoneVoiceField = f.key;
-
-        let val = "";
-        if (f.key === "copies") {
-          val = rowData.copies || fields["copies"] || "";
+        pvModal.hidden = true;
+        const transcript = String(data.raw_transcript || "").trim();
+        if (transcript) {
+          pvTranscriptText.textContent = transcript;
+          pvTranscriptBlock.hidden = false;
         } else {
-          val = fields[f.key] || "";
+          pvTranscriptBlock.hidden = true;
+        }
+        const warning = String(data.model_warning || "").trim();
+        if (warning) {
+          pvModelWarning.textContent = `Check: ${warning}`;
+          pvModelWarning.hidden = false;
+        } else {
+          pvModelWarning.hidden = true;
+        }
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (items.length === 0) {
+          pvShowError("Gemini returned no items. Try speaking again.");
+          pvModal.hidden = false;
+          return;
         }
 
-          // Normalize everything to uppercase
-          input.value = String(val).toUpperCase();
+        pvCurrentRow = null;
+        pvDraftItems = items;
+        pvRenderConfirmBody();
+        pvConfirmModal.hidden = false;
 
-          phoneSelectTextOnEdit(input);
+        const printAllBtn = document.getElementById("phoneVoicePrintAllButton");
+        if (printAllBtn) {
+          printAllBtn.style.display = items.length > 1 ? "" : "none";
+        }
 
-          input.addEventListener("input", e => {
-              // Force uppercase while typing too
-              const upperVal = e.target.value.toUpperCase();
-              e.target.value = upperVal;
+        const firstInput = pvConfirmBody.querySelector("[data-phone-voice-field]");
+        if (firstInput) {
+          firstInput.focus();
+        }
+      }
+    // ── Render all items in scrollable queue ────────────────────────────────
+    function pvRenderConfirmBody() {
+      pvConfirmBody.innerHTML = "";
 
-              if (f.key === "coded_price") {
-                  e.target.dataset.userEdited = "true";
-              }
+      pvDraftItems.forEach((rowData, index) => {
+          const card = document.createElement("div");
+          card.className = "pv-card";
+          card.dataset.index = index;
+          card.style.border = "1px solid var(--border-light)";
+          card.style.borderRadius = "8px";
+          card.style.padding = "15px";
+          card.style.backgroundColor = "var(--bg-card)";
+          card.style.position = "relative";
+
+          const fields = rowData.fields || {};
+          const conflicts = rowData.conflicts || [];
+          const missing = rowData.missing_required_fields || [];
+          const unmatched = rowData.unmatched_text || [];
+          const notes = rowData.notes || [];
+
+          // Header: Item N of M
+          const header = document.createElement("div");
+          header.style.display = "flex";
+          header.style.justifyContent = "space-between";
+          header.style.alignItems = "center";
+          header.style.marginBottom = "10px";
+          header.style.borderBottom = "1px solid var(--border-light)";
+          header.style.paddingBottom = "5px";
+
+          const title = document.createElement("h3");
+          title.textContent = `Item ${index + 1} of ${pvDraftItems.length}`;
+          title.style.margin = "0";
+          title.style.fontSize = "1em";
+          header.appendChild(title);
+
+          const statusBadge = document.createElement("span");
+          statusBadge.className = "pv-card-status";
+          statusBadge.textContent = "Ready";
+          statusBadge.style.fontSize = "0.8em";
+          statusBadge.style.padding = "2px 6px";
+          statusBadge.style.borderRadius = "4px";
+          statusBadge.style.backgroundColor = "var(--bg-hover)";
+          header.appendChild(statusBadge);
+          card.appendChild(header);
+
+          // Editable Fields Form
+          const section = document.createElement("div");
+          section.className = "phone-voice-fields-section phone-voice-editable-form";
+
+          pvFieldMeta.forEach(f => {
+            if (pvVoiceMode(f.key) === "manual_only") return;
+
+            const row = document.createElement("div");
+            row.className = "phone-voice-edit-row";
+
+            const label = document.createElement("label");
+            label.className = "phone-voice-edit-label";
+            label.textContent = f.label;
+
+            const input = document.createElement("input");
+            input.type = "text";
+            if (["mrp", "copies", "rate", "selling_price"].includes(f.key)) {
+                input.inputMode = f.key === "copies" ? "numeric" : "decimal";
+                if (f.key === "copies") {
+                    input.pattern = "[0-9]*";
+                }
+            }
+            input.className = "outline-input phone-voice-edit-input";
+            input.dataset.phoneVoiceField = f.key;
+
+            let val = "";
+            if (f.key === "copies") {
+              val = rowData.copies || fields["copies"] || "";
+            } else {
+              val = fields[f.key] || "";
+            }
+
+            input.value = String(val).toUpperCase();
+            phoneSelectTextOnEdit(input);
+
+            // Store user-edited state
+            input.addEventListener("input", event => {
+              const upperVal = String(event.target.value || "").toUpperCase();
+              event.target.value = upperVal;
+
+              const fields = rowData.fields = rowData.fields || {};
 
               if (f.key === "copies") {
-                  rowData.copies = upperVal;
+                rowData.copies = upperVal;
+                fields.copies = upperVal;
+              } else {
+                fields[f.key] = upperVal;
               }
-              fields[f.key] = upperVal;
 
-              // Re-evaluate conflicts dynamically
+              if (f.key === "coded_price") {
+                event.target.dataset.userEdited = "true";
+              }
+
               if (["selling_price", "rate", "coded_price", "coded_price_spoken"].includes(f.key)) {
-                  pvVoiceLocalCodedPriceCheck(rowData, f.key);
+                pvVoiceLocalCodedPriceCheck(rowData, card, f.key);
               }
 
-              // Update any dynamically modified fields in the DOM
-              Object.entries(fields).forEach(([k, v]) => {
-                  const sibling = section.querySelector(`[data-phone-voice-field="${k}"]`);
-                  if (sibling && String(sibling.value).toUpperCase() !== String(v).toUpperCase()) {
-                      sibling.value = String(v).toUpperCase();
-                  }
-              });
+              pvUpdateCardButtons(card, rowData);
+            });
 
-              pvApplyBtn.disabled = rowData.conflicts.length > 0;
-              if (typeof pvPrintBtn !== "undefined" && pvPrintBtn) pvPrintBtn.disabled = rowData.conflicts.length > 0;
+            row.appendChild(label);
+            row.appendChild(input);
 
-              // Hide the conflicts UI if all are resolved
-              const cSection = pvConfirmBody.querySelector(".phone-voice-conflicts-section");
-              if (cSection) {
-                  cSection.hidden = rowData.conflicts.length === 0;
-                  // We could update the list of conflicts dynamically here too
-                  const existingRows = cSection.querySelectorAll(".phone-voice-conflict-row");
-                  existingRows.forEach(r => r.remove());
-                  rowData.conflicts.forEach(c => {
-                    const row = document.createElement("div");
-                    row.className = "phone-voice-conflict-row";
-                    row.textContent = "- " + String(c.detail || c.field || c);
-                    cSection.appendChild(row);
-                  });
-              }
+            if (f.key === "coded_price" || f.key === "coded_price_spoken") {
+                const hint = document.createElement("span");
+                hint.className = "phone-voice-hint";
+                hint.dataset.phoneVoiceHint = "coded_price";
+                hint.style.fontSize = "0.85em";
+                hint.style.color = "var(--text-muted)";
+                hint.style.marginLeft = "10px";
+                hint.style.flexShrink = "0";
+                row.appendChild(hint);
+            }
 
-              // Update the notes UI dynamically
-              let nSection = pvConfirmBody.querySelector(".phone-voice-notes-section");
-              if (!nSection && rowData.notes.length > 0) {
-                  nSection = document.createElement("div");
-                  nSection.className = "phone-voice-notes-section";
-                  pvConfirmBody.appendChild(nSection);
-              }
-              if (nSection) {
-                  nSection.hidden = rowData.notes.length === 0;
-                  nSection.innerHTML = "<h4>Notes:</h4>";
-                  rowData.notes.forEach(n => {
-                      const row = document.createElement("div");
-                      row.className = "phone-voice-note-row";
-                      row.textContent = "- " + n;
-                      nSection.appendChild(row);
-                  });
+            section.appendChild(row);
+          });
+          card.appendChild(section);
+
+          // Error/Conflict block
+          const errorBlock = document.createElement("div");
+          errorBlock.className = "pv-card-errors";
+          errorBlock.style.color = "#ff6b6b";
+          errorBlock.style.fontSize = "0.9em";
+          errorBlock.style.marginTop = "10px";
+          card.appendChild(errorBlock);
+
+          // Missing fields
+          if (missing.length > 0) {
+            const mSection = document.createElement("div");
+            mSection.className = "phone-voice-missing-section";
+            const mLabel = document.createElement("p");
+            mLabel.className = "phone-voice-section-label";
+            mLabel.textContent = "Missing required info:";
+            mSection.appendChild(mLabel);
+            missing.forEach(m => {
+              const row = document.createElement("div");
+              row.className = "phone-voice-missing-row";
+              row.textContent = "- " + m;
+              mSection.appendChild(row);
+            });
+            card.appendChild(mSection);
+          }
+
+          // Unmatched text
+          if (unmatched.length > 0) {
+            const uSection = document.createElement("div");
+            uSection.className = "phone-voice-unmatched-section";
+            const uLabel = document.createElement("p");
+            uLabel.className = "phone-voice-section-label";
+            uLabel.textContent = "Could not match:";
+            uSection.appendChild(uLabel);
+            unmatched.forEach(u => {
+              const row = document.createElement("div");
+              row.className = "phone-voice-unmatched-row";
+              row.textContent = `- ${u}`;
+              uSection.appendChild(row);
+            });
+            card.appendChild(uSection);
+          }
+
+          // Notes
+          if (notes.length > 0) {
+            const nSection = document.createElement("div");
+            nSection.className = "phone-voice-notes-section";
+            notes.forEach(n => {
+              const row = document.createElement("div");
+              row.className = "phone-voice-note-row";
+              row.textContent = n;
+              nSection.appendChild(row);
+            });
+            card.appendChild(nSection);
+          }
+
+          // Action buttons for this card
+          const actionDiv = document.createElement("div");
+          actionDiv.style.marginTop = "15px";
+          actionDiv.style.display = "flex";
+          actionDiv.style.gap = "10px";
+
+          const applyBtn = document.createElement("button");
+          applyBtn.className = "button";
+          applyBtn.type = "button";
+          applyBtn.textContent = "Apply";
+          applyBtn.onclick = () => pvApplyVoiceCard(card, rowData);
+
+          const printBtn = document.createElement("button");
+          printBtn.className = "button primary";
+          printBtn.type = "button";
+          printBtn.textContent = "Print";
+          printBtn.onclick = () => pvPrintVoiceCard(card, rowData);
+
+          actionDiv.appendChild(applyBtn);
+          actionDiv.appendChild(printBtn);
+          card.appendChild(actionDiv);
+
+          pvConfirmBody.appendChild(card);
+
+          // Initial check
+          pvVoiceLocalCodedPriceCheck(rowData, card);
+
+          // Sync populated fields (like selling_price decoded from CPA)
+          Object.entries(rowData.fields || {}).forEach(([k, v]) => {
+              const input = card.querySelector(`[data-phone-voice-field="${k}"]`);
+              if (input && String(input.value).toUpperCase() !== String(v).toUpperCase()) {
+                  input.value = String(v).toUpperCase();
               }
           });
 
-          if (missing.includes(f.key)) {
-            input.classList.add("phone-voice-error-input");
-        }
-        if (needsReviewKeys.includes(f.key)) {
-            input.classList.add("phone-voice-review-input");
-        }
-        if (conflicts.some(c => String(c.detail || c.field || c).toLowerCase().includes(f.key))) {
-            input.classList.add("phone-voice-conflict-input");
-        }
-
-        if (f.key === "coded_price") {
-            const wrapper = document.createElement("div");
-            wrapper.style.display = "flex";
-            wrapper.style.alignItems = "center";
-            wrapper.style.gap = "0.5rem";
-
-            input.style.flex = "1";
-            wrapper.appendChild(input);
-
-            const hint = document.createElement("span");
-            hint.className = "phone-voice-inline-code-hint";
-            hint.style.color = "var(--text-light)";
-            hint.style.fontSize = "0.85rem";
-            hint.style.fontWeight = "500";
-            hint.dataset.phoneVoiceHint = "coded_price";
-            wrapper.appendChild(hint);
-
-            label.appendChild(wrapper);
-        } else {
-            label.appendChild(input);
-        }
-        row.appendChild(label);
-        section.appendChild(row);
+          pvUpdateCardButtons(card, rowData);
       });
-      pvConfirmBody.appendChild(section);
-
-      // Conflicts UI
-      const cSection = document.createElement("div");
-      cSection.className = "phone-voice-conflicts-section";
-      cSection.hidden = conflicts.length === 0;
-      const cTitle = document.createElement("h4");
-      cTitle.textContent = "Please resolve conflicts before applying:";
-      cSection.appendChild(cTitle);
-
-      conflicts.forEach(c => {
-        const row = document.createElement("div");
-        row.className = "phone-voice-conflict-row";
-        row.textContent = "- " + String(c.detail || c.field || c);
-        cSection.appendChild(row);
-      });
-      pvConfirmBody.appendChild(cSection);
-
-      // Notes UI
-      if (notes && notes.length > 0) {
-        const nSection = document.createElement("div");
-        nSection.className = "phone-voice-notes-section";
-        const nTitle = document.createElement("h4");
-        nTitle.textContent = "Notes:";
-        nSection.appendChild(nTitle);
-        notes.forEach(n => {
-          const row = document.createElement("div");
-          row.className = "phone-voice-note-row";
-          row.textContent = "- " + n;
-          nSection.appendChild(row);
-        });
-        pvConfirmBody.appendChild(nSection);
-      }
-
-      // Unmatched text
-      if (unmatched.length > 0) {
-        const uSection = document.createElement("div");
-        uSection.className = "phone-voice-unmatched-section";
-        const uLabel = document.createElement("p");
-        uLabel.className = "phone-voice-section-label";
-        uLabel.textContent = "Could not match:";
-        uSection.appendChild(uLabel);
-        unmatched.forEach(u => {
-          const row = document.createElement("div");
-          row.className = "phone-voice-unmatched-row";
-          row.textContent = `- ${u}`;
-          uSection.appendChild(row);
-        });
-        pvConfirmBody.appendChild(uSection);
-      }
-
-      // Notes
-      if (notes.length > 0) {
-        const nSection = document.createElement("div");
-        nSection.className = "phone-voice-notes-section";
-        notes.forEach(n => {
-          const row = document.createElement("div");
-          row.className = "phone-voice-note-row";
-          row.textContent = n;
-          nSection.appendChild(row);
-        });
-        pvConfirmBody.appendChild(nSection);
-      }
-
-      pvVoiceLocalCodedPriceCheck(rowData);
-
-      // Sync any fields that were populated by the check (like selling_price decoded from CPA)
-      Object.entries(rowData.fields || {}).forEach(([k, v]) => {
-          const input = pvConfirmBody.querySelector(`[data-phone-voice-field="${k}"]`);
-          if (input && String(input.value).toUpperCase() !== String(v).toUpperCase()) {
-              input.value = String(v).toUpperCase();
-          }
-      });
-
-      pvApplyBtn.disabled = rowData.conflicts.length > 0;
-      if (typeof pvPrintBtn !== "undefined" && pvPrintBtn) pvPrintBtn.disabled = rowData.conflicts.length > 0;
     }
+
+    function pvSetCardErrors(card, errors) {
+      const errorBlock = card.querySelector(".pv-card-errors");
+      if (!errorBlock) return;
+      errorBlock.innerHTML = "";
+      (errors || []).forEach(error => {
+        const row = document.createElement("div");
+        row.textContent = "- " + String(error);
+        errorBlock.appendChild(row);
+      });
+    }
+
+    function pvUpdateCardButtons(card, rowData) {
+        const applyBtn = card.querySelector('button.button:not(.primary)');
+        const printBtn = card.querySelector('button.primary');
+        if (applyBtn) applyBtn.disabled = rowData.conflicts && rowData.conflicts.length > 0;
+        if (printBtn) printBtn.disabled = rowData.conflicts && rowData.conflicts.length > 0;
+    }
+
     // ── Local coded-price decode + conflict check ──────────────────────────────
-    function pvVoiceLocalCodedPriceCheck(rowData, activeKey = null) {
+    function pvVoiceLocalCodedPriceCheck(rowData, card, activeKey = null) {
       const fields = rowData.fields || {};
       const needsReviewKeys = rowData.needs_review_fields = rowData.needs_review_fields || [];
       rowData.conflicts = (rowData.conflicts || []).filter(c => !(typeof c === "string" && c.startsWith("[Price Conflict]")));
@@ -2584,7 +2585,7 @@
           fields["rate"] = "";
       }
 
-      const hint = pvConfirmBody.querySelector('[data-phone-voice-hint="coded_price"]');
+      const hint = card.querySelector('[data-phone-voice-hint="coded_price"]');
 
       if (!spokenCode && !rateVal) {
           if (hint) hint.textContent = "";
@@ -2613,7 +2614,7 @@
       if (!spokenCode && previewResult.ok && previewResult.baseCode && rateVal && activeKey !== "coded_price") {
           fields["coded_price"] = previewResult.baseCode;
 
-          const codeInput = pvConfirmBody.querySelector('[data-phone-voice-field="coded_price"]');
+          const codeInput = card.querySelector('[data-phone-voice-field="coded_price"]');
           if (codeInput && codeInput.value !== previewResult.baseCode) {
               codeInput.value = previewResult.baseCode;
           }
@@ -2650,12 +2651,17 @@
               hint.style.color = "#51cf66";
           }
       }
+
+      const errorBlock = card.querySelector('.pv-card-errors');
+      if (errorBlock) {
+          pvSetCardErrors(card, rowData.conflicts);
+      }
     }
 
     // ── Collect Edited Voice Fields ───────────────────────────────────────────
-    function pvCollectEditedVoiceFields(rowData) {
+    function pvCollectEditedVoiceFields(card, rowData) {
       const fields = rowData.fields = rowData.fields || {};
-      pvConfirmBody.querySelectorAll("[data-phone-voice-field]").forEach(input => {
+      card.querySelectorAll("[data-phone-voice-field]").forEach(input => {
         const key = input.dataset.phoneVoiceField;
         const value = String(input.value || "").trim();
 
@@ -2669,20 +2675,19 @@
     }
 
     // ── Validate Edited Voice Row ─────────────────────────────────────────────
-    function pvValidateEditedVoiceRow(rowData, { print }) {
+    function pvValidateEditedVoiceRow(card, rowData, { print }) {
       const blockers = [];
       const fields = rowData.fields || {};
 
-      // Re-run local coded-price check on edited values to catch conflicts
-      pvVoiceLocalCodedPriceCheck(rowData);
+      pvVoiceLocalCodedPriceCheck(rowData, card);
       if (rowData.conflicts && rowData.conflicts.length > 0) {
         blockers.push(...rowData.conflicts);
       }
 
-      // Calculate missing required
       const requiredFields = typeof phoneRequiredFields === "function"
        ? phoneRequiredFields()
         : new Set(pvFieldMeta.filter(f => f.required).map(f => f.key));
+
       for (const reqKey of requiredFields) {
         const key = phoneNormalizeFieldName(reqKey);
         const val = fields[key];
@@ -2692,7 +2697,6 @@
       }
 
       if (print) {
-        // validate copies if printing
         const c = parseInt(rowData.copies, 10);
         if (!c || isNaN(c) || c <= 0) {
           blockers.push("Copies / Qty must be a valid positive number to print.");
@@ -2736,7 +2740,6 @@
       const fields = rowData.fields || {};
       let filledCount = 0;
 
-      // Fill copies
       const copiesInput = phoneFields && phoneFields.copies ? phoneFields.copies : null;
       if (rowData.copies && copiesInput) {
           copiesInput.value = rowData.copies;
@@ -2790,122 +2793,234 @@
         }
       });
 
-
       if (typeof phoneRefreshPriceState === "function") phoneRefreshPriceState();
       if (typeof phoneRefreshReadyState === "function") phoneRefreshReadyState();
       if (typeof phoneSaveState === "function") phoneSaveState();
 
-      if (filledCount === 0) {
-        pvShowError("Gemini understood the item, but couldn't map the fields to your active template.");
-        pvModal.hidden = false;
-        return false;
-      }
-
-      return true;
+      return filledCount > 0;
     }
 
-    function pvShowVoiceDialogErrors(blockers) {
-        alert("Please fix the following issues before continuing:\n\n" + blockers.join("\n"));
-    }
+    // ── Apply Voice Card (does not close modal) ───────────────────────────────
+    function pvApplyVoiceCard(card, rowData) {
+      pvCollectEditedVoiceFields(card, rowData);
+      const blockers = pvValidateEditedVoiceRow(card, rowData, { print: false });
 
-    // ── Apply/Print Main Flow ─────────────────────────────────────────────────
-    function pvApplyCurrentVoiceRow({ print = false } = {}) {
-      const rowData = pvCurrentRow;
-      if (!rowData) return;
-
-      pvCollectEditedVoiceFields(rowData);
-
-      const blockers = pvValidateEditedVoiceRow(rowData, { print });
+      const errorBlock = card.querySelector('.pv-card-errors');
       if (blockers.length) {
-        pvShowVoiceDialogErrors(blockers);
-        return;
-      }
-
-      if (print) {
-          const spokenCode = String(rowData.fields["coded_price_spoken"] || rowData.fields["coded_price"] || "").trim().toUpperCase();
-          const rateVal = String(rowData.fields["selling_price"] || rowData.fields["rate"] || "").trim();
-
-          if (spokenCode || rateVal) {
-              let codeResult;
-
-              const source = rowData._voicePrintCodeSource || {};
-              const canReuseAuto =
-                  source.autoFromSellingPrice === true &&
-                  source.sellingPrice === rateVal &&
-                  source.spokenCode === spokenCode &&
-                  rowData._voicePrintCodeResult &&
-                  rowData._voicePrintCodeResult.ok;
-
-              const canReuseNormal =
-                  source.sellingPrice === rateVal &&
-                  source.spokenCode === spokenCode &&
-                  rowData._voicePrintCodeResult;
-
-              if (canReuseAuto || canReuseNormal) {
-                  codeResult = rowData._voicePrintCodeResult;
-              } else {
-                  codeResult = pvBuildVoicePrintCode({
-                      sellingPrice: rateVal,
-                      spokenCode: spokenCode
-                  });
-                  rowData._voicePrintCodeResult = codeResult;
-                  rowData._voicePrintCodeSource = {
-                      sellingPrice: rateVal,
-                      spokenCode: spokenCode,
-                      autoFromSellingPrice: false
-                  };
-              }
-
-              if (!codeResult.ok) {
-                  pvShowVoiceDialogErrors([codeResult.error]);
-                  return;
-              }
-
-              rowData.fields.selling_price = codeResult.sellingPrice;
-              if ("rate" in rowData.fields) rowData.fields.rate = codeResult.sellingPrice;
-              rowData.fields.coded_price = codeResult.finalCode;
-
-
-          }
+          pvSetCardErrors(card, blockers);
+          return;
       }
 
       const applied = pvApplyRowToPhoneForm(rowData);
-      if (!applied) return;
-
-      pvConfirmModal.hidden = true;
-      pvUpdateDraftNotice();
-
-      if (print) {
-        if (typeof phoneForm !== "undefined" && phoneForm.reportValidity && !phoneForm.reportValidity()) {
+      if (!applied) {
+          pvSetCardErrors(card, ["Could not map fields to form"]);
           return;
-        }
+      }
 
-        if (typeof phoneSubmitPrintButton !== "undefined" && phoneSubmitPrintButton) {
-          phonePrintCopiesConfirmed = true;
-          phoneSubmitPrintButton.click();
-        }
+      const statusBadge = card.querySelector(".pv-card-status");
+      if (statusBadge) {
+          statusBadge.textContent = "Applied to form";
+          statusBadge.style.backgroundColor = "#ffe066";
+          statusBadge.style.color = "#000";
       }
     }
 
-    // ── Draft queue notice ─────────────────────────────────────────────────────
-    function pvUpdateDraftNotice() {
-      if (pvDraftItems.length > 0) {
-        pvDraftCount.textContent = pvDraftItems.length;
-        pvDraftQueue.hidden = false;
-      } else {
-        pvDraftQueue.hidden = true;
+    // ── Build Final Payload for Card ──────────────────────────────────────────
+    function pvBuildPrintPayload(rowData) {
+        const payload = new FormData();
+        const f = rowData.fields || {};
+
+        const nativeFields = {
+            workflow_mode: "print",
+            template_id: phoneTemplate ? phoneTemplate.value : "",
+            show_pricing_fields_visible: typeof phoneShowPricingFieldsValue !== "undefined" && phoneShowPricingFieldsValue ? phoneShowPricingFieldsValue.value : "1",
+            category: phoneCategory ? phoneCategory.value : "clothes",
+            print_without_billing_price: document.getElementById("phonePrintWithoutBillingPrice") ? (document.getElementById("phonePrintWithoutBillingPrice").checked ? "true" : "") : "",
+            selected_price_code_key: document.getElementById("phoneSelectedPriceCodeKey") ? document.getElementById("phoneSelectedPriceCodeKey").value : "",
+            extra_field_values: document.getElementById("phoneExtraFieldValues") ? document.getElementById("phoneExtraFieldValues").value : ""
+        };
+
+        const hiddenBool = id => {
+            const el = document.getElementById(id);
+            return el && String(el.value || "").toLowerCase() === "true" ? "true" : "";
+        };
+
+        nativeFields.force_new_barcode = hiddenBool("phoneForceNewBarcode");
+        nativeFields.coded_price_manual_override = hiddenBool("phoneCodedManualOverride");
+
+        // Voice Fill items never have a pre-existing source variant when generated.
+        // We leave them blank always and let backend exact-match decide.
+        nativeFields.existing_variant_id = "";
+        nativeFields.barcode = "";
+        nativeFields.manual_barcode_override = "";
+
+        let finalFamilyId = "";
+        const mainFamilyName = typeof phoneFamilyName !== "undefined" && phoneFamilyName ? phoneFamilyName.value.trim().toUpperCase() : "";
+        const cardFamilyName = String(f["family_name"] || "").trim().toUpperCase();
+        if (mainFamilyName && cardFamilyName === mainFamilyName) {
+            finalFamilyId = document.getElementById("phoneFamilyId") ? document.getElementById("phoneFamilyId").value : "";
+        }
+        nativeFields.family_id = finalFamilyId;
+
+        Object.entries(nativeFields).forEach(([k, v]) => {
+            if (v !== "") payload.append(k, v);
+        });
+
+        const map = {
+            family_name: f["family_name"],
+            brand: f["brand"],
+            item_display_name: f["item_display_name"] || f["design"],
+            article_no: f["article_no"] || f["article"],
+            size: f["size"],
+            batch_no: f["batch_no"] || f["batch"],
+            expiry: f["expiry"],
+            mrp: f["mrp"],
+            selling_price: f["selling_price"] || f["rate"],
+            coded_price: f["coded_price"],
+            copies: rowData.copies || "1"
+        };
+
+        Object.entries(map).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && String(v).trim() !== "") {
+                payload.append(k, String(v).trim());
+            }
+        });
+
+        return payload;
+    }
+
+    // ── Print Voice Card (Concurrent safe fetch) ──────────────────────────────
+    async function pvPrintVoiceCard(card, rowData) {
+      if (card.dataset.printing === "true" || card.dataset.printed === "true") return;
+
+      pvCollectEditedVoiceFields(card, rowData);
+
+      const blockers = pvValidateEditedVoiceRow(card, rowData, { print: true });
+      const errorBlock = card.querySelector('.pv-card-errors');
+      if (blockers.length) {
+          pvSetCardErrors(card, blockers);
+          return;
+      }
+
+      // Generate exact code if spoken
+      const spokenCode = String(rowData.fields["coded_price_spoken"] || rowData.fields["coded_price"] || "").trim().toUpperCase();
+      const rateVal = String(rowData.fields["selling_price"] || rowData.fields["rate"] || "").trim();
+
+      if (spokenCode || rateVal) {
+          let codeResult;
+          const source = rowData._voicePrintCodeSource || {};
+          const canReuseAuto = source.autoFromSellingPrice === true && source.sellingPrice === rateVal && source.spokenCode === spokenCode && rowData._voicePrintCodeResult && rowData._voicePrintCodeResult.ok;
+          const canReuseNormal = source.sellingPrice === rateVal && source.spokenCode === spokenCode && rowData._voicePrintCodeResult;
+
+          if (canReuseAuto || canReuseNormal) {
+              codeResult = rowData._voicePrintCodeResult;
+          } else {
+              codeResult = pvBuildVoicePrintCode({ sellingPrice: rateVal, spokenCode: spokenCode });
+              rowData._voicePrintCodeResult = codeResult;
+              rowData._voicePrintCodeSource = { sellingPrice: rateVal, spokenCode: spokenCode, autoFromSellingPrice: false };
+          }
+
+          if (!codeResult.ok) {
+              pvSetCardErrors(card, [codeResult.error]);
+              return;
+          }
+
+          rowData.fields.selling_price = codeResult.sellingPrice;
+          if ("rate" in rowData.fields) rowData.fields.rate = codeResult.sellingPrice;
+          rowData.fields.coded_price = codeResult.finalCode;
+      }
+
+      // Prepare UI for fetch
+      card.dataset.printing = "true";
+      pvUpdateCardButtons(card, rowData);
+      const printBtn = card.querySelector('button.primary');
+      if (printBtn) {
+          printBtn.disabled = true;
+          printBtn.textContent = "Printing...";
+      }
+
+      const statusBadge = card.querySelector(".pv-card-status");
+      if (statusBadge) {
+          statusBadge.textContent = "Printing...";
+          statusBadge.style.backgroundColor = "var(--brand-blue)";
+          statusBadge.style.color = "#fff";
+      }
+
+      const payload = pvBuildPrintPayload(rowData);
+
+      try {
+          const res = await fetch("/phone-print/print-json", {
+              method: "POST",
+              body: payload
+          });
+          const data = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+
+          if (data.ok) {
+              card.dataset.printed = "true";
+              if (statusBadge) {
+                  statusBadge.textContent = `Printed: ${data.barcode}`;
+                  statusBadge.style.backgroundColor = "#51cf66";
+                  statusBadge.style.color = "#fff";
+              }
+              if (printBtn) printBtn.textContent = "Printed";
+              const applyBtn = card.querySelector('button.button:not(.primary)');
+              if (applyBtn) applyBtn.disabled = true;
+              pvSetCardErrors(card, []);
+
+              // Optionally fade out the card
+              setTimeout(() => {
+                  card.style.opacity = "0.6";
+              }, 1500);
+          } else {
+              card.dataset.printing = "false";
+              if (printBtn) {
+                  printBtn.disabled = false;
+                  printBtn.textContent = "Print";
+              }
+              if (statusBadge) {
+                  statusBadge.textContent = "Error";
+                  statusBadge.style.backgroundColor = "#ff6b6b";
+                  statusBadge.style.color = "#fff";
+              }
+              pvSetCardErrors(card, [data.error || 'Unknown error occurred']);
+          }
+      } catch (err) {
+          card.dataset.printing = "false";
+          if (printBtn) {
+              printBtn.disabled = false;
+              printBtn.textContent = "Print";
+          }
+          if (statusBadge) {
+              statusBadge.textContent = "Error";
+              statusBadge.style.backgroundColor = "#ff6b6b";
+              statusBadge.style.color = "#fff";
+          }
+          pvSetCardErrors(card, [`Network Error: ${err.message || err}`]);
       }
     }
-    // ── Load next draft item ───────────────────────────────────────────────────
-    function pvLoadNextDraftItem() {
-      if (pvDraftItems.length === 0) return;
-      const next = pvDraftItems.shift();
-      pvCurrentRow = next;
-      pvRenderConfirmBody(next, pvDraftItems.length + 1);
-      pvUpdateDraftNotice();
-      pvConfirmModal.hidden = false;
-      pvApplyBtn.focus();
+
+    // ── Queue Manager: Print All Valid Items ──────────────────────────────────
+    async function pvPrintAllValidItems() {
+        const printAllBtn = document.getElementById("phoneVoicePrintAllButton");
+        if (printAllBtn) printAllBtn.disabled = true;
+
+        const cards = Array.from(pvConfirmBody.querySelectorAll('.pv-card'));
+        for (const card of cards) {
+            if (card.dataset.printed !== "true" && card.dataset.printing !== "true") {
+                const index = parseInt(card.dataset.index, 10);
+                const rowData = pvDraftItems[index];
+
+                pvCollectEditedVoiceFields(card, rowData);
+                const blockers = pvValidateEditedVoiceRow(card, rowData, { print: true });
+                if (blockers.length === 0) {
+                    await pvPrintVoiceCard(card, rowData);
+                }
+            }
+        }
+
+        if (printAllBtn) printAllBtn.disabled = false;
     }
+
     // ── Enable/disable Voice Fill button ───────────────────────────────────────
     function pvRefreshButtonState() {
       const ready = typeof phoneTemplateReady === "function" && phoneTemplateReady();
@@ -2914,6 +3029,7 @@
        ? "Voice Fill – tap to speak item details"
         : "Select a ready template to enable Voice Fill";
     }
+
     // ── Event wiring ──────────────────────────────────────────────────────────
     pvBtn.addEventListener("click", pvOpenModal);
     pvCancelBtn.addEventListener("click", pvCloseAll);
@@ -2925,9 +3041,21 @@
       }
     });
     pvSendTxt.addEventListener("click", pvSendTranscript);
-    pvApplyBtn.addEventListener("click", () => pvApplyCurrentVoiceRow({ print: false }));
-    if (pvPrintBtn) pvPrintBtn.addEventListener("click", () => pvApplyCurrentVoiceRow({ print: true }));
-    pvLoadNextBtn.addEventListener("click", pvLoadNextDraftItem);
+
+    // Close confirm modal
+    const closeConfirmBtn = document.getElementById("phoneVoiceCloseConfirmButton");
+    if (closeConfirmBtn) {
+        closeConfirmBtn.addEventListener("click", () => {
+            pvConfirmModal.hidden = true;
+        });
+    }
+
+    // Print all
+    const printAllBtn = document.getElementById("phoneVoicePrintAllButton");
+    if (printAllBtn) {
+        printAllBtn.addEventListener("click", pvPrintAllValidItems);
+    }
+
     // Dismiss modals on backdrop tap
     pvModal.addEventListener("click", event => {
       if (event.target === pvModal) pvCloseAll();
@@ -2949,19 +3077,16 @@
         }
       }
     });
-    // Hook into phoneRefreshReadyState to keep the button state in sync.
-    // Wrap the existing function rather than replacing it.
-    const _origPhoneRefreshReadyState = typeof phoneRefreshReadyState === "function"
-     ? phoneRefreshReadyState : null;
+
+    // Hook into phoneRefreshReadyState
+    const _origPhoneRefreshReadyState = typeof phoneRefreshReadyState === "function" ? phoneRefreshReadyState : null;
     if (_origPhoneRefreshReadyState) {
-      // We can't easily override the declared function, but we can poll on
-      // template/category change events which are the only state changers.
       phoneTemplate.addEventListener("change", pvRefreshButtonState);
       phoneCategory.addEventListener("change", pvRefreshButtonState);
     }
-    // Also refresh now and after DOM settles
     pvRefreshButtonState();
     window.requestAnimationFrame(pvRefreshButtonState);
   })();
   </script>
+
 {% endblock %}

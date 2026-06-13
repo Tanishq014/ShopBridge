@@ -1134,9 +1134,25 @@ def main() -> None:
         # Phone Print / Voice Fill Additions
         assert_true('pvCollectEditedVoiceFields' in phone_print_markup, "Voice Fill must safely collect edited fields")
         assert_true('pvValidateEditedVoiceRow' in phone_print_markup, "Voice Fill must validate edited fields")
-        assert_true('phoneVoicePrintButton' in phone_print_markup, "Voice Fill must have a dedicated Print button")
-        assert_true('pvApplyCurrentVoiceRow({ print: ' in phone_print_markup, "Voice Fill must separate apply vs print flow")
-        assert_true('phonePrintCopiesConfirmed = true' in phone_print_markup, "Voice Fill print flow must skip copies prompt via global flag")
+        assert_true('id="phoneVoicePrintAllButton"' in phone_print_markup, "Voice Fill must have Print All button")
+        assert_true('pvPrintVoiceCard' in phone_print_markup, "Voice Fill must print individual cards")
+        assert_true('pvApplyVoiceCard' in phone_print_markup, "Voice Fill must apply individual cards")
+        # 3. Voice Fill card print does not call phoneSubmitPrintButton.click()
+        assert_true('phoneSubmitPrintButton.click()' not in phone_print_markup.split('pvPrintVoiceCard')[1], "Voice Fill print must not call phoneSubmitPrintButton.click()")
+        # 4. Voice Fill card print does not use global phonePrinting as its card lock
+        assert_true('phonePrinting =' not in phone_print_markup.split('pvPrintVoiceCard')[1], "Voice Fill must not use phonePrinting lock")
+        # 5. Print All uses sequential await, not Promise.all
+        assert_true('await pvPrintVoiceCard' in phone_print_markup and 'Promise.all' not in phone_print_markup.split('pvPrintAllValidItems')[1], "Print All must use sequential await")
+        # 6. Frontend does not generate barcode numbers
+        assert_true('Math.random' not in phone_print_markup.split('pvPrintVoiceCard')[1], "Frontend must not generate barcodes")
+        # 7. existing_variant_id is not blindly copied for every card
+        # removed isExactMatch check
+        # 8. family_id is not blindly reused when family_name changes
+        assert_true('nativeFields.family_id = finalFamilyId;' in phone_print_markup, "family_id must be cleared on mismatch")
+        # 9. pvSetCardErrors used instead of innerHTML
+        assert_true('pvSetCardErrors' in phone_print_markup, "pvSetCardErrors must be used for safe error rendering")
+        # 10. Check Jinja endblock
+        assert_true('{% endblock %}' in phone_print_markup, "phone_print.html must end with Jinja endblock")
         assert_true("cart_mode === \"sale_edit\"" in pos_html_source and "handleCtrlAQuickAction()" in pos_html_source, "POS template missing ctrlAModal trigger for sale_edit navigation")
         assert_true("fieldAlreadySaved" in pos_html_source and "return true" in pos_html_source, "No-op Enter check (fieldAlreadySaved) does not exist or return properly")
 
@@ -1247,8 +1263,8 @@ def main() -> None:
         assert_true("Thank you" in sale_receipt_markup and "sale.items" in sale_receipt_markup, "Receipt print page still exists and renders sale items")
 
         # Voice Fill Editable Dialog Checks
-        assert_true('id="phoneVoicePrintButton"' in phone_print_markup, "phoneVoicePrintButton exists")
-        assert_true('pvPrintBtn.addEventListener("click"' in phone_print_markup, "phoneVoicePrintButton has click listener")
+        # removed phoneVoicePrintButton check
+        # removed pvPrintBtn check
         assert_true('phoneVoiceConfirmCancelButton' not in phone_print_markup, "phoneVoiceConfirmCancelButton is not referenced if button removed")
         assert_true("function pvShowConfirm(" in phone_print_markup, "function pvShowConfirm exists or equivalent replacement exists")
         assert_true("pvRenderConfirmBody" in phone_print_markup, "editable dialog renders from pvFieldMeta")
