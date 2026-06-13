@@ -42,12 +42,15 @@
   </style>
 </head>
 
+{% set capture_mode = request.query_params.get("hide_buttons") == "1" %}
 <body class="receipt-body">
   <main class="receipt-page">
+    {% if not capture_mode %}
     <div class="receipt-actions no-print">
       <button class="button primary" type="button" onclick="tryDirectPrint()">Print</button>
       <a class="button" href="/sales/{{ sale.id }}">Back</a>
     </div>
+    {% endif %}
 
     <section class="receipt">
       <header class="receipt-header" style="margin-bottom: 6px;">
@@ -189,7 +192,8 @@
       </footer>
     </section>
   </main>
-      <script>
+      {% if not capture_mode %}
+    <script>
       function tryDirectPrint() {
         const btn = document.querySelector('.receipt-actions .button.primary');
         if (btn) btn.disabled = true;
@@ -217,6 +221,7 @@
         window.print();
       }
     </script>
+    {% endif %}
 </body>
 
 </html>

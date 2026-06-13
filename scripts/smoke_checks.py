@@ -1321,6 +1321,27 @@ def main() -> None:
             assert_true("Pay using this UPI ID" in receipt_service_code, "Receipt formatter includes UPI/payment text if sale has VPA")
             assert_true("Scan any UPI app to pay" not in receipt_service_code, "Receipt formatter should not tell users to scan since QR is not printed natively")
 
+
+        # Graphical Receipt Printing Checks
+        with open("app/templates/sale_receipt.html", "r", encoding="utf-8") as f:
+            sale_receipt_code = f.read()
+            assert_true("hide_buttons" in sale_receipt_code, "hide_buttons=1 support exists in sale_receipt.html")
+            assert_true("{% if not capture_mode %}" in sale_receipt_code and "window.print()" in sale_receipt_code, "window.print() is disabled in capture mode")
+
+        with open("app/services/receipt_print_service.py", "r", encoding="utf-8") as f:
+            receipt_service_code = f.read()
+            assert_true("from html2image import Html2Image" in receipt_service_code, "html2image import is guarded inside service function")
+            assert_true("import win32ui" in receipt_service_code, "win32ui import is guarded inside service function")
+            assert_true("crop" in receipt_service_code and "bbox[3]" in receipt_service_code, "service crops bottom whitespace")
+            assert_true("appears blank" in receipt_service_code, "receipt service checks for blank screenshot")
+            assert_true("may be clipped" in receipt_service_code, "receipt service checks for clipped screenshot")
+            assert_true("scale = HORZRES / im.size[0]" in receipt_service_code, "service scales image to printer width")
+
+        with open("app/routes/sales.py", "r", encoding="utf-8") as f:
+            sales_route_code = f.read()
+            assert_true("print_receipt_direct_image" in sales_route_code and "print_receipt_direct(" in sales_route_code, "direct print service still has clear fallback/error handling")
+            assert_true("if sale.upi_vpa:" in sales_route_code.split("except Exception as img_e:")[1], "sales.py has a sale.upi_vpa branch when image print fails")
+
         with open("app/templates/pos.html", "r", encoding="utf-8") as f:
             pos_html_code = f.read()
             assert_true("fetch(`/sales/${data.sale_id}/receipt/direct`" in pos_html_code, "POS tries direct print")
