@@ -288,6 +288,7 @@
     const phoneFamilies = {{ families_json|default([], true)|tojson }};
     const phoneCategories = {{ categories|tojson }};
     const phonePriceCodeSettings = {{ price_code_settings_json|tojson }};
+    const phoneBarcodeSettings = {{ barcode_settings_json|tojson }};
     const phoneSubmittedValues = {{ submitted|tojson }};
     const phoneInitialVariantId = "{{ initial_variant_id or '' }}";
     const phoneHasServerNotice = Boolean({{ phone_initial_notice|tojson }});
@@ -1183,28 +1184,143 @@
       return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
-    function phoneDecodeGroup(group) {
-      const codeToDigit = phonePriceCodeSettings.code_to_digit || {};
-      const tokens = Object.keys(codeToDigit).sort((left, right) => right.length - left.length);
-      const cleanGroup = String(group || "").toUpperCase();
-      const matches = [];
-      function walk(index, digits) {
-        if (matches.length > 1) {
-          return;
-        }
-        if (index === cleanGroup.length) {
-          matches.push(digits.join(""));
-          return;
-        }
-        tokens.forEach(token => {
-          if (cleanGroup.startsWith(token, index)) {
-            walk(index + token.length, [...digits, codeToDigit[token]]);
+      function phoneDecodeGroup(group) {
+        const codeToDigit = phonePriceCodeSettings.code_to_digit || {};
+        const tokens = Object.keys(codeToDigit).sort((left, right) => right.length - left.length);
+        const cleanGroup = String(group || "").toUpperCase();
+        const matches = [];
+        function walk(index, digits) {
+          if (matches.length > 1) {
+            return;
           }
-        });
+          if (index === cleanGroup.length) {
+            matches.push(digits.join(""));
+            return;
+          }
+          tokens.forEach(token => {
+            if (cleanGroup.startsWith(token, index)) {
+              walk(index + token.length, [...digits, codeToDigit[token]]);
+            }
+          });
+        }
+        walk(0, []);
+        return matches.length === 1 ? matches[0] : "";
       }
-      walk(0, []);
-      return matches.length === 1 ? matches[0] : "";
-    }
+
+      function phoneNormalizeVoiceSellingPrice(value) {
+          if (!value) return "";
+          let str = String(value).trim();
+          str = str.replace(/[\s,]/g, '');
+          str = str.replace(/^(rs\.?|₹)/i, '');
+          if (/^\d+(\.00*)?$/.test(str)) {
+              return parseInt(str, 10).toString();
+          }
+          return "";
+      }
+
+      function phoneCodeAliasesForDigit(digit) {
+          const codeToDigit = phonePriceCodeSettings.code_to_digit || {};
+          return Object.entries(codeToDigit)
+              .filter(([code, mappedDigit]) => String(mappedDigit) === String(digit))
+              .map(([code]) => String(code).trim().toUpperCase())
+              .filter(Boolean);
+      }
+
+      function phoneEncodeGroup(price) {
+          const numStr = String(price);
+          let encoded = "";
+          for (const digit of numStr) {
+              const aliases = phoneCodeAliasesForDigit(digit);
+              if (!aliases.length) return "";
+              encoded += aliases[Math.floor(Math.random() * aliases.length)];
+          }
+          return encoded;
+      }
+
+      function pvGetVoicePrintCodeTargetLength() {
+          const template = typeof phoneSelectedTemplate === "function" ? phoneSelectedTemplate() : null;
+          if (template && template.field_defaults) {
+              const keys = Object.keys(template.field_defaults);
+              for (const k of keys) {
+                  const norm = phoneNormalizeFieldName(k);
+                  if (norm === 'coded_price' || norm === 'coded_price_spoken' || norm === 'code' || norm === 'price_code') {
+                      const defCode = template.field_defaults[k];
+                      if (defCode) return String(defCode).length;
+                  }
+              }
+          }
+          if (phoneFields.code && phoneFields.code.maxLength && phoneFields.code.maxLength > 0) {
+              return phoneFields.code.maxLength;
+          }
+          return phoneBarcodeSettings.default_length || 5;
+      }
+
+      function pvGetSafeCodePaddingLetters() {
+          const allowed = phoneBarcodeSettings.allowed_chars || "";
+          const letters = allowed.replace(/[^A-Za-z]/g, "").toUpperCase();
+          return Array.from(new Set(letters)).join("");
+      }
+
+      function pvBuildVoicePrintCode({ sellingPrice, spokenCode }) {
+          const targetLength = pvGetVoicePrintCodeTargetLength();
+          let finalSellingPrice = sellingPrice;
+          let baseCode = "";
+
+          if (finalSellingPrice) {
+              finalSellingPrice = phoneNormalizeVoiceSellingPrice(finalSellingPrice);
+              if (!finalSellingPrice) {
+                  return { ok: false, error: "Invalid selling price format." };
+              }
+          }
+
+          if (spokenCode) {
+              const decoded = phoneDecodeGroup(spokenCode);
+              if (!decoded) {
+                  return { ok: false, error: `Spoken code ${spokenCode} cannot be decoded. Ensure it contains valid price letters.` };
+              }
+              if (finalSellingPrice && String(finalSellingPrice) !== decoded) {
+                  return { ok: false, error: `Code ${spokenCode} decodes to ${decoded} but selling price is ${finalSellingPrice}` };
+              }
+              finalSellingPrice = decoded;
+              baseCode = spokenCode.toUpperCase();
+          } else if (finalSellingPrice) {
+              baseCode = phoneEncodeGroup(finalSellingPrice);
+              if (!baseCode) {
+                  return { ok: false, error: `Cannot encode price ${finalSellingPrice}. Check price code settings.` };
+              }
+          } else {
+              return { ok: false, error: "Neither code nor selling price was provided." };
+          }
+
+          if (baseCode.length > targetLength) {
+              return { ok: false, error: `Generated code ${baseCode} (length ${baseCode.length}) is larger than target length ${targetLength}.` };
+          }
+
+          const paddingNeeded = targetLength - baseCode.length;
+          let padding = "";
+          if (paddingNeeded > 0) {
+              const safeLetters = pvGetSafeCodePaddingLetters();
+              if (!safeLetters) {
+                  return { ok: false, error: "No safe letters available for padding. Check barcode allowed characters setting." };
+              }
+              for (let i = 0; i < paddingNeeded; i++) {
+                  padding += safeLetters[Math.floor(Math.random() * safeLetters.length)];
+              }
+          }
+
+          const finalCode = baseCode + padding;
+          return {
+              ok: true,
+              sellingPrice: finalSellingPrice,
+              baseCode: baseCode,
+              padding: padding,
+              finalCode: finalCode,
+              targetLength: targetLength,
+              message: "Ready to print"
+          };
+      }
+
+
 
     function phonePriceCandidates() {
       const raw = String(phoneFields.code.value || "").toUpperCase();
@@ -1862,6 +1978,8 @@
       allKeys.add("family_name");
       // Always explicitly include copies
       allKeys.add("copies");
+      // Always explicitly include selling price
+      allKeys.add("selling_price");
       allKeys.forEach(rawKey => {
         const key = phoneNormalizeFieldName(rawKey);
         const mode = pvVoiceMode(key);
@@ -1970,7 +2088,16 @@
       pvTplName.textContent = template ? template.template_name || "" : "";
       // Build field list
       pvFieldList.innerHTML = "";
+
+      let hasCodeOrPrice = false;
+
       pvFieldMeta.forEach(f => {
+        if (f.key === "barcode") return;
+        if (f.key === "coded_price" || f.key === "selling_price") {
+            hasCodeOrPrice = true;
+            return;
+        }
+
         const row = document.createElement("div");
         row.className = `phone-voice-field-row ${pvModeClass(f.voice_mode)}`;
         row.innerHTML = `
@@ -1980,6 +2107,18 @@
         `;
         pvFieldList.appendChild(row);
       });
+
+      if (hasCodeOrPrice) {
+          const row = document.createElement("div");
+          row.className = `phone-voice-field-row phone-voice-mode-speak`;
+          row.innerHTML = `
+            <span class="phone-voice-field-icon">🎙️</span>
+            <span class="phone-voice-field-label">Code / Selling Price</span>
+            <span class="phone-voice-field-note">speak either one</span>
+          `;
+          pvFieldList.appendChild(row);
+      }
+
       // Example speech
       const example = pvBuildExampleSpeech(pvFieldMeta);
       if (example) {
@@ -2255,14 +2394,19 @@
               const upperVal = e.target.value.toUpperCase();
               e.target.value = upperVal;
 
+              if (f.key === "coded_price") {
+                  e.target.dataset.userEdited = "true";
+              }
+
               if (f.key === "copies") {
                   rowData.copies = upperVal;
               }
               fields[f.key] = upperVal;
 
               // Re-evaluate conflicts dynamically
-              rowData.conflicts = [];
-              pvVoiceLocalCodedPriceCheck(rowData);
+              if (["selling_price", "rate", "coded_price", "coded_price_spoken"].includes(f.key)) {
+                  pvVoiceLocalCodedPriceCheck(rowData, f.key);
+              }
 
               // Update any dynamically modified fields in the DOM
               Object.entries(fields).forEach(([k, v]) => {
@@ -2319,7 +2463,27 @@
             input.classList.add("phone-voice-conflict-input");
         }
 
-        label.appendChild(input);
+        if (f.key === "coded_price") {
+            const wrapper = document.createElement("div");
+            wrapper.style.display = "flex";
+            wrapper.style.alignItems = "center";
+            wrapper.style.gap = "0.5rem";
+
+            input.style.flex = "1";
+            wrapper.appendChild(input);
+
+            const hint = document.createElement("span");
+            hint.className = "phone-voice-inline-code-hint";
+            hint.style.color = "var(--text-light)";
+            hint.style.fontSize = "0.85rem";
+            hint.style.fontWeight = "500";
+            hint.dataset.phoneVoiceHint = "coded_price";
+            wrapper.appendChild(hint);
+
+            label.appendChild(wrapper);
+        } else {
+            label.appendChild(input);
+        }
         row.appendChild(label);
         section.appendChild(row);
       });
@@ -2387,40 +2551,104 @@
         pvConfirmBody.appendChild(nSection);
       }
 
-      pvApplyBtn.disabled = conflicts.length > 0;
-      if (typeof pvPrintBtn !== "undefined" && pvPrintBtn) pvPrintBtn.disabled = conflicts.length > 0;
+      pvVoiceLocalCodedPriceCheck(rowData);
+
+      // Sync any fields that were populated by the check (like selling_price decoded from CPA)
+      Object.entries(rowData.fields || {}).forEach(([k, v]) => {
+          const input = pvConfirmBody.querySelector(`[data-phone-voice-field="${k}"]`);
+          if (input && String(input.value).toUpperCase() !== String(v).toUpperCase()) {
+              input.value = String(v).toUpperCase();
+          }
+      });
+
+      pvApplyBtn.disabled = rowData.conflicts.length > 0;
+      if (typeof pvPrintBtn !== "undefined" && pvPrintBtn) pvPrintBtn.disabled = rowData.conflicts.length > 0;
     }
     // ── Local coded-price decode + conflict check ──────────────────────────────
-    function pvVoiceLocalCodedPriceCheck(rowData) {
+    function pvVoiceLocalCodedPriceCheck(rowData, activeKey = null) {
       const fields = rowData.fields || {};
       const needsReviewKeys = rowData.needs_review_fields = rowData.needs_review_fields || [];
-      const conflicts = rowData.conflicts = rowData.conflicts || [];
-      
-      // Filter out old injected decoded notes so we don't duplicate them on every keystroke
-      rowData.notes = (rowData.notes || []).filter(n => typeof n !== "string" || !n.includes("Decoded spoken price"));
-      const notes = rowData.notes;
+      rowData.conflicts = (rowData.conflicts || []).filter(c => !(typeof c === "string" && c.startsWith("[Price Conflict]")));
 
-      const spokenCode = String(fields["coded_price_spoken"] || fields["coded_price"] || "").trim().toUpperCase();
-      const rateVal = String(fields["selling_price"] || fields["rate"] || "").trim();
+      let spokenCode = String(fields["coded_price_spoken"] || fields["coded_price"] || "").trim().toUpperCase();
+      let rateVal = String(fields["selling_price"] || fields["rate"] || "").trim();
 
-      if (!spokenCode) return;
+      // Force clear the OPPOSITE field based on what the user is actively typing
+      if (activeKey === "selling_price" || activeKey === "rate") {
+          spokenCode = "";
+          fields["coded_price"] = "";
+          fields["coded_price_spoken"] = "";
+      } else if (activeKey === "coded_price" || activeKey === "coded_price_spoken") {
+          rateVal = "";
+          fields["selling_price"] = "";
+          fields["rate"] = "";
+      }
 
-      const decoded = typeof phoneDecodeGroup === "function" ? phoneDecodeGroup(spokenCode) : "";
+      const hint = pvConfirmBody.querySelector('[data-phone-voice-hint="coded_price"]');
 
-      if (decoded) {
-        if (!rateVal || rateVal === String(rowData._auto_decoded_price)) {
-          fields["selling_price"] = decoded;
-          rowData._auto_decoded_price = decoded;
-          notes.push(`Decoded spoken price code locally: ${spokenCode} -> ${decoded}`);
-        } else {
-          const rateNum = Number(rateVal);
-          const decodedNum = Number(decoded);
-          if (Number.isFinite(rateNum) && Number.isFinite(decodedNum) && Math.abs(rateNum - decodedNum) > 0.5) {
-            conflicts.push(`Rate (${rateNum}) and decoded coded price (${decodedNum}) do not match. Edit one before applying.`);
+      if (!spokenCode && !rateVal) {
+          if (hint) hint.textContent = "";
+          return;
+      }
+
+      const existingSource = rowData._voicePrintCodeSource || {};
+      const existingResult = rowData._voicePrintCodeResult || null;
+      const canReuseAutoPreview =
+          existingSource.autoFromSellingPrice === true &&
+          existingSource.sellingPrice === rateVal &&
+          existingSource.spokenCode === spokenCode &&
+          existingResult &&
+          existingResult.ok;
+
+      if (canReuseAutoPreview) {
+          if (hint) {
+              hint.textContent = `Print: ${existingResult.finalCode}`;
+              hint.style.color = "#51cf66";
           }
-        }
+          return;
+      }
+
+      const previewResult = pvBuildVoicePrintCode({ sellingPrice: rateVal, spokenCode: spokenCode });
+
+      if (!spokenCode && previewResult.ok && previewResult.baseCode && rateVal && activeKey !== "coded_price") {
+          fields["coded_price"] = previewResult.baseCode;
+
+          const codeInput = pvConfirmBody.querySelector('[data-phone-voice-field="coded_price"]');
+          if (codeInput && codeInput.value !== previewResult.baseCode) {
+              codeInput.value = previewResult.baseCode;
+          }
+
+          rowData._voicePrintCodeResult = previewResult;
+          rowData._voicePrintCodeSource = {
+              sellingPrice: rateVal,
+              spokenCode: previewResult.baseCode,
+              autoFromSellingPrice: true
+          };
       } else {
-        conflicts.push(`Could not decode spoken code locally: ${spokenCode}`);
+          rowData._voicePrintCodeResult = previewResult;
+          rowData._voicePrintCodeSource = {
+              sellingPrice: rateVal,
+              spokenCode: spokenCode,
+              autoFromSellingPrice: false
+          };
+      }
+
+      if (!previewResult.ok) {
+          rowData.conflicts.push(`[Price Conflict] ${previewResult.error}`);
+          if (hint) {
+              hint.textContent = `Fix: code ${spokenCode || 'None'} = ${previewResult.error}`;
+              hint.style.color = "#ff6b6b";
+          }
+      } else {
+          // If we decoded a spoken code, auto-fill the selling price field in memory
+          if (spokenCode && previewResult.sellingPrice && !rateVal && activeKey !== "selling_price" && activeKey !== "rate") {
+              fields["selling_price"] = previewResult.sellingPrice;
+          }
+
+          if (hint) {
+              hint.textContent = `Print: ${previewResult.finalCode}`;
+              hint.style.color = "#51cf66";
+          }
       }
     }
 
@@ -2446,7 +2674,6 @@
       const fields = rowData.fields || {};
 
       // Re-run local coded-price check on edited values to catch conflicts
-      rowData.conflicts = [];
       pvVoiceLocalCodedPriceCheck(rowData);
       if (rowData.conflicts && rowData.conflicts.length > 0) {
         blockers.push(...rowData.conflicts);
@@ -2510,10 +2737,11 @@
       let filledCount = 0;
 
       // Fill copies
-      if (rowData.copies && typeof phoneCopies !== "undefined" && phoneCopies) {
-          phoneCopies.value = rowData.copies;
-          phoneCopies.dispatchEvent(new Event("input", { bubbles: true }));
-          phoneCopies.dispatchEvent(new Event("change", { bubbles: true }));
+      const copiesInput = phoneFields && phoneFields.copies ? phoneFields.copies : null;
+      if (rowData.copies && copiesInput) {
+          copiesInput.value = rowData.copies;
+          copiesInput.dispatchEvent(new Event("input", { bubbles: true }));
+          copiesInput.dispatchEvent(new Event("change", { bubbles: true }));
           filledCount++;
       }
 
@@ -2562,6 +2790,7 @@
         }
       });
 
+
       if (typeof phoneRefreshPriceState === "function") phoneRefreshPriceState();
       if (typeof phoneRefreshReadyState === "function") phoneRefreshReadyState();
       if (typeof phoneSaveState === "function") phoneSaveState();
@@ -2590,6 +2819,54 @@
       if (blockers.length) {
         pvShowVoiceDialogErrors(blockers);
         return;
+      }
+
+      if (print) {
+          const spokenCode = String(rowData.fields["coded_price_spoken"] || rowData.fields["coded_price"] || "").trim().toUpperCase();
+          const rateVal = String(rowData.fields["selling_price"] || rowData.fields["rate"] || "").trim();
+
+          if (spokenCode || rateVal) {
+              let codeResult;
+
+              const source = rowData._voicePrintCodeSource || {};
+              const canReuseAuto =
+                  source.autoFromSellingPrice === true &&
+                  source.sellingPrice === rateVal &&
+                  source.spokenCode === spokenCode &&
+                  rowData._voicePrintCodeResult &&
+                  rowData._voicePrintCodeResult.ok;
+
+              const canReuseNormal =
+                  source.sellingPrice === rateVal &&
+                  source.spokenCode === spokenCode &&
+                  rowData._voicePrintCodeResult;
+
+              if (canReuseAuto || canReuseNormal) {
+                  codeResult = rowData._voicePrintCodeResult;
+              } else {
+                  codeResult = pvBuildVoicePrintCode({
+                      sellingPrice: rateVal,
+                      spokenCode: spokenCode
+                  });
+                  rowData._voicePrintCodeResult = codeResult;
+                  rowData._voicePrintCodeSource = {
+                      sellingPrice: rateVal,
+                      spokenCode: spokenCode,
+                      autoFromSellingPrice: false
+                  };
+              }
+
+              if (!codeResult.ok) {
+                  pvShowVoiceDialogErrors([codeResult.error]);
+                  return;
+              }
+
+              rowData.fields.selling_price = codeResult.sellingPrice;
+              if ("rate" in rowData.fields) rowData.fields.rate = codeResult.sellingPrice;
+              rowData.fields.coded_price = codeResult.finalCode;
+
+
+          }
       }
 
       const applied = pvApplyRowToPhoneForm(rowData);

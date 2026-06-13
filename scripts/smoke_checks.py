@@ -899,6 +899,13 @@ def main() -> None:
         assert_true("focusAndSelectMrp()" in workflow_markup, "Empty Margin + Enter does not focus MRP on desktop")
         assert_true("phoneSelectTextOnEdit(" in phone_print_markup, "phoneSelectTextOnEdit not bound in phone_print")
 
+        # Voice Fill Print-only Coded Price Behavior checks
+        assert_true("function phoneEncodeGroup" in phone_print_markup, "phoneEncodeGroup helper missing")
+        assert_true("function pvBuildVoicePrintCode" in phone_print_markup, "pvBuildVoicePrintCode helper missing")
+
+        assert_true("allKeys.add(\"selling_price\");" in phone_print_markup, "selling_price not explicitly included in Voice Fill dialog")
+        assert_true("pvBuildVoicePrintCode({" in phone_print_markup, "Print path does not call pvBuildVoicePrintCode")
+
         held_source_scan = asyncio.run(pos.pos_scan(DummyJsonRequest({"barcode": first_barcode}), db))
         assert_true(held_source_scan["ok"], "POS did not create active cart before saved-bill load test")
         held_source_cart = pos._find_active_cart(db)

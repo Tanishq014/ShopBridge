@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.services.barcode_service import normalize_barcode
 from app.services.settings_service import (
+    get_barcode_settings,
     get_price_code_settings,
     get_pricing_settings,
     get_template_field_settings,
@@ -52,6 +53,7 @@ def workflow_context(
         payload["recent"] = payload["id"] in recent_template_ids
 
     price_code_settings = get_price_code_settings()
+    barcode_settings = get_barcode_settings()
     return {
         "request": request,
         "message": None,
@@ -81,6 +83,11 @@ def workflow_context(
             "code_to_digit": price_code_settings.code_to_digit,
             "price_code_letters": price_code_settings.price_code_letters,
             "allow_extraction": price_code_settings.allow_extraction,
+        },
+        "barcode_settings": barcode_settings,
+        "barcode_settings_json": {
+            "default_length": barcode_settings.default_length,
+            "allowed_chars": barcode_settings.allowed_chars,
         },
         "pricing_fields_visible": pricing_fields_visible,
         "optional_template_fields": list(get_template_field_settings().resolved_optional_fields),
