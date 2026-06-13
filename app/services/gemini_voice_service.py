@@ -117,6 +117,7 @@ def parse_stock_audio(
         "- Do NOT set print_requested for quantities like '5 piece', 'qty 5', '5 pcs'. Those are quantity/field values only.\n"
         "- `print_requested = true` ONLY if dad clearly says: 'print', 'print karo', 'print kar do', 'label print', 'label nikal do', 'nikal do', 'nikalna hai', 'print now'.\n"
         "- Barcode-like fields (barcode, qr, ean, upc) must NEVER be filled. If spoken, put them in unmatched_text or notes.\n"
+        "- The 'code' or 'coded_price' field is explicitly ONLY letters. If the audio does not contain letters for it, leave it completely empty.\n"
         "- If a field is not mentioned, leave its value as an empty string.\n"
         "- Separate multiple items if the user explicitly lists multiple items.\n"
     )

@@ -319,6 +319,13 @@ def main() -> None:
         alias_candidates = extract_candidates_from_field("coded_price", "xDv", alias_settings, priority=True)
         assert_true(alias_candidates and str(alias_candidates[0].selling_price) in {"25", "25.00"}, "comma-separated aliases did not decode")
         assert_true(generate_coded_price("25", alias_settings) == "DF", "code generation did not use first alias")
+
+        alias_candidates_padded = extract_candidates_from_field("coded_price", "XXDFYY", alias_settings, priority=True)
+        assert_true(alias_candidates_padded and str(alias_candidates_padded[0].selling_price) in {"25", "25.00"}, "padded unmapped letters did not decode")
+
+        price_code_service_source = (ROOT / "app" / "services" / "price_code_service.py").read_text(encoding="utf-8")
+        assert_true("target_length = 6" not in price_code_service_source, "global random padding not allowed")
+        assert_true("import random" not in price_code_service_source, "random padding not allowed in core service")
         try:
             save_price_code_settings(
                 digit_to_code={"0": "Z", "1": "A", "2": "D", "3": "D"},

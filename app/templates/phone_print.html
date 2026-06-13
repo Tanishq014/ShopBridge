@@ -1261,7 +1261,8 @@
 
       function pvGetSafeCodePaddingLetters() {
           const allowed = phoneBarcodeSettings.allowed_chars || "";
-          const letters = allowed.replace(/[^A-Za-z]/g, "").toUpperCase();
+          const mappedLetters = new Set(String(phonePriceCodeSettings.price_code_letters || "").toUpperCase());
+          const letters = allowed.replace(/[^A-Za-z]/g, "").toUpperCase().split("").filter(c => !mappedLetters.has(c));
           return Array.from(new Set(letters)).join("");
       }
 

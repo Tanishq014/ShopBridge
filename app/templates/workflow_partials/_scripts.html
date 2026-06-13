@@ -344,22 +344,22 @@
         fields.margin.select();
         return false;
       }
-      
+
       const candidates = currentPriceCodeCandidates();
       const selectedKey = String(selectedPriceCodeKey.value || "").trim();
       const selectedCandidate = selectedKey
         ? candidates.find(candidate => (candidate.key || candidateKey(candidate)) === selectedKey)
         : (candidates.length > 0 ? candidates[0] : null);
-        
+
       const sellingPrice = selectedCandidate ? Number(selectedCandidate.selling_price) : 0;
-      
+
       if (!sellingPrice || !Number.isFinite(sellingPrice) || sellingPrice <= 0) {
         showPricingMessage("Enter a valid price code first.");
         fields.coded.focus();
         fields.coded.select();
         return false;
       }
-      
+
       const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
       fields.mrp.value = mrpInputText(upperRound(calculatedMrp, mrpRounding));
       showPricingMessage("");
@@ -391,6 +391,12 @@
       if (!tokens.length || !group) {
         return "";
       }
+
+      const mappedLetters = new Set(String(priceCodeSettings.price_code_letters || "").toUpperCase());
+      group = group.toUpperCase().split("").filter(c => mappedLetters.has(c)).join("");
+
+      if (!group) return "";
+
       const matches = [];
       function walk(index, digits) {
         if (matches.length > 1) return;
@@ -2421,20 +2427,20 @@
     });
 
     actualPreviewButton.addEventListener("click", generateActualPreview);
-    
+
     fields.margin.addEventListener("input", () => {
       const marginRaw = String(fields.margin.value || "").trim();
       const marginPercent = Number(marginRaw);
-      
+
       if (marginRaw && Number.isFinite(marginPercent) && marginPercent >= 0 && marginPercent < 100) {
         const candidates = currentPriceCodeCandidates();
         const selectedKey = String(selectedPriceCodeKey.value || "").trim();
         const selectedCandidate = selectedKey
           ? candidates.find(candidate => (candidate.key || candidateKey(candidate)) === selectedKey)
           : (candidates.length > 0 ? candidates[0] : null);
-          
+
         const sellingPrice = selectedCandidate ? Number(selectedCandidate.selling_price) : 0;
-        
+
         if (sellingPrice && Number.isFinite(sellingPrice) && sellingPrice > 0) {
           const calculatedMrp = sellingPrice / (1 - marginPercent / 100);
           // Show the unrounded, actual value to 2 decimal places as preview

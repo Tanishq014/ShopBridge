@@ -72,8 +72,13 @@ def _decode_group(group: str, settings: PriceCodeSettings) -> Decimal | None:
     if not group or not code_to_digit:
         return None
 
+    mapped_letters = set(settings.price_code_letters.upper())
+    group = "".join(c for c in group.upper() if c in mapped_letters)
+
+    if not group:
+        return None
+
     tokens = sorted(code_to_digit, key=len, reverse=True)
-    group = group.upper()
     matches: list[str] = []
 
     def walk(index: int, digits: list[str]) -> None:
