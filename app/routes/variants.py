@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import TEMPLATES_DIR
 from app.db import get_db
-from app.models import LabelVariant, ProductFamily, TemplateMaster
+from app.models import LabelVariant, PosCartItem, PrintJob, ProductFamily, SaleItem, TemplateMaster
 from app.services.barcode_service import assign_barcode
 from app.services.price_code_service import generate_coded_price
 from app.services.template_filters import register_template_filters
@@ -31,6 +31,27 @@ def _int_or_none(value: str | None) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def _parse_int_ids(values: list[str]) -> list[int]:
+    ids: list[int] = []
+    for value in values:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def _variant_has_history(db: Session, variant_id: int) -> bool:
+    return any(
+        db.execute(query).first()
+        for query in (
+            select(SaleItem.id).where(SaleItem.label_variant_id == variant_id),
+            select(PosCartItem.id).where(PosCartItem.variant_id == variant_id),
+            select(PrintJob.id).where(PrintJob.variant_id == variant_id),
+        )
+    )
 
 
 def _form_choices(db: Session):
@@ -135,6 +156,34 @@ def create_variant(
     db.add(variant)
     db.commit()
     return RedirectResponse("/variants", status_code=303)
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_variants_async(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    variant_ids = _parse_int_ids(form.getlist("variant_ids"))
+    if not variant_ids:
+        return RedirectResponse("/variants", status_code=303)
+
+    deleted = 0
+    skipped = 0
+    for variant_id in variant_ids:
+        variant = db.get(LabelVariant, variant_id)
+        if not variant:
+            continue
+
+        if _variant_has_history(db, variant.id):
+            skipped += 1
+            continue
+
+        db.delete(variant)
+        deleted += 1
+
+    db.commit()
+    url = str(request.url_for("list_variants")) + f"?deleted={deleted}"
+    if skipped:
+        url += f"&skipped={skipped}"
+    return RedirectResponse(url, status_code=303)
 
 
 @router.get("/{variant_id}/edit", response_class=HTMLResponse)
@@ -249,3 +298,19 @@ def sticker_preview(variant_id: int, request: Request, db: Session = Depends(get
             "variant": variant,
         },
     )
+
+
+@router.post("/{variant_id}/delete")
+def delete_variant(variant_id: int, request: Request, db: Session = Depends(get_db)):
+    variant = db.get(LabelVariant, variant_id)
+    if not variant:
+        return RedirectResponse("/variants", status_code=303)
+
+    if _variant_has_history(db, variant.id):
+        url = str(request.url_for("list_variants")) + "?deleted=0&skipped=1"
+        return RedirectResponse(url, status_code=303)
+
+    db.delete(variant)
+    db.commit()
+    url = str(request.url_for("list_variants")) + "?deleted=1"
+    return RedirectResponse(url, status_code=303)

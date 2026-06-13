@@ -1336,6 +1336,9 @@ def main() -> None:
             assert_true("appears blank" in receipt_service_code, "receipt service checks for blank screenshot")
             assert_true("may be clipped" in receipt_service_code, "receipt service checks for clipped screenshot")
             assert_true("scale = HORZRES / im.size[0]" in receipt_service_code, "service scales image to printer width")
+        with open("app/templates/base.html", "r", encoding="utf-8") as f:
+            base_html = f.read()
+            assert_true('href="/scan"' not in base_html, "base.html should not contain /scan links")
 
         with open("app/routes/sales.py", "r", encoding="utf-8") as f:
             sales_route_code = f.read()
@@ -1360,6 +1363,56 @@ def main() -> None:
         with open("app/routes/workflow.py", "r", encoding="utf-8") as f:
             workflow_code = f.read()
             assert_true("set_receipt_printer_name" in workflow_code, "settings route saves receipt_printer_name")
+
+        with open("app/routes/sales.py", "r", encoding="utf-8") as f:
+            sales_code = f.read()
+            assert_true("@router.get(\"/sales\"" in sales_code, "sales.py still contains /sales")
+            assert_true("receipt/direct" in sales_code, "sales.py still contains receipt routes")
+            assert_true("/sales/{sale_id}/delete" in sales_code, "sales.py contains /sales/{sale_id}/delete")
+            assert_true("/sales/bulk-delete" in sales_code, "sales.py contains /sales/bulk-delete")
+            assert_true("db.delete" in sales_code, "sales.py deletes SaleItem or verifies cascade")
+            assert_true("delete(SaleItem)" in sales_code, "sales.py deletes SaleItem explicitly before Sale")
+            assert_true("SaleItem.sale_id" in sales_code, "sales.py should check SaleItem.sale_id when deleting")
+            assert_true("void" not in sales_code, "sales.py should not contain void flow")
+            assert_true("PosCart" in sales_code, "sales.py should check PosCart")
+            assert_true("PosCart.source_sale_id" in sales_code, "sales.py should check PosCart.source_sale_id")
+            assert_true("PosCartItem.source_sale_id" not in sales_code, "sales.py should reject PosCartItem.source_sale_id")
+            assert_true("_parse_int_ids" in sales_code, "sales bulk delete must ignore invalid submitted IDs")
+
+        with open("app/templates/sales.html", "r", encoding="utf-8") as f:
+            sales_html = f.read()
+            assert_true("row-checkbox" in sales_html, "sales.html contains sale row checkboxes")
+            assert_true("selectAllVisible" in sales_html, "sales.html contains select-all checkbox")
+            assert_true("Delete Selected Bills" in sales_html, "sales.html contains Delete Selected Bills")
+            assert_true('form="bulkDeleteForm"' in sales_html, "sales.html uses form attribute on checkboxes")
+            assert_true('</form>' in sales_html.split('<div class="table-wrap">')[0], "sales table is not wrapped inside bulkDeleteForm")
+            assert_true("Synced bills and bills loaded in POS will be skipped" in sales_html, "sales bulk delete confirmation must match backend skip rules")
+
+        with open("app/routes/variants.py", "r", encoding="utf-8") as f:
+            variants_code = f.read()
+            assert_true("/bulk-delete" in variants_code, "variants.py contains /variants/bulk-delete")
+            assert_true(
+                variants_code.find('@router.post("/bulk-delete")') < variants_code.find('@router.post("/{variant_id}")'),
+                "variants bulk delete route must be declared before /{variant_id}",
+            )
+            assert_true("_parse_int_ids" in variants_code, "variants bulk delete must ignore invalid submitted IDs")
+            assert_true("SaleItem" in variants_code, "variants.py still checks SaleItem")
+            assert_true("PosCartItem" in variants_code, "variants.py still checks PosCartItem")
+            assert_true("PrintJob" in variants_code, "variants.py still checks PrintJob")
+
+        with open("app/templates/variants.html", "r", encoding="utf-8") as f:
+            variants_html = f.read()
+            assert_true("row-checkbox" in variants_html, "variants.html contains item row checkboxes")
+            assert_true("itemSearch" in variants_html, "variants.html contains search bar")
+            assert_true("request.query_params.get('search'" in variants_html, "variants.html prefills search bar from query param")
+            assert_true('form="bulkDeleteForm"' in variants_html, "variants.html uses form attribute on checkboxes")
+            assert_true('</form>' in variants_html.split('<div class="table-wrap">')[0], "variants table is not wrapped inside bulkDeleteForm")
+            assert_true('colspan="14"' in variants_html, "variants.html uses 14 colspans for empty state")
+            assert_true("Items with sales, carts, or print history will be skipped" in variants_html, "variants bulk delete confirmation must match backend skip rules")
+
+        with open("app/db.py", "r", encoding="utf-8") as f:
+            db_code = f.read()
+            assert_true("voided_at" not in db_code, "db.py should not have void columns")
 
         print("Smoke checks passed")
     finally:

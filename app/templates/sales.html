@@ -13,10 +13,10 @@
 
   <style>
     .quick-filter-btn {
-      cursor: pointer; 
-      border: 1px solid #cbd5e1; 
-      background: #f8fafc; 
-      color: #334155; 
+      cursor: pointer;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #334155;
       transition: all 0.2s;
     }
     .quick-filter-btn:hover {
@@ -77,15 +77,15 @@
       const day = String(date.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     }
-    
+
     function applyQuickFilter(period) {
       const startInput = document.getElementById('start_date');
       const endInput = document.getElementById('end_date');
       const now = new Date();
-      
+
       let start = null;
       let end = null;
-      
+
       if (period === 'today') {
         start = end = now;
       } else if (period === 'yesterday') {
@@ -103,7 +103,7 @@
         document.querySelector('.sales-filter-form').submit();
         return;
       }
-      
+
       startInput.value = formatLocalDate(start);
       endInput.value = formatLocalDate(end);
       document.querySelector('.sales-filter-form').submit();
@@ -113,18 +113,18 @@
       const startVal = document.getElementById('start_date').value;
       const endVal = document.getElementById('end_date').value;
       const now = new Date();
-      
+
       let activePeriod = 'all';
-      
+
       if (startVal || endVal) {
         const todayStr = formatLocalDate(now);
         const yesterdayStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-        
+
         const day = now.getDay() || 7;
         const weekStartStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1));
         const monthStartStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
         const monthEndStr = formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-        
+
         if (startVal === todayStr && endVal === todayStr) {
           activePeriod = 'today';
         } else if (startVal === yesterdayStr && endVal === yesterdayStr) {
@@ -137,7 +137,7 @@
           activePeriod = null; // Custom dates
         }
       }
-      
+
       if (activePeriod) {
         const btn = document.querySelector(`.quick-filter-btn[data-period="${activePeriod}"]`);
         if (btn) btn.classList.add('active');
@@ -178,10 +178,25 @@
     </div>
   </form>
 
+  {% if request.query_params.get("deleted") %}
+  <div class="panel" style="background: #ecfdf5; border-color: #10b981; color: #065f46; margin-bottom: 1rem;">
+    Successfully deleted {{ request.query_params.get("deleted") }} bill(s).
+    {% if request.query_params.get("skipped") and request.query_params.get("skipped") != "0" %}
+    <br>Skipped {{ request.query_params.get("skipped") }} bill(s) because they are synced to Tally or loaded in POS.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <form id="bulkDeleteForm" method="post" action="/sales/bulk-delete" onsubmit="return handleBulkDelete(event);">
+    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+      <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Bills</button>
+    </div>
+  </form>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
+          <th style="width: 40px;"><input type="checkbox" id="selectAllVisible"></th>
           <th>Bill No</th>
           <th>Date</th>
           <th>Items</th>
@@ -194,7 +209,8 @@
       </thead>
       <tbody>
         {% for sale in sales %}
-          <tr>
+          <tr class="sale-row">
+            <td><input type="checkbox" name="sale_ids" value="{{ sale.id }}" class="row-checkbox" form="bulkDeleteForm" {% if sale.tally_sync_status == 'synced' %}disabled title="Cannot delete synced bill"{% endif %}></td>
             <td class="mono">{{ sale.bill_number }}</td>
             <td>{{ sale.created_at|local_time }}</td>
             <td>{{ sale.items|length }}</td>
@@ -202,10 +218,13 @@
             <td>{{ sale.payment_mode|title }}</td>
             <td><span class="badge {{ 'ok' if sale.print_status == 'printed' else 'warn' if sale.print_status == 'failed' else 'muted' }}">{{ sale.print_status }}</span></td>
             <td><span class="badge {{ 'ok' if sale.tally_sync_status == 'synced' else 'warn' if sale.tally_sync_status in ['failed', 'mismatch'] else 'muted' }}">{{ sale.tally_sync_status }}</span></td>
-            <td class="row-actions">
+            <td class="row-actions" style="flex-wrap: nowrap;">
               <a class="button small" href="/sales/{{ sale.id }}">Open</a>
               <a class="button small" href="/pos?sale_id={{ sale.id }}">Open in POS</a>
               <a class="button small" href="/sales/{{ sale.id }}/receipt">Receipt</a>
+              <form method="post" action="/sales/{{ sale.id }}/delete" style="display: inline;" onsubmit="return confirm('Are you sure you want to permanently delete this bill? This cannot be undone.');">
+                <button type="submit" class="button small danger" {% if sale.tally_sync_status == 'synced' %}disabled title="Cannot delete synced bill"{% endif %}>Delete</button>
+              </form>
             </td>
           </tr>
         {% else %}
@@ -243,10 +262,52 @@
   </dialog>
 
   <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const selectAll = document.getElementById('selectAllVisible');
+      const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+      const rows = document.querySelectorAll('.sale-row');
+
+      function updateBtn() {
+        if (!bulkDeleteBtn) return;
+        const checked = document.querySelectorAll('.row-checkbox:checked').length;
+        bulkDeleteBtn.disabled = checked === 0;
+      }
+
+      if (selectAll) {
+        selectAll.addEventListener('change', (e) => {
+          rows.forEach(row => {
+            if (row.style.display !== 'none') {
+              const cb = row.querySelector('.row-checkbox');
+              if (cb && !cb.disabled) cb.checked = e.target.checked;
+            }
+          });
+          updateBtn();
+        });
+      }
+
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateBtn);
+      });
+    });
+
+    function handleBulkDelete(event) {
+      const checked = document.querySelectorAll('.row-checkbox:checked').length;
+      if (checked === 0) {
+        event.preventDefault();
+        return false;
+      }
+      const confirmMsg = prompt(`You are about to permanently delete ${checked} bill(s). Synced bills and bills loaded in POS will be skipped. Type DELETE to confirm.`);
+      if (confirmMsg !== 'DELETE') {
+        event.preventDefault();
+        return false;
+      }
+      return true;
+    }
+
     function parseTallyDate(input) {
       const clean = (input || "").trim().replace(/\D/g, "");
       if (!clean || clean.length < 4) return null;
-      
+
       const dd = parseInt(clean.substring(0, 2), 10);
       const mm = parseInt(clean.substring(2, 4), 10);
       if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return null;
@@ -311,7 +372,7 @@
             const res = await fetch(`/sales/search-names?q=${encodeURIComponent(q)}`);
             const data = await res.json();
             if (data.ok && data.items.length > 0) {
-              itemSearchSuggestions.innerHTML = data.items.map((item, i) => 
+              itemSearchSuggestions.innerHTML = data.items.map((item, i) =>
                 `<div class="sales-item-suggestion" data-index="${i}">${item}</div>`
               ).join("");
               itemSearchSuggestions.hidden = false;
@@ -332,7 +393,7 @@
           document.querySelector('.sales-filter-form').submit();
         }
       });
-      
+
       document.addEventListener("click", (e) => {
         if (!itemSearchInput.contains(e.target) && !itemSearchSuggestions.contains(e.target)) {
           itemSearchSuggestions.hidden = true;
@@ -343,7 +404,7 @@
     document.addEventListener("keydown", (e) => {
       const active = document.activeElement;
       const isInput = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.tagName === "BUTTON" || active.tagName === "A" || active.isContentEditable);
-      
+
       const singleModal = document.getElementById("singleDateModal");
       const rangeModal = document.getElementById("rangeDateModal");
       const isModalOpen = singleModal.open || rangeModal.open;
@@ -381,7 +442,7 @@
       if (active === itemSearchInput && !itemSearchSuggestions.hidden) {
         const items = Array.from(itemSearchSuggestions.querySelectorAll(".sales-item-suggestion"));
         let selectedIndex = items.findIndex(el => el.classList.contains("selected"));
-        
+
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           e.preventDefault();
           if (items.length === 0) return;
@@ -436,7 +497,7 @@
         if (!rows.length) return;
         let selectedIndex = rows.findIndex(r => r.classList.contains("selected"));
         if (selectedIndex === -1) selectedIndex = 0;
-        
+
         if (e.key === "ArrowDown") {
           selectedIndex = selectedIndex < rows.length - 1 ? selectedIndex + 1 : rows.length - 1;
         } else {

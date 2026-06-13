@@ -45,7 +45,7 @@
   .sd-badge.success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
   .sd-badge.warning { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
   .sd-badge.info { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-  
+
   .sd-actions {
     display: flex;
     gap: 12px;
@@ -150,7 +150,7 @@
   }
   .sd-table-card tr:last-child td { border-bottom: none; }
   .sd-table-card tr:hover td { background: #f8fafc; }
-  
+
   .sd-return-badge {
     display: inline-block;
     margin-left: 8px;
@@ -194,6 +194,12 @@
 </style>
 
 <div class="sale-detail-page">
+  {% if error %}
+  <div class="panel" style="background: #fef2f2; border-color: #ef4444; color: #991b1b; margin-bottom: 1rem; padding: 12px; border-radius: 8px; font-weight: 600;">
+    {{ error }}
+  </div>
+  {% endif %}
+
   <div class="sd-header">
     <div class="sd-header-left">
       <h1>
@@ -225,7 +231,7 @@
         <dt>Tally Sync Status</dt><dd>{{ sale.tally_sync_status|title }}</dd>
       </dl>
     </div>
-    
+
     <div class="sd-card">
       <h2>Tally Integration</h2>
       <dl class="sd-dl">
@@ -284,6 +290,13 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <div style="margin-top: 2rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+    <h3 style="color: #ef4444; margin-bottom: 0.5rem; font-size: 14px; font-weight: 700; text-transform: uppercase;">Danger Zone</h3>
+    <form method="post" action="/sales/{{ sale.id }}/delete" onsubmit="return confirm('Are you sure you want to permanently delete this bill? This cannot be undone.');">
+      <button type="submit" class="button danger" {% if sale.tally_sync_status == 'synced' %}disabled title="Cannot delete synced bill"{% endif %}>Permanently Delete Bill</button>
+    </form>
   </div>
 </div>
 {% endblock %}

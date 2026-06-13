@@ -9,10 +9,29 @@
     <a class="button primary" href="/variants/new">New Variant</a>
   </section>
 
+  <div style="margin-bottom: 1rem; display: flex; gap: 1rem;">
+    <input type="text" id="itemSearch" value="{{ request.query_params.get('search', '') }}" placeholder="Scan barcode or type article / name..." style="flex: 1; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px;">
+  </div>
+
+  {% if request.query_params.get("deleted") %}
+  <div class="panel" style="background: #ecfdf5; border-color: #10b981; color: #065f46; margin-bottom: 1rem;">
+    Successfully deleted {{ request.query_params.get("deleted") }} item(s).
+    {% if request.query_params.get("skipped") and request.query_params.get("skipped") != "0" %}
+    <br>Skipped {{ request.query_params.get("skipped") }} item(s) because they have history in sales or carts.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <form id="bulkDeleteForm" method="post" action="/variants/bulk-delete" onsubmit="return handleBulkDelete(event);">
+    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+      <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Items</button>
+    </div>
+  </form>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
+          <th style="width: 40px;"><input type="checkbox" id="selectAllVisible"></th>
           <th>Barcode</th>
           <th>Family</th>
           <th>Brand</th>
@@ -30,7 +49,8 @@
       </thead>
       <tbody>
         {% for variant in variants %}
-          <tr>
+          <tr class="variant-row" data-barcode="{{ variant.barcode|default('', true)|lower }}" data-family="{{ variant.family.family_name|default('', true)|lower }}" data-name="{{ variant.item_display_name|default('', true)|lower }}" data-article="{{ variant.article_no|default('', true)|lower }}" data-brand="{{ variant.brand|default('', true)|lower }}" data-size="{{ variant.size|default('', true)|lower }}" data-mrp="{{ variant.mrp|default('', true) }}" data-rate="{{ variant.selling_price|default('', true) }}">
+            <td><input type="checkbox" name="variant_ids" value="{{ variant.id }}" class="row-checkbox" form="bulkDeleteForm"></td>
             <td class="mono">{{ variant.barcode }}</td>
             <td>{{ variant.family.family_name }}</td>
             <td>{{ variant.brand or "" }}</td>
@@ -46,20 +66,104 @@
             <td>{{ variant.coded_price or "" }}</td>
             <td>{{ variant.created_at|local_time }}</td>
             <td><span class="badge {{ 'ok' if variant.status == 'active' else 'muted' }}">{{ variant.status }}</span></td>
-            <td class="row-actions">
+            <td class="row-actions" style="flex-wrap: nowrap;">
               <a class="button small" href="/variants/{{ variant.id }}/preview">Preview</a>
               <a class="button small" href="/variants/{{ variant.id }}/edit">Edit</a>
               {% if variant.status == "active" %}
-                <form method="post" action="/variants/{{ variant.id }}/deactivate"><button class="button small" type="submit">Deactivate</button></form>
+                <form method="post" action="/variants/{{ variant.id }}/deactivate" style="display: inline;"><button class="button small" type="submit">Deactivate</button></form>
               {% else %}
-                <form method="post" action="/variants/{{ variant.id }}/activate"><button class="button small" type="submit">Activate</button></form>
+                <form method="post" action="/variants/{{ variant.id }}/activate" style="display: inline;"><button class="button small" type="submit">Activate</button></form>
               {% endif %}
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="13" class="empty">No label variants yet.</td></tr>
+          <tr><td colspan="14" class="empty">No label variants yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const searchInput = document.getElementById('itemSearch');
+      const selectAll = document.getElementById('selectAllVisible');
+      const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+      const rows = document.querySelectorAll('.variant-row');
+
+      if (searchInput) {
+        searchInput.focus();
+
+        function applyFilter() {
+          const term = searchInput.value.toLowerCase().trim();
+          rows.forEach(row => {
+            if (!term) {
+              row.style.display = '';
+              return;
+            }
+            const text = [
+              row.dataset.barcode,
+              row.dataset.family,
+              row.dataset.name,
+              row.dataset.article,
+              row.dataset.brand,
+              row.dataset.size,
+              row.dataset.mrp,
+              row.dataset.rate
+            ].join(' ');
+
+            if (text.includes(term)) {
+              row.style.display = '';
+            } else {
+              row.style.display = 'none';
+              const cb = row.querySelector('.row-checkbox');
+              if (cb) cb.checked = false;
+            }
+          });
+          updateBtn();
+        }
+
+        searchInput.addEventListener('input', applyFilter);
+
+        if (searchInput.value.trim() !== '') {
+          applyFilter();
+        }
+      }
+
+      function updateBtn() {
+        if (!bulkDeleteBtn) return;
+        const checked = document.querySelectorAll('.row-checkbox:checked').length;
+        bulkDeleteBtn.disabled = checked === 0;
+      }
+
+      if (selectAll) {
+        selectAll.addEventListener('change', (e) => {
+          rows.forEach(row => {
+            if (row.style.display !== 'none') {
+              const cb = row.querySelector('.row-checkbox');
+              if (cb) cb.checked = e.target.checked;
+            }
+          });
+          updateBtn();
+        });
+      }
+
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateBtn);
+      });
+    });
+
+    function handleBulkDelete(event) {
+      const checked = document.querySelectorAll('.row-checkbox:checked').length;
+      if (checked === 0) {
+        event.preventDefault();
+        return false;
+      }
+      const confirmMsg = prompt(`You are about to permanently delete ${checked} item(s). Items with sales, carts, or print history will be skipped. Type DELETE to confirm.`);
+      if (confirmMsg !== 'DELETE') {
+        event.preventDefault();
+        return false;
+      }
+      return true;
+    }
+  </script>
 {% endblock %}

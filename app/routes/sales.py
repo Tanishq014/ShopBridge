@@ -4,17 +4,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from io import BytesIO
 import qrcode
 import urllib.parse
-from sqlalchemy import select, exists, or_, func
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import TEMPLATES_DIR
 from app.db import get_db
-from app.models import Sale, SaleItem
+from app.models import PosCart, Sale, SaleItem
 from app.services.template_filters import register_template_filters
 from app.services.time_service import LOCAL_TIMEZONE
 
@@ -77,6 +77,87 @@ def _sale_payload(sale: Sale) -> dict[str, object]:
         "items": items,
         "count": sum(item.qty for item in sale.items),
     }
+
+
+def _parse_int_ids(values: list[str]) -> list[int]:
+    ids: list[int] = []
+    for value in values:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def _sale_loaded_in_pos(db: Session, sale_id: int) -> bool:
+    return db.execute(
+        select(PosCart.id).where(
+            PosCart.source_sale_id == sale_id,
+            PosCart.status.in_(["active", "held"]),
+        )
+    ).first() is not None
+
+
+def _unlink_closed_sale_copies(db: Session, sale_id: int) -> None:
+    db.execute(
+        update(PosCart)
+        .where(
+            PosCart.source_sale_id == sale_id,
+            PosCart.status.notin_(["active", "held"]),
+        )
+        .values(source_sale_id=None)
+    )
+
+
+@router.post("/sales/{sale_id}/delete")
+def delete_sale(sale_id: int, request: Request, db: Session = Depends(get_db)):
+    sale = _sale_or_404(db, sale_id)
+    if sale.tally_sync_status == "synced":
+        return templates.TemplateResponse(request, "sale_detail.html", {"request": request, "sale": sale, "error": "This bill is already synced to Tally. Deleting it may cause inconsistencies. Un-sync or cancel it first."}, status_code=400)
+
+    if _sale_loaded_in_pos(db, sale.id):
+        return templates.TemplateResponse(request, "sale_detail.html", {"request": request, "sale": sale, "error": "This bill is currently loaded in POS. Close/cancel that edit first."}, status_code=400)
+
+    _unlink_closed_sale_copies(db, sale.id)
+    db.execute(delete(SaleItem).where(SaleItem.sale_id == sale.id))
+    db.delete(sale)
+    db.commit()
+    url = str(request.url_for("list_sales")) + "?deleted=1"
+    return RedirectResponse(url, status_code=303)
+
+
+@router.post("/sales/bulk-delete")
+async def bulk_delete_sales(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    sale_ids = _parse_int_ids(form.getlist("sale_ids"))
+    if not sale_ids:
+        return RedirectResponse("/sales", status_code=303)
+
+    deleted = 0
+    skipped = 0
+    for sale_id in sale_ids:
+        sale = db.get(Sale, sale_id)
+        if not sale:
+            continue
+        if sale.tally_sync_status == "synced":
+            skipped += 1
+            continue
+
+        if _sale_loaded_in_pos(db, sale.id):
+            skipped += 1
+            continue
+
+        _unlink_closed_sale_copies(db, sale.id)
+        db.execute(delete(SaleItem).where(SaleItem.sale_id == sale.id))
+        db.delete(sale)
+        deleted += 1
+
+    db.commit()
+
+    url = str(request.url_for("list_sales")) + f"?deleted={deleted}"
+    if skipped:
+        url += f"&skipped={skipped}"
+    return RedirectResponse(url, status_code=303)
 
 
 @router.get("/sales", response_class=HTMLResponse)
