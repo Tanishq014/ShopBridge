@@ -1137,6 +1137,9 @@ def main() -> None:
         assert_true('id="phoneVoicePrintAllButton"' in phone_print_markup, "Voice Fill must have Print All button")
         assert_true('pvPrintVoiceCard' in phone_print_markup, "Voice Fill must print individual cards")
         assert_true('pvApplyVoiceCard' in phone_print_markup, "Voice Fill must apply individual cards")
+        assert_true('nativeFields.force_new_barcode = "";' in phone_print_markup, "Voice Fill force_new_barcode must be blank")
+        assert_true('nativeFields.extra_field_values = JSON.stringify(extraValues);' in phone_print_markup, "Voice Fill must stringify custom extraValues")
+        assert_true('JSONResponse' in open('app/routes/workflow.py', 'r', encoding='utf-8').read(), "workflow.py must import JSONResponse")
         # 3. Voice Fill card print does not call phoneSubmitPrintButton.click()
         assert_true('phoneSubmitPrintButton.click()' not in phone_print_markup.split('pvPrintVoiceCard')[1], "Voice Fill print must not call phoneSubmitPrintButton.click()")
         # 4. Voice Fill card print does not use global phonePrinting as its card lock

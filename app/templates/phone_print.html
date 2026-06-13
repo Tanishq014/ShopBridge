@@ -2837,7 +2837,7 @@
             category: phoneCategory ? phoneCategory.value : "clothes",
             print_without_billing_price: document.getElementById("phonePrintWithoutBillingPrice") ? (document.getElementById("phonePrintWithoutBillingPrice").checked ? "true" : "") : "",
             selected_price_code_key: document.getElementById("phoneSelectedPriceCodeKey") ? document.getElementById("phoneSelectedPriceCodeKey").value : "",
-            extra_field_values: document.getElementById("phoneExtraFieldValues") ? document.getElementById("phoneExtraFieldValues").value : ""
+            extra_field_values: "" // Will be populated dynamically
         };
 
         const hiddenBool = id => {
@@ -2845,7 +2845,7 @@
             return el && String(el.value || "").toLowerCase() === "true" ? "true" : "";
         };
 
-        nativeFields.force_new_barcode = hiddenBool("phoneForceNewBarcode");
+        nativeFields.force_new_barcode = "";
         nativeFields.coded_price_manual_override = hiddenBool("phoneCodedManualOverride");
 
         // Voice Fill items never have a pre-existing source variant when generated.
@@ -2853,6 +2853,39 @@
         nativeFields.existing_variant_id = "";
         nativeFields.barcode = "";
         nativeFields.manual_barcode_override = "";
+
+
+        const builtInVoiceFields = new Set([
+          "family_name",
+          "brand",
+          "item_display_name",
+          "design",
+          "article",
+          "article_no",
+          "size",
+          "batch",
+          "batch_no",
+          "expiry",
+          "mrp",
+          "selling_price",
+          "rate",
+          "coded_price",
+          "coded_price_spoken",
+          "copies",
+          "barcode",
+          "qr",
+          "qr_code",
+          "ean",
+          "upc"
+        ]);
+
+        const extraValues = {};
+        Object.entries(f).forEach(([key, value]) => {
+          if (!builtInVoiceFields.has(key) && String(value || "").trim()) {
+            extraValues[key] = String(value).trim();
+          }
+        });
+        nativeFields.extra_field_values = JSON.stringify(extraValues);
 
         let finalFamilyId = "";
         const mainFamilyName = typeof phoneFamilyName !== "undefined" && phoneFamilyName ? phoneFamilyName.value.trim().toUpperCase() : "";
