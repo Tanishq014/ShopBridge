@@ -94,12 +94,21 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
         return is_in_template(field_name)
 
     def value_or_preserved(field_name: str, raw_value: str, attr_name: str | None = None) -> str:
+        detail_fields = {"item_display_name", "design", "article", "article_no", "size", "batch_no", "expiry", "brand"}
+
+        # Hidden detail fields must not leak/save ghost values from another template.
+        if field_name in detail_fields and not is_in_template(field_name):
+            return ""
+
         clean_value = (raw_value or "").strip()
         if clean_value:
             return clean_value
+
+        # Keep old preserve behavior only for non-detail hidden fields/source variant compatibility.
         if source_variant and not is_in_template(field_name):
             stored_value = getattr(source_variant, attr_name or field_name, None)
             return "" if stored_value is None else str(stored_value)
+
         return ""
 
     final_category = data.category.strip().lower()

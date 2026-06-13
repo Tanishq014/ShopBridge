@@ -113,6 +113,9 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
         if required_field not in fieldnames:
             fieldnames.append(required_field)
         row.setdefault(required_field, "")
+    for key in list(row.keys()):
+        if key not in fieldnames:
+            fieldnames.append(key)
 
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)

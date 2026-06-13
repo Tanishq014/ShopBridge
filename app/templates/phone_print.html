@@ -993,7 +993,7 @@
       phoneApplyTemplate();
     }
 
-    function phoneSetFieldVisible(fieldName, visible, required = false) {
+    function phoneSetFieldVisible(fieldName, visible, required = false, clearHiddenValue = false) {
       const input = phoneInputByField[fieldName];
       const label = document.querySelector(`[data-phone-field="${fieldName}"]`);
       if (!input || !label) {
@@ -1001,6 +1001,10 @@
       }
       label.hidden = !visible;
       input.required = Boolean(visible && required);
+
+      if (!visible && clearHiddenValue && input.value) {
+        input.value = "";
+      }
     }
 
     function phoneSyncExtraValues() {
@@ -1029,12 +1033,14 @@
       const requiresItem = required.has("item_display_name") || required.has("design");
       document.getElementById("phoneItemLabel").textContent = required.has("design") ? "Design" : "Sticker Name";
 
-      phoneSetFieldVisible("brand", ready && required.has("brand"), required.has("brand") && !optionalTemplateFields.has("brand"));
-      phoneSetFieldVisible("item_display_name", ready && requiresItem, requiresItem && !optionalTemplateFields.has("item_display_name") && !optionalTemplateFields.has("design"));
-      phoneSetFieldVisible("article_no", ready && requiresArticle, requiresArticle && !optionalTemplateFields.has("article_no") && !optionalTemplateFields.has("article"));
-      phoneSetFieldVisible("size", ready && required.has("size"), required.has("size") && !optionalTemplateFields.has("size"));
-      phoneSetFieldVisible("batch_no", ready && required.has("batch_no"), required.has("batch_no") && !optionalTemplateFields.has("batch_no"));
-      phoneSetFieldVisible("expiry", ready && required.has("expiry"), required.has("expiry") && !optionalTemplateFields.has("expiry"));
+      const clearHiddenTemplateValue = Boolean(ready);
+
+      phoneSetFieldVisible("brand", ready && required.has("brand"), required.has("brand") && !optionalTemplateFields.has("brand"), clearHiddenTemplateValue);
+      phoneSetFieldVisible("item_display_name", ready && requiresItem, requiresItem && !optionalTemplateFields.has("item_display_name") && !optionalTemplateFields.has("design"), clearHiddenTemplateValue);
+      phoneSetFieldVisible("article_no", ready && requiresArticle, requiresArticle && !optionalTemplateFields.has("article_no") && !optionalTemplateFields.has("article"), clearHiddenTemplateValue);
+      phoneSetFieldVisible("size", ready && required.has("size"), required.has("size") && !optionalTemplateFields.has("size"), clearHiddenTemplateValue);
+      phoneSetFieldVisible("batch_no", ready && required.has("batch_no"), required.has("batch_no") && !optionalTemplateFields.has("batch_no"), clearHiddenTemplateValue);
+      phoneSetFieldVisible("expiry", ready && required.has("expiry"), required.has("expiry") && !optionalTemplateFields.has("expiry"), clearHiddenTemplateValue);
       phoneSetFieldVisible("coded_price", ready && required.has("coded_price"), false);
       phoneSetFieldVisible("mrp", ready, false);
       phoneSetFieldVisible("margin_percent", ready && required.has("coded_price"), false);
