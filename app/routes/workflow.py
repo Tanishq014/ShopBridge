@@ -753,6 +753,15 @@ def update_bartender_settings(
     return RedirectResponse("/settings?settings_saved=1", status_code=303)
 
 
+
+@router.post("/settings/receipt_printer")
+def update_receipt_printer_settings(
+    receipt_printer_name: str = Form(""),
+):
+    from app.services.settings_service import set_receipt_printer_name
+    set_receipt_printer_name(receipt_printer_name)
+    return RedirectResponse("/settings?settings_saved=1", status_code=303)
+
 @router.post("/settings/upi")
 def update_upi_settings(
     upi_vpa_1: str = Form(""),

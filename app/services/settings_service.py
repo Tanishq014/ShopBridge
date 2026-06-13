@@ -34,6 +34,8 @@ UPI_KEY_1_KEY = "upi_key_1"
 UPI_VPA_2_KEY = "upi_vpa_2"
 UPI_KEY_2_KEY = "upi_key_2"
 UPI_DEFAULT_VPA_KEY = "upi_default_vpa"
+RECEIPT_PRINTER_NAME_KEY = "receipt_printer_name"
+
 
 @dataclass(frozen=True)
 class UpiSettings:
@@ -487,3 +489,11 @@ def save_upi_settings(
     settings[UPI_DEFAULT_VPA_KEY] = default_vpa.strip()
     _write_settings(settings)
     return get_upi_settings()
+
+def get_receipt_printer_name() -> str:
+    return _read_settings().get(RECEIPT_PRINTER_NAME_KEY, "")
+
+def set_receipt_printer_name(name: str) -> None:
+    settings = _read_settings()
+    settings[RECEIPT_PRINTER_NAME_KEY] = (name or "").strip()
+    _write_settings(settings)

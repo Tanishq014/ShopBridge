@@ -90,7 +90,7 @@ def list_sales(
     db: Session = Depends(get_db)
 ):
     q = select(Sale).options(selectinload(Sale.items))
-    
+
     if start_date:
         try:
             sd = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=LOCAL_TIMEZONE)
@@ -137,7 +137,7 @@ def list_sales(
     sales = db.execute(
         q.order_by(Sale.created_at.desc(), Sale.id.desc()).limit(100)
     ).scalars().all()
-    
+
     return templates.TemplateResponse(
         request,
         "sales.html",
@@ -160,31 +160,31 @@ def search_sales_names(q: str = Query(""), db: Session = Depends(get_db)):
     term = q.strip().lower()
     if not term:
         return {"ok": True, "items": []}
-    
+
     like = f"%{term}%"
-    
+
     names_q = select(SaleItem.item_name).where(
         func.lower(SaleItem.item_name).like(like),
         SaleItem.item_name != None,
         SaleItem.item_name != ""
     )
-    
+
     tally_q = select(SaleItem.tally_stock_item_name).where(
         func.lower(SaleItem.tally_stock_item_name).like(like),
         SaleItem.tally_stock_item_name != None,
         SaleItem.tally_stock_item_name != ""
     )
-    
+
     names = db.execute(names_q).scalars().all()
     tally_names = db.execute(tally_q).scalars().all()
-    
+
     unique_names = set()
     for name in names + tally_names:
         if name:
             unique_names.add(name.strip())
-            
+
     sorted_names = sorted(list(unique_names), key=lambda x: x.lower())
-    
+
     return {"ok": True, "items": sorted_names[:20]}
 
 
@@ -198,6 +198,26 @@ def sale_detail(sale_id: int, request: Request, db: Session = Depends(get_db)):
             "sale": _sale_or_404(db, sale_id),
         },
     )
+
+
+
+
+@router.post("/sales/{sale_id}/receipt/direct")
+def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depends(get_db)):
+    from app.services.settings_service import get_receipt_printer_name
+    from app.services.receipt_print_service import print_receipt_direct
+
+    printer_name = get_receipt_printer_name()
+    if not printer_name or not printer_name.strip():
+        return {"ok": False, "error": "Receipt printer name is not configured."}
+
+    sale = _sale_or_404(db, sale_id)
+
+    try:
+        print_receipt_direct(printer_name, sale)
+        return {"ok": True, "message": "Receipt sent to printer"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/sales/{sale_id}/receipt", response_class=HTMLResponse)
@@ -223,13 +243,13 @@ def sale_upi_qr(sale_id: int, db: Session = Depends(get_db)):
     sale = _sale_or_404(db, sale_id)
     if not sale.upi_vpa:
         raise HTTPException(status_code=404, detail="No UPI VPA associated with this sale.")
-        
+
     amount = f"{Decimal(str(sale.total)).quantize(Decimal('0.01')):.2f}"
     name = urllib.parse.quote("Store")
     vpa = urllib.parse.quote(sale.upi_vpa, safe='@')
-    
+
     upi_url = f"upi://pay?pa={vpa}&pn={name}&am={amount}&cu=INR"
-    
+
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -240,9 +260,9 @@ def sale_upi_qr(sale_id: int, db: Session = Depends(get_db)):
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
-    
+
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    
+
     return Response(content=buf.getvalue(), media_type="image/png")

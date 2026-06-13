@@ -45,7 +45,7 @@
 <body class="receipt-body">
   <main class="receipt-page">
     <div class="receipt-actions no-print">
-      <button class="button primary" type="button" onclick="window.print()">Print</button>
+      <button class="button primary" type="button" onclick="tryDirectPrint()">Print</button>
       <a class="button" href="/sales/{{ sale.id }}">Back</a>
     </div>
 
@@ -189,11 +189,34 @@
       </footer>
     </section>
   </main>
-  <script>
-    window.onload = () => {
-      window.print();
-    }
-  </script>
+      <script>
+      function tryDirectPrint() {
+        const btn = document.querySelector('.receipt-actions .button.primary');
+        if (btn) btn.disabled = true;
+        fetch('/sales/{{ sale.id }}/receipt/direct', { method: 'POST' })
+          .then(res => res.json())
+          .then(data => {
+            if (btn) btn.disabled = false;
+            if (data && data.ok) {
+              alert(data.message || "Receipt sent to printer.");
+            } else {
+              window.print();
+            }
+          })
+          .catch(err => {
+            if (btn) btn.disabled = false;
+            console.error("Direct print failed:", err);
+            window.print();
+          });
+      }
+
+      window.onload = () => {
+        // We only auto-browser-print if we opened this as a fallback
+        // or just to quickly print. To avoid infinite loops of failed direct prints,
+        // we just call browser print on load like before.
+        window.print();
+      }
+    </script>
 </body>
 
 </html>

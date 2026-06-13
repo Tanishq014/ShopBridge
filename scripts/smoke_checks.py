@@ -1294,6 +1294,52 @@ def main() -> None:
         assert_true("???" not in phone_print_markup, "phone print template contains mojibake ???")
         assert_true("pvInputByKey(" in phone_print_markup, "field refs are guarded")
 
+
+        # Direct Receipt Printing Checks
+        with open("app/services/settings_service.py", "r", encoding="utf-8") as f:
+            settings_service_code = f.read()
+            assert_true("receipt_printer_name" in settings_service_code, "receipt_printer_name setting exists")
+
+        with open("app/routes/sales.py", "r", encoding="utf-8") as f:
+            sales_route_code = f.read()
+            assert_true("/sales/{sale_id}/receipt/direct" in sales_route_code, "/sales/{sale_id}/receipt/direct route exists")
+
+        import os
+        assert_true(os.path.exists("app/services/receipt_print_service.py"), "receipt_print_service.py exists")
+
+        with open("app/services/receipt_print_service.py", "r", encoding="utf-8") as f:
+            receipt_service_code = f.read()
+            assert_true("def print_receipt_direct" in receipt_service_code, "receipt service must expose print_receipt_direct")
+            assert_true("import win32print" in receipt_service_code, "receipt service must import win32print inside guarded function")
+            assert_true("pywin32" in receipt_service_code or "win32print" in receipt_service_code, "receipt service must give clear pywin32/win32print error")
+            assert_true("doc_started" in receipt_service_code, "receipt service uses doc_started")
+            assert_true("page_started" in receipt_service_code, "receipt service uses page_started")
+            assert_true("ClosePrinter" in receipt_service_code, "receipt service must close printer handle")
+            assert_true("EndDocPrinter" in receipt_service_code, "receipt service must end printer document")
+            assert_true("EndPagePrinter" in receipt_service_code, "receipt service must end printer page")
+            assert_true("(RTN)" in receipt_service_code, "Receipt formatter includes return/negative qty text")
+            assert_true("Pay using this UPI ID" in receipt_service_code, "Receipt formatter includes UPI/payment text if sale has VPA")
+            assert_true("Scan any UPI app to pay" not in receipt_service_code, "Receipt formatter should not tell users to scan since QR is not printed natively")
+
+        with open("app/templates/pos.html", "r", encoding="utf-8") as f:
+            pos_html_code = f.read()
+            assert_true("fetch(`/sales/${data.sale_id}/receipt/direct`" in pos_html_code, "POS tries direct print")
+            assert_true("window.open(`/sales/${data.sale_id}/receipt`" in pos_html_code, "POS fallback still opens receipt if direct print fails")
+            assert_true("printAfterSave" in pos_html_code.split("fetch(`/sales/${data.sale_id}/receipt/direct`")[0][-150:], "Save without Print does not call direct receipt print")
+            assert_true('"error"' in pos_html_code.split("Fallback to browser print")[1][:100], "POS direct print fallback status is error")
+
+        with open("app/templates/sale_receipt.html", "r", encoding="utf-8") as f:
+            sale_receipt_code = f.read()
+            assert_true("window.print()" in sale_receipt_code, "HTML receipt page still has browser print fallback")
+
+        with open("app/templates/settings.html", "r", encoding="utf-8") as f:
+            settings_html_code = f.read()
+            assert_true('name="receipt_printer_name"' in settings_html_code, "settings.html contains Receipt Printer field")
+
+        with open("app/routes/workflow.py", "r", encoding="utf-8") as f:
+            workflow_code = f.read()
+            assert_true("set_receipt_printer_name" in workflow_code, "settings route saves receipt_printer_name")
+
         print("Smoke checks passed")
     finally:
         db.close()

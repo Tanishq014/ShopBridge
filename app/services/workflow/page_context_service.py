@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import LabelVariant, PrintJob, ProductFamily, TemplateMaster
 from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
 from app.services.settings_service import (
+    get_receipt_printer_name,
     get_barcode_settings,
     get_bartender_settings,
     get_price_code_settings,
@@ -114,6 +115,7 @@ def settings_context(
         "scanner_url": scanner,
         "scanner_qr_url": qr_url_for_scanner(scanner),
         "scanner_ip_detected": scanner_ip_detected,
+        "receipt_printer_name": get_receipt_printer_name(),
         "phone_print_url": phone_print,
         "phone_print_qr_url": qr_url_for_phone_print(phone_print),
         "phone_print_ip_detected": phone_print_ip_detected,

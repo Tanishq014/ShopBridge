@@ -224,6 +224,21 @@
 
   <section class="panel setup-panel">
     <div class="section-line">
+      <h2>Receipt Printing</h2>
+    </div>
+    <form class="form-grid" method="post" action="/settings/receipt_printer">
+      <label style="grid-column: span 3;">
+        <span>Direct USB Thermal Printer Name</span>
+        <input type="text" class="outline-input" name="receipt_printer_name" value="{{ receipt_printer_name }}" placeholder="e.g. POS-58" />
+        <span class="hint-text">Exact name of the printer in Windows Control Panel. Leave blank to use browser-based HTML receipt fallback.</span>
+      </label>
+      <input type="hidden" name="action" value="update_receipt_printer">
+      <button class="button primary" style="grid-column: span 3;">Save Printer</button>
+    </form>
+  </section>
+
+  <section class="panel setup-panel">
+    <div class="section-line">
       <h2>UPI / Paytm QR Settings</h2>
     </div>
     <form class="form-grid three" method="post" action="/settings/upi">

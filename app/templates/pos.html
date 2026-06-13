@@ -2481,8 +2481,20 @@
              checkoutButton.disabled = false;
              checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
              if (printAfterSave && data.sale_id) {
-               window.open(`/sales/${data.sale_id}/receipt`, "_blank");
-               setStatus("Bill finalized and printed.", "success");
+               fetch(`/sales/${data.sale_id}/receipt/direct`, { method: "POST" })
+                 .then(res => res.json())
+                 .then(resData => {
+                   if (resData.ok) {
+                     setStatus("Bill finalized. " + (resData.message || "Receipt sent to printer."), "success");
+                   } else {
+                     window.open(`/sales/${data.sale_id}/receipt`, "_blank");
+                     setStatus("Bill finalized. Direct print unavailable: " + (resData.error || "Fallback to browser print."), "error");
+                   }
+                 })
+                 .catch(err => {
+                   window.open(`/sales/${data.sale_id}/receipt`, "_blank");
+                   setStatus("Bill finalized. Direct print error: " + err, "error");
+                 });
              } else {
                setStatus("Bill finalized. Started a new bill.", "success");
              }
