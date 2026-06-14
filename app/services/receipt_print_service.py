@@ -193,7 +193,11 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
             raise RuntimeError("Receipt screenshot may be clipped. Use browser receipt fallback.")
 
         if bbox:
-            im = im.crop((0, 0, im.size[0], min(im.size[1], bbox[3] + 20)))
+            # Crop to the actual width of the content (plus a small margin) to remove
+            # excess white space on the right, and crop the height to the bottom.
+            crop_right = min(im.size[0], bbox[2] + 10)
+            crop_bottom = min(im.size[1], bbox[3] + 20)
+            im = im.crop((0, 0, crop_right, crop_bottom))
 
         try:
             hDC = win32ui.CreateDC()
