@@ -367,3 +367,45 @@ def sale_upi_qr(sale_id: int, db: Session = Depends(get_db)):
     buf.seek(0)
 
     return Response(content=buf.getvalue(), media_type="image/png")
+
+@router.get("/sales/{sale_id}/receipt/debug-image")
+def debug_receipt_image(sale_id: int, request: Request, db: Session = Depends(get_db)):
+    sale = _sale_or_404(db, sale_id)
+    receipt_url = str(request.url_for("sale_receipt", sale_id=sale.id)) + "?hide_buttons=1"
+    
+    import os
+    import tempfile
+    from html2image import Html2Image
+    from PIL import Image, ImageChops
+    from io import BytesIO
+    from fastapi import Response
+
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        hti = Html2Image(output_path=tmpdirname)
+        edge_path = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+        if os.path.exists(edge_path):
+            hti.browser.executable = edge_path
+
+        img_filename = f"receipt_{sale.id}.png"
+        img_path = os.path.join(tmpdirname, img_filename)
+
+        hti.screenshot(url=receipt_url, save_as=img_filename, size=(450, 5000))
+
+        if not os.path.exists(img_path):
+            return Response("Failed to capture", status_code=500)
+
+        im = Image.open(img_path).convert('RGB')
+        bg = Image.new('RGB', im.size, (255, 255, 255))
+        diff = ImageChops.difference(im, bg)
+        bbox = diff.getbbox()
+
+        if bbox:
+            crop_left = max(0, bbox[0] - 5)
+            crop_right = min(im.size[0], bbox[2] + 5)
+            crop_bottom = min(im.size[1], bbox[3] + 20)
+            im = im.crop((crop_left, 0, crop_right, crop_bottom))
+
+        buf = BytesIO()
+        im.save(buf, format="PNG")
+        buf.seek(0)
+        return Response(content=buf.getvalue(), media_type="image/png")
