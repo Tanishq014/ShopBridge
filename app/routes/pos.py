@@ -890,7 +890,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
     variants.sort(key=rank)
 
     variant_results = []
-    for variant in variants[:12]:
+    for variant in variants[:20]:
         exact_barcode = bool(clean_barcode and variant.barcode == clean_barcode)
         exact_name = bool(lowered and variant.item_display_name and variant.item_display_name.strip().lower() == lowered)
         exact_tally = bool(lowered and variant.family and variant.family.tally_stock_item_name and variant.family.tally_stock_item_name.strip().lower() == lowered)
@@ -932,7 +932,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
 
     tally_items.sort(key=tally_rank)
     tally_results = []
-    for item in tally_items[:12]:
+    for item in tally_items[:20]:
         name_lower = (item.name or "").lower()
         aliases_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip() and a.strip().lower() != name_lower]
         exact_match = bool(lowered and (name_lower == lowered or lowered in aliases_list))
@@ -948,12 +948,16 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
             "exact_match": exact_match,
         })
 
-    exact_results = [result for result in variant_results if result.get("exact_barcode")]
+    exact_tally = [result for result in tally_results if result.get("exact_match")]
+    non_exact_tally = [result for result in tally_results if not result.get("exact_match")]
+    
+    exact_barcode = [result for result in variant_results if result.get("exact_barcode")]
     non_exact_variants = [result for result in variant_results if not result.get("exact_barcode")]
-    results = exact_results + tally_results + non_exact_variants
+    
+    results = exact_tally + exact_barcode + non_exact_tally + non_exact_variants
     return {
         "ok": True,
-        "items": results[:12],
+        "items": results[:20],
     }
 
 
@@ -1171,7 +1175,7 @@ async def pos_lookup_barcodes(request: Request, db: Session = Depends(get_db)):
         if candidate and candidate not in seen:
             candidates.append(candidate)
             seen.add(candidate)
-        if len(candidates) >= 12:
+        if len(candidates) >= 20:
             break
 
     matches = []
@@ -1268,10 +1272,6 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
             return _json_error("Rate cannot be negative.", status_code=400, status="invalid_rate")
         item.rate_snapshot = rate
         item.unit_price = rate
-
-    if item.mrp_snapshot is not None and item.rate_snapshot is not None:
-        if item.mrp_snapshot < item.rate_snapshot:
-            return _json_error("MRP cannot be lower than Rate.", status_code=400, status="invalid_mrp")
 
     db.add(item)
     db.commit()
