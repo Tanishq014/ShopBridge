@@ -684,7 +684,7 @@
         closeSuggestions();
         return;
       }
-      state.suggestionIndex = Math.max(0, Math.min(state.suggestionIndex, optionCount - 1));
+      state.suggestionIndex = Math.max(-1, Math.min(state.suggestionIndex, optionCount - 1));
       state.suggestions.forEach((item, index) => {
         const option = document.createElement("button");
         option.type = "button";
@@ -1470,13 +1470,8 @@
       let nextIndex;
       if (!hasActiveNav) {
         if (delta < 0) {
-          const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
-          if (hasItems) {
-            await startNewBillSafe();
-          } else {
-            setStatus("Start of bill list.", "info");
-            focusItemInput(false);
-          }
+          setStatus("Already at current bill.", "info");
+          focusItemInput(false);
           return;
         }
         nextIndex = 0;
@@ -1526,7 +1521,7 @@
             return;
           }
           state.suggestions = data.items || [];
-          state.suggestionIndex = state.suggestions.length ? 0 : -1;
+          state.suggestionIndex = -1;
           renderSuggestions();
         } catch (error) {
           closeSuggestions();
@@ -2036,7 +2031,7 @@
           return;
         }
         state.skipNextChangeSaveFor = {itemId: itemId, fieldName};
-        
+
         // Signal that a focus transition is happening so renderCart doesn't steal focus
         state.focusTransition = true;
         const updated = await saveCartField(rowIndex, fieldName);
@@ -2372,17 +2367,23 @@
     async function submitItemInput() {
       if (!searchPanel.hidden && suggestionOptionCount()) {
         const typed = searchInput.value.trim().toLowerCase();
-        const exactBarcode = state.suggestions.find(item => (
-          item.result_type === "barcode" &&
-          item.barcode &&
-          (item.exact_barcode || item.barcode.toLowerCase() === typed)
+        const exactMatch = state.suggestions.find(item => (
+          item.exact_barcode || item.exact_match
         ));
-        if (exactBarcode) {
-          await addBarcode(exactBarcode.barcode, !!exactBarcode.missing_price);
+
+        if (state.suggestionIndex === -1) {
+          if (exactMatch) {
+            if (exactMatch.result_type === "barcode") {
+              await addBarcode(exactMatch.barcode, !!exactMatch.missing_price);
+            } else {
+              await addTallyItem(exactMatch.id || exactMatch.tally_item_id);
+            }
+            return;
+          }
+        } else {
+          await selectSuggestion(state.suggestionIndex);
           return;
         }
-        await selectSuggestion(state.suggestionIndex);
-        return;
       }
       await addBarcode(searchInput.value);
     }
@@ -2978,7 +2979,7 @@
         if (isLineInput && !await saveFocusedLineInput()) {
           return;
         }
-        await navigateBillList(event.key === "PageUp" ? -1 : 1);
+        await navigateBillList(event.key === "PageUp" ? 1 : -1);
         return;
       }
       if (event.key === "Escape") {

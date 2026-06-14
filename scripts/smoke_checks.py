@@ -221,7 +221,7 @@ def main() -> None:
         assert_true("navigateBillList" in pos_markup and "heldBillList" in pos_markup, "POS held bill navigation is missing")
         assert_true("searchInput.addEventListener(\"input\"" in pos_markup and "state.heldSelectionActive = false" in pos_markup, "searchInput input clears heldSelectionActive")
         assert_true("navigateBillList" in pos_markup and "billNavIndex" in pos_markup and "billNavItems" in pos_markup, "POS bill navigation state and function are present")
-        assert_true("nextIndex = 0" in pos_markup and "Start of bill list" in pos_markup and "End of bill list" in pos_markup, "PageDown opens index 0 when no current index; navigation does not wrap")
+        assert_true("nextIndex = 0" in pos_markup and "Already at current bill." in pos_markup and "End of bill list" in pos_markup, "PageUp opens index 0 when no current index; PageDown from current bill must not start a new bill")
         assert_true("loadSaleForEdit" in pos_markup and "/pos/cart/load-sale/" in pos_markup, "Previous sales open through loadSaleForEdit using edit endpoint")
         assert_true("window.location.href" not in pos_markup or "/pos?sale_id" not in pos_markup, "Side list must not navigate via window.location.href to ?sale_id")
         assert_true("postCartAction(\"/pos/cart/clear\"" in pos_markup and "setPreviewState(false, null)" in pos_markup, "clear-cart response with normal cart resets preview state")
@@ -231,8 +231,8 @@ def main() -> None:
         # Original-edit mode: checkout wording must be correct
         assert_true("Save changes to original bill" in pos_markup, "POS original-edit checkout must say 'Save changes to original bill'")
         assert_true("state.openedSaleMode = \"edit\"" in pos_markup, "loadSaleForEdit must set state.openedSaleMode to 'edit'")
-        # Navigation: first PageDown must open index 0, not skip it
-        assert_true("hasActiveNav" in pos_markup and "nextIndex = 0" in pos_markup, "navigateBillList must use hasActiveNav guard and open index 0 on first PageDown")
+        # Navigation: first PageUp must open index 0, not skip it
+        assert_true("hasActiveNav" in pos_markup and "nextIndex = 0" in pos_markup and 'event.key === "PageUp" ? 1 : -1' in pos_markup, "navigateBillList must use hasActiveNav guard and open index 0 on first PageUp")
         # Shared helper: double-click and PgUp/PgDn must both go through the same safe path
         assert_true("openBillNavItemAt" in pos_markup, "POS must have openBillNavItemAt() shared navigation helper")
         assert_true("skipDiscardConfirm" in pos_markup, "loadSaleForEdit must accept skipDiscardConfirm to avoid double confirm")

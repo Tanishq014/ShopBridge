@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import TEMPLATES_DIR
@@ -44,14 +44,7 @@ def _parse_int_ids(values: list[str]) -> list[int]:
 
 
 def _variant_has_history(db: Session, variant_id: int) -> bool:
-    return any(
-        db.execute(query).first()
-        for query in (
-            select(SaleItem.id).where(SaleItem.label_variant_id == variant_id),
-            select(PosCartItem.id).where(PosCartItem.variant_id == variant_id),
-            select(PrintJob.id).where(PrintJob.variant_id == variant_id),
-        )
-    )
+    return db.execute(select(SaleItem.id).where(SaleItem.label_variant_id == variant_id)).first() is not None
 
 
 def _form_choices(db: Session):
@@ -176,6 +169,8 @@ async def bulk_delete_variants_async(request: Request, db: Session = Depends(get
             skipped += 1
             continue
 
+        db.execute(delete(PrintJob).where(PrintJob.variant_id == variant.id))
+        db.execute(delete(PosCartItem).where(PosCartItem.variant_id == variant.id))
         db.delete(variant)
         deleted += 1
 
@@ -310,6 +305,8 @@ def delete_variant(variant_id: int, request: Request, db: Session = Depends(get_
         url = str(request.url_for("list_variants")) + "?deleted=0&skipped=1"
         return RedirectResponse(url, status_code=303)
 
+    db.execute(delete(PrintJob).where(PrintJob.variant_id == variant.id))
+    db.execute(delete(PosCartItem).where(PosCartItem.variant_id == variant.id))
     db.delete(variant)
     db.commit()
     url = str(request.url_for("list_variants")) + "?deleted=1"

@@ -108,6 +108,11 @@ async def tally_import_csv(
             
             if not item_name:
                 continue
+
+            # Filter out aliases that match the item name exactly
+            raw_aliases_list = [a.strip() for a in aliases.split(",") if a.strip()]
+            filtered_aliases = [a for a in raw_aliases_list if a.lower() != item_name.strip().lower()]
+            aliases = ",".join(filtered_aliases)
                 
             normalized = item_name.lower()
             existing = db.scalar(select(TallyItem).where(TallyItem.normalized_name == normalized))

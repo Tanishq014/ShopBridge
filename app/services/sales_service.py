@@ -85,7 +85,7 @@ def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decim
         )
         if not item_name:
             raise CheckoutError("Cart contains a line without an item name.", cart_item_id=item.id, field_name="item")
-        if rate is None or money(rate) <= 0:
+        if rate is None or money(rate) < 0:
             raise CheckoutError(f"Rate is missing for {item_name}.", cart_item_id=item.id, field_name="rate")
         qty = int(item.qty or 1)
         if qty == 0:

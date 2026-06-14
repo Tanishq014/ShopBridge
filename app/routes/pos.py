@@ -308,7 +308,7 @@ def _cart_item_payload(item: PosCartItem) -> dict[str, object]:
         "coded_price": variant.coded_price or "" if variant else "",
         "qty": item.qty,
         "amount": _money(amount),
-        "missing_price": rate is None or rate <= 0,
+        "missing_price": rate is None or rate < 0,
         "source_type": source_type,
         "is_manual_line": bool(item.is_manual_line),
     }
@@ -846,10 +846,15 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
 
     variants.sort(key=rank)
 
-    variant_results = [
-        _variant_search_payload(variant, exact_barcode=bool(clean_barcode and variant.barcode == clean_barcode))
-        for variant in variants[:12]
-    ]
+    variant_results = []
+    for variant in variants[:12]:
+        exact_barcode = bool(clean_barcode and variant.barcode == clean_barcode)
+        exact_name = bool(lowered and variant.item_display_name and variant.item_display_name.strip().lower() == lowered)
+        exact_tally = bool(lowered and variant.family and variant.family.tally_stock_item_name and variant.family.tally_stock_item_name.strip().lower() == lowered)
+        exact_family = bool(lowered and variant.family and variant.family.family_name and variant.family.family_name.strip().lower() == lowered)
+        payload = _variant_search_payload(variant, exact_barcode=exact_barcode)
+        payload["exact_match"] = exact_barcode or exact_name or exact_tally or exact_family
+        variant_results.append(payload)
 
     tally_items = db.execute(
         select(TallyItem)
@@ -871,8 +876,11 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         return (0 if (starts or alias_starts) else 1, (item.name or "").lower())
 
     tally_items.sort(key=tally_rank)
-    tally_results = [
-        {
+    tally_results = []
+    for item in tally_items[:12]:
+        aliases_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip()]
+        exact_match = bool(lowered and ((item.name and item.name.strip().lower() == lowered) or lowered in aliases_list))
+        tally_results.append({
             "id": item.id,
             "source_type": "tally_item",
             "tally_item_id": item.id,
@@ -881,12 +889,11 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
             "barcode": "",
             "item_name": item.name,
             "result_type": "tally_item",
-        }
-        for item in tally_items[:12]
-    ]
+            "exact_match": exact_match,
+        })
 
-    exact_results = [result for result in variant_results if result["exact_barcode"]]
-    non_exact_variants = [result for result in variant_results if not result["exact_barcode"]]
+    exact_results = [result for result in variant_results if result.get("exact_barcode")]
+    non_exact_variants = [result for result in variant_results if not result.get("exact_barcode")]
     results = exact_results + tally_results + non_exact_variants
     return {
         "ok": True,
@@ -1142,11 +1149,16 @@ async def update_pos_item(item_id: int, request: Request, db: Session = Depends(
         item.mrp_snapshot = mrp
 
     if "rate" in payload:
+        raw_rate = str(payload.get("rate", "")).strip()
+        if not raw_rate:
+            return _json_error("Rate cannot be empty.", status_code=400, status="invalid_rate")
         try:
-            rate = _decimal_or_none(payload.get("rate"))
+            rate = _decimal_or_none(raw_rate)
         except ValueError as exc:
             return _json_error(str(exc), status_code=400, status="invalid_rate")
-        if rate is not None and rate < 0:
+        if rate is None:
+            return _json_error("Rate cannot be empty.", status_code=400, status="invalid_rate")
+        if rate < 0:
             return _json_error("Rate cannot be negative.", status_code=400, status="invalid_rate")
         item.rate_snapshot = rate
         item.unit_price = rate
