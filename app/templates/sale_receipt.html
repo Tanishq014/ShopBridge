@@ -43,8 +43,8 @@
 </head>
 
 {% set capture_mode = request.query_params.get("hide_buttons") == "1" %}
-<body class="receipt-body">
-  <main class="receipt-page">
+<body class="receipt-body" {% if capture_mode %}style="background: #ffffff;"{% endif %}>
+  <main class="receipt-page" {% if capture_mode %}style="padding: 0; display: block;"{% endif %}>
     {% if not capture_mode %}
     <div class="receipt-actions no-print">
       <button class="button primary" type="button" onclick="tryDirectPrint()">Print</button>
