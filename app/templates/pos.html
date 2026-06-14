@@ -2707,6 +2707,9 @@
           if (response.ok && data.ok) {
              state.loadedSaleDirty = false;
              setPreviewState(false, null);
+             state.buyerNameDraft = "";
+             if (buyerNameInput) buyerNameInput.value = "";
+             setBillDateDraft();
              await postCartAction("/pos/cart/clear");
              await loadBillNavItems();
              state.checkoutSubmitting = false;
