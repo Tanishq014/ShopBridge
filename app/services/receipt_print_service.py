@@ -209,10 +209,6 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
                 f"Please verify the exact printer name in Windows Control Panel. Error: {e}"
             )
 
-        HORZRES = hDC.GetDeviceCaps(win32con.HORZRES)
-        scale = HORZRES / im.size[0]
-        scaled_height = int(im.size[1] * scale)
-
         doc_started = False
         page_started = False
         try:
@@ -220,6 +216,20 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
             doc_started = True
             hDC.StartPage()
             page_started = True
+
+            HORZRES = hDC.GetDeviceCaps(win32con.HORZRES)
+            LOGPIXELSX = hDC.GetDeviceCaps(win32con.LOGPIXELSX)
+            LOGPIXELSY = hDC.GetDeviceCaps(win32con.LOGPIXELSY)
+
+            # Base scale to stretch the width to full page
+            scale_x = HORZRES / im.size[0]
+            
+            # If the printer has different X and Y DPI (common in thermal printers),
+            # we must adjust the Y scale to maintain the correct visual aspect ratio.
+            dpi_ratio = LOGPIXELSY / LOGPIXELSX
+            scale_y = scale_x * dpi_ratio
+            
+            scaled_height = int(im.size[1] * scale_y)
 
             dib = ImageWin.Dib(im)
             dib.draw(hDC.GetHandleOutput(), (0, 0, HORZRES, scaled_height))
