@@ -389,7 +389,7 @@ def debug_receipt_image(sale_id: int, request: Request, db: Session = Depends(ge
         img_filename = f"receipt_{sale.id}.png"
         img_path = os.path.join(tmpdirname, img_filename)
 
-        hti.screenshot(url=receipt_url, save_as=img_filename, size=(450, 5000))
+        hti.screenshot(url=receipt_url, save_as=img_filename, size=(1000, 10000))
 
         if not os.path.exists(img_path):
             return Response("Failed to capture", status_code=500)

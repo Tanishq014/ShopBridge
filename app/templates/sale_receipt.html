@@ -43,7 +43,7 @@
 </head>
 
 {% set capture_mode = request.query_params.get("hide_buttons") == "1" %}
-<body class="receipt-body" {% if capture_mode %}style="background: #ffffff;"{% endif %}>
+<body class="receipt-body" {% if capture_mode %}style="background: #ffffff; zoom: 3.0;"{% endif %}>
   <main class="receipt-page" {% if capture_mode %}style="padding: 0; display: block;"{% endif %}>
     {% if not capture_mode %}
     <div class="receipt-actions no-print">
