@@ -3224,7 +3224,7 @@ body.pos-page .pos-normal-mode {
 }
 
 .pos-grid-workspace {
-  grid-template-columns: minmax(0, 1050px) 380px;
+  grid-template-columns: minmax(0, 1090px) 340px;
   gap: 10px;
   max-width: 1440px;
   margin: 0 auto;
