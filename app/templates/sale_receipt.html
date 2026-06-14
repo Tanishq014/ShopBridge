@@ -76,9 +76,19 @@
               style="filter: grayscale(100%) contrast(1000%); margin: -15px 0;">
           </div>
         </div>
+        {% if sale.buyer_name %}
+        <div style="border-top: 1px dashed #000; margin: 6px 0;"></div>
+        <div style="font-size: 14px; font-weight: 900; text-transform: uppercase; font-family: Arial, sans-serif; color: #000; letter-spacing: 0.5px;">
+          Balaji Cosmetics
+        </div>
+        {% endif %}
       </div>
 
       <dl class="receipt-meta">
+        {% if sale.buyer_name %}
+        <dt>Buyer</dt>
+        <dd>{{ sale.buyer_name }}</dd>
+        {% endif %}
         <dt>Bill</dt>
         <dd>{{ sale.bill_number }}</dd>
         <dt>Date</dt>

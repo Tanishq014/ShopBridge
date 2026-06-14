@@ -162,6 +162,7 @@ class Sale(Base):
     round_off = Column(Numeric(10, 2), nullable=False, default=0)
     total = Column(Numeric(10, 2), nullable=False, default=0)
     payment_mode = Column(String(40), nullable=False, default="cash")
+    buyer_name = Column(String(200), nullable=True)
     notes = Column(Text, nullable=True)
     print_status = Column(String(40), nullable=False, default="not_printed", index=True)
     tally_sync_status = Column(String(40), nullable=False, default="not_started", index=True)

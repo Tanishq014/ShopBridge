@@ -220,6 +220,9 @@
       <h2>Bill Details</h2>
       <dl class="sd-dl">
         <dt>Bill Number</dt><dd class="mono">{{ sale.bill_number }}</dd>
+        {% if sale.buyer_name %}
+        <dt>Buyer Name</dt><dd>{{ sale.buyer_name }}</dd>
+        {% endif %}
         <dt>Payment Mode</dt>
         <dd>
           <span class="sd-badge info">{{ sale.payment_mode|title }}</span>

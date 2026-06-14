@@ -479,6 +479,7 @@
 
       if (e.key === "F2") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         if (e.altKey) {
           rangeModal.showModal();
           document.getElementById("rangeDateFrom").focus();

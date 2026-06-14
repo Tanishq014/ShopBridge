@@ -25,6 +25,8 @@ logging.getLogger("uvicorn.access").addFilter(_SuppressPosCartAccessLogs())
 
 
 def _is_pos_cart_mutation(path: str, method: str) -> bool:
+    if method.upper() == "GET" and path in {"/pos", "/pos/cart/held"}:
+        return True
     if method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
     return (

@@ -9,9 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import PosCart, PosCartItem, Sale, SaleItem
 
-
-LOCAL_TIMEZONE = timezone(timedelta(hours=5, minutes=30), name="IST")
-
+from app.services.time_service import LOCAL_TIMEZONE
 
 class CheckoutError(RuntimeError):
     def __init__(self, message: str, cart_item_id: int | None = None, field_name: str | None = None):
@@ -45,6 +43,20 @@ def next_bill_number(db: Session, year: int | None = None) -> str:
         except ValueError:
             continue
     return f"{prefix}{sequence + 1:06d}"
+
+def _parse_bill_date(date_str: str | None) -> datetime | None:
+    if not date_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(date_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=LOCAL_TIMEZONE)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        raise CheckoutError("Invalid bill date format.", field_name="bill_date")
+
+def _clean_buyer_name(name: str | None) -> str | None:
+    return (name or "").strip().upper()[:200] or None
 
 
 def checkout_cart(
@@ -122,6 +134,8 @@ def checkout_cart(
     payment_mode: str = "cash",
     notes: str | None = None,
     upi_vpa: str | None = None,
+    buyer_name: str | None = None,
+    bill_date: str | None = None,
 ) -> Sale:
     if not cart or cart.status != "active":
         raise CheckoutError("No active cart to checkout.")
@@ -131,6 +145,8 @@ def checkout_cart(
     sale_items, subtotal = _build_sale_items(db, cart)
     payment = (payment_mode or "cash").strip().lower() or "cash"
     clean_notes = (notes or "").strip() or None
+    parsed_date = _parse_bill_date(bill_date)
+    buyer = _clean_buyer_name(buyer_name)
 
     for _ in range(5):
         sale = Sale(
@@ -141,11 +157,14 @@ def checkout_cart(
             round_off=Decimal("0.00"),
             total=money(subtotal),
             payment_mode=payment,
+            buyer_name=buyer,
             notes=clean_notes,
             upi_vpa=upi_vpa,
             print_status="not_printed",
             tally_sync_status="not_started",
         )
+        if parsed_date:
+            sale.created_at = parsed_date
         sale.items = sale_items
         cart.status = "checked_out"
         db.add(sale)
@@ -182,6 +201,8 @@ def save_sale_edit_cart(
     payment_mode: str = "cash",
     notes: str | None = None,
     upi_vpa: str | None = None,
+    buyer_name: str | None = None,
+    bill_date: str | None = None,
 ) -> Sale:
     if not cart or cart.status != "active":
         raise CheckoutError("No active cart to checkout.")
@@ -195,6 +216,8 @@ def save_sale_edit_cart(
     sale_items, subtotal = _build_sale_items(db, cart)
     payment = (payment_mode or "cash").strip().lower() or "cash"
     clean_notes = (notes or "").strip() or None
+    parsed_date = _parse_bill_date(bill_date)
+    buyer = _clean_buyer_name(buyer_name)
 
     for existing_item in sale.items:
         db.delete(existing_item)
@@ -203,8 +226,11 @@ def save_sale_edit_cart(
     sale.subtotal = money(subtotal)
     sale.total = money(subtotal)
     sale.payment_mode = payment
+    sale.buyer_name = buyer
     sale.notes = clean_notes
     sale.upi_vpa = upi_vpa
+    if parsed_date:
+        sale.created_at = parsed_date
     cart.status = "discarded"
     db.add(sale)
     db.add(cart)

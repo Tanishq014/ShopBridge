@@ -135,6 +135,9 @@ def _migrate_existing_sqlite() -> None:
         if "upi_vpa" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE sales ADD COLUMN upi_vpa TEXT"))
+        if "buyer_name" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE sales ADD COLUMN buyer_name VARCHAR(200)"))
 
     if "pos_cart_items" in table_names:
         columns_info = inspector.get_columns("pos_cart_items")

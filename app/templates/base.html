@@ -17,7 +17,7 @@
       <button class="topbar-menu-toggle" type="button" data-topbar-menu-toggle aria-expanded="false" aria-controls="topbarMenuPanel" aria-label="Open navigation menu">☰</button>
       <nav class="nav">
         {% set path = request.url.path %}
-        <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">New Stock / Print Labels</a>
+        <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">Print Label</a>
         <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS</a>
         <a class="{{ 'active' if path.startswith('/sales') else '' }}" href="/sales">Sales</a>
         <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
@@ -40,7 +40,7 @@
       <div class="topbar-menu-panel" id="topbarMenuPanel" hidden>
         <nav class="nav topbar-menu-nav">
           {% set path = request.url.path %}
-          <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">New Stock / Print Labels</a>
+          <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">Print Label</a>
           <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS</a>
           <a class="{{ 'active' if path.startswith('/sales') else '' }}" href="/sales">Sales</a>
           <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
@@ -124,6 +124,26 @@
           return;
         }
         setMenuVisible(false);
+      });
+
+      // Global navigation shortcuts
+      document.addEventListener("keydown", event => {
+        if (event.key === "F1") {
+          event.preventDefault();
+          window.location.href = "/new-stock";
+        } else if (event.key === "F2") {
+          if (window.location.pathname.startsWith("/sales")) {
+            return;
+          }
+          event.preventDefault();
+          window.location.href = "/pos";
+        } else if (event.key === "F3") {
+          event.preventDefault();
+          window.location.href = "/sales";
+        } else if (event.key === "F4") {
+          event.preventDefault();
+          window.location.href = "/variants";
+        }
       });
     })();
   </script>

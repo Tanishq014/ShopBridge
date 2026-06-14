@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -22,7 +22,7 @@ from app.services.network_service import phone_print_url, qr_url_for_phone_print
 from app.services.sales_service import CheckoutError, checkout_cart
 from app.services.settings_service import get_upi_settings
 from app.services.template_filters import register_template_filters
-from app.services.time_service import LOCAL_TIMEZONE
+from app.services.time_service import LOCAL_TIMEZONE, local_datetime
 
 
 router = APIRouter(tags=["pos"])
@@ -135,6 +135,32 @@ def _active_cart(db: Session) -> PosCart:
     return cart
 
 
+def _today_start_utc_naive() -> datetime:
+    today_start_local = datetime.now(LOCAL_TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0)
+    return today_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _held_cart_is_today(cart: PosCart) -> bool:
+    local_created = local_datetime(cart.created_at)
+    if not local_created:
+        return False
+    return local_created.date() == datetime.now(LOCAL_TIMEZONE).date()
+
+
+def _cleanup_old_held_carts(db: Session) -> None:
+    old_held_carts = db.execute(
+        select(PosCart)
+        .where(PosCart.status == HELD_CART_STATUS)
+        .where(PosCart.created_at < _today_start_utc_naive())
+    ).scalars().all()
+    if not old_held_carts:
+        return
+    for cart in old_held_carts:
+        db.execute(PosCartItem.__table__.delete().where(PosCartItem.cart_id == cart.id))
+        db.delete(cart)
+    db.commit()
+
+
 def _cart_items(db: Session, cart: PosCart) -> list[PosCartItem]:
     return db.execute(
         select(PosCartItem)
@@ -178,11 +204,16 @@ def _park_active_cart(db: Session, *, discard_empty: bool = True) -> PosCart | N
 def _held_cart_payload(db: Session, cart: PosCart) -> dict[str, object]:
     payload = _cart_payload(db, cart)
     bill_number = None
+    buyer_name = None
+    bill_date = None
     if cart.cart_mode == SALE_EDIT_CART_MODE and cart.source_sale_id:
         source_sale = db.get(Sale, cart.source_sale_id)
         if source_sale:
             bill_number = source_sale.bill_number
-            
+            buyer_name = source_sale.buyer_name
+            local_created = local_datetime(source_sale.created_at)
+            bill_date = local_created.isoformat()[:16] if local_created else None
+
     return {
         "id": cart.id,
         "label": f"Held #{cart.id}",
@@ -190,6 +221,8 @@ def _held_cart_payload(db: Session, cart: PosCart) -> dict[str, object]:
         "cart_mode": cart.cart_mode,
         "source_sale_id": cart.source_sale_id,
         "bill_number": bill_number,
+        "buyer_name": buyer_name,
+        "bill_date": bill_date,
         "updated_at": cart.updated_at.isoformat() if cart.updated_at else "",
         "created_at": cart.created_at.isoformat() if cart.created_at else "",
         "count": payload["count"],
@@ -204,7 +237,7 @@ def _held_carts_payload(db: Session) -> list[dict[str, object]]:
         .where(PosCart.status == HELD_CART_STATUS)
         .order_by(PosCart.id.desc())
     ).scalars().all()
-    return [_held_cart_payload(db, cart) for cart in carts if _cart_has_items(db, cart)]
+    return [_held_cart_payload(db, cart) for cart in carts if _held_cart_is_today(cart) and _cart_has_items(db, cart)]
 
 
 def _active_cart_item_or_error(db: Session, item_id: int) -> PosCartItem | JSONResponse:
@@ -339,10 +372,15 @@ def _cart_payload(db: Session, cart: PosCart | None = None) -> dict[str, object]
         if rate is not None:
             total += rate * item.qty
     source_bill_number = None
+    buyer_name = None
+    bill_date = None
     if cart.source_sale_id:
         sale = db.get(Sale, cart.source_sale_id)
         if sale:
             source_bill_number = sale.bill_number
+            buyer_name = sale.buyer_name
+            local_created = local_datetime(sale.created_at)
+            bill_date = local_created.isoformat()[:16] if local_created else None
 
     return {
         "cart_id": cart.id,
@@ -350,6 +388,8 @@ def _cart_payload(db: Session, cart: PosCart | None = None) -> dict[str, object]
         "cart_mode": cart.cart_mode or NORMAL_CART_MODE,
         "source_sale_id": cart.source_sale_id,
         "source_bill_number": source_bill_number,
+        "buyer_name": buyer_name,
+        "bill_date": bill_date,
         "items": rows,
         "total": _money(total),
         "count": sum(item.qty for item in items),
@@ -409,10 +449,11 @@ def _family_search_payload(family: ProductFamily) -> dict[str, object]:
 @router.get("/pos", response_class=HTMLResponse)
 def pos_page(
     request: Request,
+    sale_id: int | None = None,
     checkout_error: str | None = None,
-    sale_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
+    _cleanup_old_held_carts(db)
     scanner, detected = scanner_url(request.headers.get("host"))
     phone_print, phone_print_detected = phone_print_url(request.headers.get("host"))
     return templates.TemplateResponse(
@@ -458,7 +499,8 @@ def scanner_qr(url: str):
 
 @router.get("/pos/cart")
 def pos_cart(db: Session = Depends(get_db)):
-    payload = _cart_payload(db)
+    cart = _find_active_cart(db, normalize_duplicates=True)
+    payload = _cart_payload(db, cart)
     signature = (
         payload.get("cart_id"),
         payload.get("count"),
@@ -482,6 +524,7 @@ def pos_cart(db: Session = Depends(get_db)):
 
 @router.get("/pos/cart/held")
 def list_held_carts(db: Session = Depends(get_db)):
+    _cleanup_old_held_carts(db)
     items = _held_carts_payload(db)
     for item in items:
         item["type"] = "held"
@@ -870,16 +913,29 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
     ).scalars().all()
 
     def tally_rank(item: TallyItem) -> tuple[int, str]:
-        starts = (item.name or "").lower().startswith(lowered)
-        alias_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip()]
+        name_lower = (item.name or "").lower()
+        alias_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip() and a.strip().lower() != name_lower]
+
+        exact_alias = lowered in alias_list
+        exact_name = name_lower == lowered
+
+        starts = name_lower.startswith(lowered)
         alias_starts = any(a.startswith(lowered) for a in alias_list)
-        return (0 if (starts or alias_starts) else 1, (item.name or "").lower())
+        if exact_alias:
+            return (0, name_lower)
+        elif exact_name:
+            return (1, name_lower)
+        elif starts or alias_starts:
+            return (2, name_lower)
+        else:
+            return (3, name_lower)
 
     tally_items.sort(key=tally_rank)
     tally_results = []
     for item in tally_items[:12]:
-        aliases_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip()]
-        exact_match = bool(lowered and ((item.name and item.name.strip().lower() == lowered) or lowered in aliases_list))
+        name_lower = (item.name or "").lower()
+        aliases_list = [a.strip().lower() for a in (item.aliases or "").replace("|", ",").split(",") if a.strip() and a.strip().lower() != name_lower]
+        exact_match = bool(lowered and (name_lower == lowered or lowered in aliases_list))
         tally_results.append({
             "id": item.id,
             "source_type": "tally_item",
@@ -901,10 +957,58 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
     }
 
 
+@router.get("/pos/search/catalog")
+def pos_search_catalog(db: Session = Depends(get_db)):
+    variants = db.execute(
+        select(LabelVariant)
+        .outerjoin(LabelVariant.family)
+        .options(joinedload(LabelVariant.family))
+        .where(LabelVariant.status == "active")
+        .order_by(LabelVariant.updated_at.desc(), LabelVariant.id.desc())
+    ).scalars().all()
+    variant_results = [_variant_search_payload(variant, exact_barcode=False) for variant in variants]
+
+    tally_items = db.execute(
+        select(TallyItem)
+        .where(TallyItem.active_status == "active")
+        .order_by(TallyItem.updated_at.desc(), TallyItem.id.desc())
+    ).scalars().all()
+    tally_results = []
+    for item in tally_items:
+        name_lower = (item.name or "").strip().lower()
+        aliases = [
+            alias.strip()
+            for alias in (item.aliases or "").replace("|", ",").split(",")
+            if alias.strip() and alias.strip().lower() != name_lower
+        ]
+        tally_results.append({
+            "id": item.id,
+            "source_type": "tally_item",
+            "tally_item_id": item.id,
+            "label": item.name,
+            "name": item.name,
+            "aliases": aliases,
+            "barcode": "",
+            "item_name": item.name,
+            "billing_item": item.name,
+            "family_name": item.name,
+            "sticker_name": "",
+            "mrp": "",
+            "selling_price": "",
+            "missing_price": True,
+            "result_type": "tally_item",
+            "exact_barcode": False,
+            "exact_match": False,
+        })
+    return {"ok": True, "items": variant_results + tally_results}
+
+
 @router.post("/pos/checkout")
 def pos_checkout(
     payment_mode: str = Form("cash"),
     notes: str = Form(""),
+    buyer_name: str = Form(""),
+    bill_date: str = Form(""),
     db: Session = Depends(get_db),
 ):
     payment = (payment_mode or "cash").strip().lower() or "cash"
@@ -916,9 +1020,9 @@ def pos_checkout(
     try:
         if cart.cart_mode == "sale_edit":
             from app.services.sales_service import save_sale_edit_cart
-            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes)
+            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes, buyer_name=buyer_name.strip() or None, bill_date=bill_date.strip() or None)
         else:
-            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes)
+            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes, buyer_name=buyer_name.strip() or None, bill_date=bill_date.strip() or None)
     except CheckoutError as exc:
         return RedirectResponse(f"/pos?{urlencode({'checkout_error': str(exc)})}", status_code=303)
     return RedirectResponse(f"/sales/{sale.id}", status_code=303)
@@ -936,6 +1040,8 @@ async def pos_checkout_json(
     payment = (payload.get("payment_mode") or "cash").strip().lower() or "cash"
     notes = str(payload.get("notes") or "").strip()
     upi_vpa = str(payload.get("upi_vpa") or "").strip()
+    buyer_name = str(payload.get("buyer_name") or "").strip() or None
+    bill_date = str(payload.get("bill_date") or "").strip() or None
 
     if upi_vpa and upi_vpa != "cash":
         payment = "upi"
@@ -957,9 +1063,9 @@ async def pos_checkout_json(
     try:
         if cart.cart_mode == "sale_edit":
             from app.services.sales_service import save_sale_edit_cart
-            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes, upi_vpa=upi_vpa)
+            sale = save_sale_edit_cart(db, cart, payment_mode=payment, notes=notes, upi_vpa=upi_vpa, buyer_name=buyer_name, bill_date=bill_date)
         else:
-            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes, upi_vpa=upi_vpa)
+            sale = checkout_cart(db, cart, payment_mode=payment, notes=notes, upi_vpa=upi_vpa, buyer_name=buyer_name, bill_date=bill_date)
     except CheckoutError as exc:
         extra = {}
         if exc.cart_item_id is not None:
@@ -1354,6 +1460,3 @@ def clear_pos_cart(db: Session = Depends(get_db)):
         db.delete(item)
     db.commit()
     return _cart_payload(db, cart)
-
-
-

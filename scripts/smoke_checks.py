@@ -209,7 +209,7 @@ def main() -> None:
         assert_true("pos-bill-total-row" in pos_markup and "billFooterTotal" in pos_markup and ".pos-bill-total-row" in app_css, "POS bill grid footer total is missing")
         assert_true("pos-table-scroll" in pos_markup and ".pos-table-scroll" in app_css, "POS bill lines should scroll separately from the total footer")
         assert_true("Scan barcode / search item" in pos_markup and "pos-add-row" in pos_markup and "scroll-padding-bottom" in app_css, "POS add-item row must stay visible above the total footer")
-        assert_true("posSearchInput" in pos_markup and "/pos/search" in pos_markup, "POS grid search input is not wired")
+        assert_true("posSearchInput" in pos_markup and "/pos/search/catalog" in pos_markup and "localSearchCatalog" in pos_markup, "POS grid search input is not wired to the local catalog")
         assert_true("pos-suggestion-dock" not in pos_markup and "pos-suggestion-dock" not in app_css, "old POS top suggestion dock should be gone")
         assert_true("posSearchPanelRight" in pos_markup and "Search Results" in pos_markup and "pos-search-results-list" in pos_markup, "POS right-panel search results UI is missing")
         assert_true("posNormalPanel" in pos_markup and "summaryPanel.hidden = false" in pos_markup and "searchPanel.hidden = true" in pos_markup, "POS search close does not restore normal panel")
@@ -247,6 +247,7 @@ def main() -> None:
         assert_true("state.selectedIndex = items.length - 1" in pos_markup, "POS should default to the last bill line")
         assert_true("pos-rate-input" in pos_markup and "pos-qty-input" in pos_markup and "/pos/cart/items/${itemId}/update" in pos_markup, "POS editable rate/qty cells are missing")
         assert_true("saveFocusedLineInput" in pos_markup and "checkoutForm.submit()" in pos_markup and "checkoutSubmitting" in pos_markup, "POS checkout should save focused edits before submit")
+        assert_true("billDateDraft" in pos_markup and "state.billDateDraft || currentLocalDateTimeValue()" in pos_markup and "billDateInput.value = now.toISOString" not in pos_markup, "POS bill date must not reset to current time on every render")
         assert_true("event.stopPropagation()" in pos_markup and "await checkoutNow()" in pos_markup, "POS line editor should stop shortcut bubbling before checkout")
         assert_true("cartEditActive" in pos_markup and "lineEditIsActive()" in pos_markup and "if (silent &&" in pos_markup, "POS polling should pause while editing rate/qty")
         assert_true("addTallyItem" in pos_markup and "result_type === \"tally_item\"" in pos_markup, "POS UI does not add local Tally catalog search results")
@@ -258,13 +259,14 @@ def main() -> None:
         assert_true("focusNextBillingField" in pos_markup and 'focusNextBillingField(data.item && data.item.id, "qty")' in pos_markup, "POS valid barcode scans should return focus to the scan/add input")
         assert_true("helpToggleButton" in pos_markup and "shopbridge.posHelpVisible.v1" in pos_markup and "id=\"posHelpBar\" hidden" in pos_markup, "POS help row toggle/default hidden state is missing")
         assert_true("fullscreenPosButton" in pos_markup and "requestFullscreen" in pos_markup, "POS fullscreen button is missing")
-        assert_true("Ctrl+Enter Checkout" in pos_markup and "F2 Item" in pos_markup and "Left/Right Cells" in pos_markup and "F10" not in pos_markup, "POS shortcut help bar is missing or stale")
+        assert_true("Ctrl+Enter Checkout" in pos_markup and "F1 Print Label" in pos_markup and "F4 All Items" in pos_markup and "Left/Right Cells" in pos_markup and "F10" not in pos_markup, "POS shortcut help bar is missing or stale")
         assert_true("cartStatus" in pos_markup and "pos-top-actions" in pos_markup and "Fullscreen POS" in pos_markup and "Show Help" in pos_markup and "Refresh" in pos_markup, "POS header status/buttons are missing")
         assert_true(".pos-suggestion.active" in app_css and ".pos-billing-row.selected" in app_css, "POS keyboard highlight styling is missing")
         assert_true(".pos-held-row.selected" in app_css and "pos-held-panel" in app_css, "POS held bill styling is missing")
         assert_true("pos-line-input" in app_css and "pos-rate-input" in app_css and "pos-qty-input" in app_css and "pos-item-input" in app_css and "pos-mrp-input" in app_css, "POS editable line input styling is missing")
         assert_true("source_type=\"barcode\"" in pos_route_source and "tally_item" in pos_route_source and "/pos/cart/items/{item_id}/update" in pos_route_source and "/pos/cart/items/{item_id}/replace" in pos_route_source and "item_name_snapshot" in pos_route_source, "POS backend snapshot/update routes are missing")
         assert_true("/pos/cart/load-sale/{sale_id}" in pos_route_source and "held_active_cart_id" in pos_route_source and "_park_active_cart" in pos_route_source and "SALE_COPY_CART_MODE" in pos_route_source, "POS backend should load saved bills without destroying active carts")
+        assert_true("def pos_page(" in pos_route_source and "_cleanup_old_held_carts(db)" in pos_route_source.split("def pos_page(", 1)[1].split("@router.get(\"/scanner\"", 1)[0], "POS page load must clean old held carts")
         assert_true("/pos/cart/hold" in pos_route_source and "/pos/cart/held/{cart_id}/resume" in pos_route_source and "/pos/cart/held/{cart_id}/discard" in pos_route_source, "POS held bill routes are missing")
         assert_true("ProductFamily" in pos_route_source and "tally_stock_item_name" in pos_route_source, "POS search should include locally imported ProductFamily/Tally items")
         assert_true("LabelVariant.barcode == clean_barcode" in pos_route_source and "barcode_like" in pos_route_source, "POS search should prioritize exact barcode and de-duplicate families")
@@ -1159,9 +1161,9 @@ def main() -> None:
         assert_true("lines ?? Qty" not in pos_html_source, "POS template contains bad ?? separators")
         # Ctrl+A Quick Action Behavior
         assert_true('actionName === "save_print"' in pos_html_source or 'action === "save_print"' in pos_html_source or 'action.action === "save_print"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support save_print")
-        assert_true('actionName === "save_no_print"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support save_no_print")
-        assert_true('actionName === "hold"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support hold")
-        assert_true('state.selectedUpiVpa = action.upi_vpa' in pos_html_source, "Ctrl+A quick action must capture upi_vpa from keyboard shortcuts")
+        assert_true('actionName === "save_no_print"' in pos_html_source or 'action === "save_no_print"' in pos_html_source or 'typeof action === "string" ? action : action.action' in pos_html_source, "Ctrl+A quick action must support save_no_print")
+        assert_true('action === "hold"' in pos_html_source or 'actionName === "hold"' in pos_html_source, "Ctrl+A quick action must support hold")
+        assert_true('state.selectedUpiVpa = matchedUpiVpa' in pos_html_source or 'state.selectedUpiVpa = action.upi_vpa' in pos_html_source, "Ctrl+A quick action must capture upi_vpa from keyboard shortcuts")
         assert_true('matchedUpiVpa !== null || isEnter' in pos_html_source, "Ctrl+A quick action must handle Enter and UPI hotkeys")
 
         # Sale Edit Dirty UI Behavior
@@ -1362,7 +1364,7 @@ def main() -> None:
             assert_true("crop" in receipt_service_code and "bbox[3]" in receipt_service_code, "service crops bottom whitespace")
             assert_true("appears blank" in receipt_service_code, "receipt service checks for blank screenshot")
             assert_true("may be clipped" in receipt_service_code, "receipt service checks for clipped screenshot")
-            assert_true("scale = HORZRES / im.size[0]" in receipt_service_code, "service scales image to printer width")
+            assert_true("scale = HORZRES / im.size[0]" in receipt_service_code or "scale_x = HORZRES / im.size[0]" in receipt_service_code, "service scales image to printer width")
         with open("app/templates/base.html", "r", encoding="utf-8") as f:
             base_html = f.read()
             assert_true('href="/scan"' not in base_html, "base.html should not contain /scan links")
@@ -1375,9 +1377,9 @@ def main() -> None:
         with open("app/templates/pos.html", "r", encoding="utf-8") as f:
             pos_html_code = f.read()
             assert_true("fetch(`/sales/${data.sale_id}/receipt/direct`" in pos_html_code, "POS tries direct print")
-            assert_true("window.open(`/sales/${data.sale_id}/receipt`" in pos_html_code, "POS fallback still opens receipt if direct print fails")
-            assert_true("printAfterSave" in pos_html_code.split("fetch(`/sales/${data.sale_id}/receipt/direct`")[0][-150:], "Save without Print does not call direct receipt print")
-            assert_true('"error"' in pos_html_code.split("Fallback to browser print")[1][:100], "POS direct print fallback status is error")
+            assert_true("window.open(`/sales/${data.sale_id}/receipt" in pos_html_code, "POS fallback still opens receipt if direct print fails")
+            assert_true("printAfterSave" in pos_html_code.split("fetch(`/sales/${data.sale_id}/receipt/direct`")[0][-250:], "Save without Print does not call direct receipt print")
+            assert_true('"success"' in pos_html_code.split("Not ok, fallback")[1][:250], "POS direct print fallback status is success")
 
         with open("app/templates/sale_receipt.html", "r", encoding="utf-8") as f:
             sale_receipt_code = f.read()
