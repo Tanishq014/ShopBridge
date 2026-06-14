@@ -77,43 +77,50 @@
         <!-- Bill Lines title removed per user request -->
 
         <div class="pos-table-wrap">
-          <table class="pos-billing-grid">
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>Item / Article</th>
-                <th>Barcode</th>
-                <th>Qty</th>
-                <th>MRP</th>
-                <th>Rate</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody id="cartRows">
-              <tr class="pos-empty-row">
-                <td colspan="7">Cart is empty.</td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr class="pos-add-row">
-                <td class="pos-line-no"></td>
-                <td class="pos-add-cell" colspan="5">
-                  <div class="pos-search-wrap">
-                    <input
-                      id="posSearchInput"
-                      autocomplete="off"
-                      inputmode="text"
-                      placeholder="Scan barcode / search item"
-                      spellcheck="false"
-                    >
-                  </div>
-                </td>
-                <td><button class="button" type="button" id="addItemButton" style="width: 100%; padding: 4px; min-width: 40px; font-size: 13px;">Add</button></td>
-              </tr>
-            </tfoot>
-          </table>
-          <div id="posEmptyHelper" style="text-align: center; color: var(--muted); padding: 40px; font-weight: 600; font-size: 13px;">
-            Scan barcode or type item name to add more items
+          <div class="pos-table-scroll">
+            <table class="pos-billing-grid">
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Item / Article</th>
+                  <th>Barcode</th>
+                  <th>Qty</th>
+                  <th>MRP</th>
+                  <th>Rate</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody id="cartRows">
+                <tr class="pos-empty-row">
+                  <td colspan="7">Cart is empty.</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="pos-add-row">
+                  <td class="pos-line-no"></td>
+                  <td class="pos-add-cell" colspan="5">
+                    <div class="pos-search-wrap">
+                      <input
+                        id="posSearchInput"
+                        autocomplete="off"
+                        inputmode="text"
+                        placeholder="Scan barcode / search item"
+                        spellcheck="false"
+                      >
+                    </div>
+                  </td>
+                  <td><button class="button" type="button" id="addItemButton" style="width: 100%; padding: 4px; min-width: 40px; font-size: 13px;">Add</button></td>
+                </tr>
+              </tfoot>
+            </table>
+            <div id="posEmptyHelper" style="text-align: center; color: var(--muted); padding: 40px; font-weight: 600; font-size: 13px;">
+              Scan barcode or type item name to add more items
+            </div>
+          </div>
+          <div class="pos-bill-total-row" aria-live="polite">
+            <span>Items <strong id="billFooterLines">0</strong></span>
+            <span>Quantity <strong id="billFooterQty">0</strong></span>
+            <span class="pos-bill-footer-total">TOTAL <strong id="billFooterTotal">Rs. 0.00</strong></span>
           </div>
         </div>
       </div>
@@ -121,17 +128,6 @@
       <aside class="pos-bill-panel pos-grid-summary">
         <div class="pos-normal-mode" id="posNormalPanel">
           <form method="post" action="/pos/checkout" id="checkoutForm">
-            <div class="pos-total-box pos-total-compact">
-              <div class="pos-total-compact-main">
-                <span>TOTAL</span>
-                <strong id="cartTotal">Rs. 0.00</strong>
-              </div>
-              <div class="pos-total-compact-stats-right">
-                <div class="stat-row"><span>items</span> <strong id="summaryLines">0</strong></div>
-                <div class="stat-row"><span>Qty</span> <strong id="cartCount">0</strong></div>
-              </div>
-            </div>
-
             <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
               Checkout - Rs. 0.00
             </button>
@@ -216,6 +212,9 @@
   <script>
     document.body.classList.add("pos-page");
     const addItemButton = document.getElementById("addItemButton");
+    const billFooterLines = document.getElementById("billFooterLines");
+    const billFooterQty = document.getElementById("billFooterQty");
+    const billFooterTotal = document.getElementById("billFooterTotal");
     const cartRows = document.getElementById("cartRows");
     const cartCount = document.getElementById("cartCount");
     const cartLineCount = document.getElementById("cartLineCount");
@@ -758,6 +757,18 @@
       });
     }
 
+    function billNavItemIsToday(item) {
+      const value = item && (item.created_at || item.updated_at);
+      if (!value) {
+        return false;
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return false;
+      }
+      return date.toDateString() === new Date().toDateString();
+    }
+
     function activeBillNavItem() {
       if (!state.cart || !state.cart.cart_id) return null;
       if (!state.cart.items || !state.cart.items.length) return null;
@@ -796,7 +807,8 @@
       const openCount = state.billNavItems.filter(i => i.type === "open").length;
       const heldCount = state.billNavItems.filter(i => i.type === "held").length;
       const previousCount = state.billNavItems.filter(i => i.type === "recent_sale" || i.type === "sale").length;
-      heldBillCount.textContent = `${openCount} open / ${heldCount} held / ${previousCount} today`;
+      const todayPreviousCount = state.billNavItems.filter(i => (i.type === "recent_sale" || i.type === "sale") && billNavItemIsToday(i)).length;
+      heldBillCount.textContent = `${openCount} open / ${heldCount} held / ${todayPreviousCount} today`;
 
       heldBillList.innerHTML = "";
 
@@ -1597,9 +1609,12 @@
 
       const lineLabel = `${items.length} ${items.length === 1 ? "line" : "lines"}`;
       if (cartLineCount) cartLineCount.textContent = lineLabel;
-      summaryLines.textContent = items.length;
-      cartCount.textContent = state.cart.count || 0;
-      cartTotal.textContent = money(state.cart.total || "0.00");
+      if (summaryLines) summaryLines.textContent = items.length;
+      if (cartCount) cartCount.textContent = state.cart.count || 0;
+      if (cartTotal) cartTotal.textContent = money(state.cart.total || "0.00");
+      billFooterLines.textContent = items.length;
+      billFooterQty.textContent = state.cart.count || 0;
+      billFooterTotal.textContent = money(state.cart.total || "0.00");
       if (searchPanelTotal) { searchPanelTotal.textContent = money(state.cart.total || "0.00"); }
       if (summarySubtotal) { summarySubtotal.textContent = money(state.cart.total || "0.00"); }
       state.hasMissingRate = items.some(item => item.missing_price);

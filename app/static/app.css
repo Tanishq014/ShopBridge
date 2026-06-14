@@ -2685,10 +2685,19 @@ tbody tr:last-child td {
 }
 
 .pos-table-wrap {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   max-height: none;
   min-height: 386px;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.pos-table-scroll {
   flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scroll-padding-bottom: 64px;
 }
 
 .pos-billing-grid {
@@ -2890,8 +2899,7 @@ tbody tr:last-child td {
 }
 
 .pos-qty-button,
-.pos-remove-button,
-.pos-add-row .button {
+.pos-remove-button {
   min-height: 24px;
   padding: 1px 6px;
 }
@@ -2917,6 +2925,7 @@ tbody tr:last-child td {
 }
 
 .pos-add-row {
+  scroll-margin-bottom: 64px;
   scroll-margin-top: 35px;
 }
 
@@ -2931,6 +2940,59 @@ tbody tr:last-child td {
   color: var(--primary);
   font-size: 18px;
   font-weight: 900;
+}
+
+.pos-add-row .pos-line-no::before {
+  content: "+";
+}
+
+.pos-bill-total-row {
+  align-items: end;
+  background: #0f172a;
+  border-top: 2px solid #1f6feb;
+  color: #dbeafe;
+  display: grid;
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  min-height: 48px;
+  padding: 8px 12px;
+}
+
+.pos-bill-total-row::before {
+  content: "";
+}
+
+.pos-bill-total-row > span {
+  align-self: end;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+
+.pos-bill-total-row strong {
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-bill-total-row > span:not(.pos-bill-footer-total) strong {
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.pos-bill-footer-total {
+  align-items: baseline;
+  display: inline-flex;
+  gap: 12px;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.pos-bill-footer-total strong {
+  font-size: 30px;
+  font-weight: 950;
+  line-height: 1;
 }
 
 .pos-add-cell {

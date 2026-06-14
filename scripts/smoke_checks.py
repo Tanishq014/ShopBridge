@@ -203,7 +203,9 @@ def main() -> None:
         assert_true(hasattr(sales, "router"), "sales route module is not importable")
         assert_true("/pos/checkout" in pos_markup and "checkoutButton" in pos_markup, "POS checkout form is not rendered")
         assert_true("pos-billing-grid" in pos_markup and "Item / Article" in pos_markup and "Barcode" in pos_markup, "POS billing grid is not rendered")
-        assert_true("Scan barcode / search item" in pos_markup and "pos-add-row" in pos_markup, "POS add-item row is missing")
+        assert_true("pos-bill-total-row" in pos_markup and "billFooterTotal" in pos_markup and ".pos-bill-total-row" in app_css, "POS bill grid footer total is missing")
+        assert_true("pos-table-scroll" in pos_markup and ".pos-table-scroll" in app_css, "POS bill lines should scroll separately from the total footer")
+        assert_true("Scan barcode / search item" in pos_markup and "pos-add-row" in pos_markup and "scroll-padding-bottom" in app_css, "POS add-item row must stay visible above the total footer")
         assert_true("posSearchInput" in pos_markup and "/pos/search" in pos_markup, "POS grid search input is not wired")
         assert_true("pos-suggestion-dock" not in pos_markup and "pos-suggestion-dock" not in app_css, "old POS top suggestion dock should be gone")
         assert_true("posSearchPanelRight" in pos_markup and "Search Results" in pos_markup and "pos-search-results-list" in pos_markup, "POS right-panel search results UI is missing")
@@ -233,7 +235,7 @@ def main() -> None:
         assert_true("skipDiscardConfirm" in pos_markup, "loadSaleForEdit must accept skipDiscardConfirm to avoid double confirm")
         assert_true("row.addEventListener(\"dblclick\", () => openBillNavItemAt" in pos_markup, "Side-list double-click must use openBillNavItemAt, not raw resume/load")
         assert_true("disabled = state.previewMode" not in pos_markup and "Previewing bill - press Esc to return" not in pos_markup, "POS opened bills should not render as disabled preview-only rows")
-        assert_true("pos-total-box" in pos_markup and "cartTotal" in pos_markup and "Checkout - Rs. 0.00" in pos_markup, "POS checkout summary/total is missing")
+        assert_true("pos-total-box" not in pos_markup and "billFooterTotal" in pos_markup and "Checkout - Rs. 0.00" in pos_markup, "POS should use bill footer total instead of right-panel total block")
         assert_true("focusSelectedCartItem" in pos_markup and "focusSelectedCartItem(true);" in pos_markup and "input.select()" in pos_markup, "POS selected line should auto-focus the item name")
         # UI Polish
         assert_true("holdBillButton.hidden = state.cart.cart_mode === \"sale_edit\"" not in pos_markup, "Hold button must NOT be hidden in sale_edit mode")
@@ -1213,7 +1215,7 @@ def main() -> None:
 
         assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
         assert_true("activeBillNavItem" in pos_markup and 'type: "open"' in pos_markup, "POS bill nav must keep the current active bill visible locally")
-        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} today" in pos_markup, "POS bill nav must separate open, held, and previous counts")
+        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${todayPreviousCount} today" in pos_markup and "billNavItemIsToday" in pos_markup, "POS bill nav must count only today's previous bills")
         assert_true('if (item.type === "open") return 2;' in pos_markup, "Open bill must sort with held bills, not always at the top")
         assert_true('item.type === "open" && item.id === state.cart.cart_id' in pos_markup, "POS bill nav must reselect the currently open bill after reload")
         assert_true('if (targetItem.type === "open")' in pos_markup, "Opening the active bill row should be a no-op, not a server call")
@@ -1263,7 +1265,7 @@ def main() -> None:
 
         assert_true("heldBillCount" in pos_markup, "Recent Bills count is missing")
         assert_true("activeBillNavItem" in pos_markup and 'type: "open"' in pos_markup, "POS bill nav must keep the current active bill visible locally")
-        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${previousCount} today" in pos_markup, "POS bill nav must separate open, held, and previous counts")
+        assert_true('"Open / Held Bills"' in pos_markup and "${openCount} open / ${heldCount} held / ${todayPreviousCount} today" in pos_markup and "billNavItemIsToday" in pos_markup, "POS bill nav must count only today's previous bills")
         assert_true('if (item.type === "open") return 2;' in pos_markup, "Open bill must sort with held bills, not always at the top")
         assert_true('item.type === "open" && item.id === state.cart.cart_id' in pos_markup, "POS bill nav must reselect the currently open bill after reload")
         assert_true('if (targetItem.type === "open")' in pos_markup, "Opening the active bill row should be a no-op, not a server call")
