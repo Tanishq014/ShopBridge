@@ -2510,13 +2510,13 @@
                    } else {
                      console.warn("[Direct Print] Not ok, fallback. Error:", resData.error);
                      window.open(`/sales/${data.sale_id}/receipt`, "_blank");
-                     setStatus("Bill finalized. Direct print unavailable: " + (resData.error || "Fallback to browser print."), "error");
+                     setStatus("Bill finalized successfully.", "success");
                    }
                  })
                  .catch(err => {
                    console.error("[Direct Print] Fetch error:", err);
                    window.open(`/sales/${data.sale_id}/receipt`, "_blank");
-                   setStatus("Bill finalized. Direct print error: " + err, "error");
+                   setStatus("Bill finalized successfully.", "success");
                  });
              } else {
                setStatus("Bill finalized. Started a new bill.", "success");

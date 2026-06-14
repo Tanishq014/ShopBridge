@@ -176,7 +176,7 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
         img_filename = f"receipt_{sale.id}.png"
         img_path = os.path.join(tmpdirname, img_filename)
 
-        hti.screenshot(url=receipt_url, save_as=img_filename, size=(320, 5000))
+        hti.screenshot(url=receipt_url, save_as=img_filename, size=(450, 5000))
 
         if not os.path.exists(img_path):
             raise RuntimeError("Failed to capture receipt image.")
@@ -193,7 +193,12 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
             raise RuntimeError("Receipt screenshot may be clipped. Use browser receipt fallback.")
 
         if bbox:
-            im = im.crop((0, 0, im.size[0], min(im.size[1], bbox[3] + 20)))
+            # Crop horizontally to the exact text bounding box, so when it scales to
+            # the printer's HORZRES, it fills the entire width perfectly without white space.
+            crop_left = max(0, bbox[0] - 5)
+            crop_right = min(im.size[0], bbox[2] + 5)
+            crop_bottom = min(im.size[1], bbox[3] + 20)
+            im = im.crop((crop_left, 0, crop_right, crop_bottom))
 
         try:
             hDC = win32ui.CreateDC()
