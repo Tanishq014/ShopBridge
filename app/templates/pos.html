@@ -1535,11 +1535,16 @@
     }
 
     async function selectSuggestion(index) {
+      if (index < 0 || index >= state.suggestions.length) return;
+      const item = state.suggestions[index];
+      
+      // Block renderCart auto-restore so the cursor can snap correctly
+      state.focusTransition = true;
+      
       if (state.suggestionMode === "edit") {
         const rowIndex = state.suggestionRowIndex;
         const fieldName = state.suggestionField || "item";
         const editItem = state.cart.items[rowIndex];
-        const item = state.suggestions[index];
         if (!item) {
           setStatus("Select a saved barcode/Tally item.", "error");
           if (editItem) {
@@ -1561,18 +1566,16 @@
         }
         return;
       }
-      const item = state.suggestions[index];
-      if (!item) {
-        return;
-      }
       closeSuggestions();
       if (item.result_type === "tally_item") {
         await addTallyItem(item.id);
+        state.focusTransition = false;
         return;
       }
 
       searchInput.value = item.barcode;
       await addBarcode(item.barcode, !!item.missing_price, false);
+      state.focusTransition = false;
     }
 
     function renderCart(cart) {
@@ -1746,7 +1749,7 @@
         cartRows.appendChild(row);
       });
 
-      if (restoreItemId && restoreField) {
+      if (restoreItemId && restoreField && !state.focusTransition) {
         state.focusTransition = true;
         window.setTimeout(() => {
           const rowIndex = rowIndexForCartItemId(restoreItemId);
@@ -2033,29 +2036,33 @@
           return;
         }
         state.skipNextChangeSaveFor = {itemId: itemId, fieldName};
+        
+        // Signal that a focus transition is happening so renderCart doesn't steal focus
+        state.focusTransition = true;
         const updated = await saveCartField(rowIndex, fieldName);
         if (!updated) {
+          state.focusTransition = false;
           state.skipNextChangeSaveFor = null;
           return;
         }
+        
         if (fieldName === "qty") {
-          state.focusTransition = true;
           window.setTimeout(() => {
             focusNextBillingField(itemId, "mrp");
             state.focusTransition = false;
           }, 50);
         } else if (fieldName === "mrp") {
-          state.focusTransition = true;
           window.setTimeout(() => {
             focusNextBillingField(itemId, "rate");
             state.focusTransition = false;
           }, 50);
         } else if (fieldName === "rate") {
-          state.focusTransition = true;
           window.setTimeout(() => {
             focusNextBillingField(itemId, "next_row_item");
             state.focusTransition = false;
           }, 50);
+        } else {
+          state.focusTransition = false;
         }
         return;
       }
