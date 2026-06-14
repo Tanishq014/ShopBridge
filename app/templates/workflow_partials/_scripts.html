@@ -621,6 +621,15 @@
       return Math.max(1, Number.parseInt(copyCount || printQuantityInput.value || fields.copies.value || "1", 10) || 1);
     }
 
+    function copyCountError(copyCount) {
+      const cleanCopies = cleanCopyCount(copyCount);
+      return cleanCopies > 24 ? "Maximum print quantity is 24. Change Print Quantity to 24 or less." : "";
+    }
+
+    function codeIsNumbersOnly() {
+      return fields.coded && fields.coded.offsetParent !== null && /^\d+$/.test(String(fields.coded.value || "").trim());
+    }
+
     function closePrintQuantityDialog() {
       if (printQuantityDialog) {
         printQuantityDialog.hidden = true;
@@ -643,6 +652,19 @@
 
     function submitPrint(copyCount) {
       if (printSubmissionPending) {
+        return;
+      }
+      const quantityError = copyCountError(copyCount);
+      if (quantityError) {
+        showPricingMessage(quantityError);
+        printQuantityInput.focus();
+        printQuantityInput.select();
+        return;
+      }
+      if (codeIsNumbersOnly()) {
+        setPriceCodeInlineState("Code cannot be only numbers. Use coded letters too.", "warn");
+        fields.coded.focus();
+        fields.coded.select();
         return;
       }
       const cleanCopies = cleanCopyCount(copyCount);
@@ -2407,6 +2429,7 @@
 
     fields.coded.addEventListener("input", () => {
       fields.coded.value = fields.coded.value.toUpperCase();
+      fields.coded.setCustomValidity(codeIsNumbersOnly() ? "Code cannot be only numbers. Use coded letters too." : "");
       setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
       clearActualPreview();
       showPricingMessage("");
@@ -2417,6 +2440,7 @@
     });
     fields.coded.addEventListener("change", () => {
       fields.coded.value = fields.coded.value.toUpperCase();
+      fields.coded.setCustomValidity(codeIsNumbersOnly() ? "Code cannot be only numbers. Use coded letters too." : "");
       setCodedPriceManualOverride(Boolean(String(fields.coded.value || "").trim()));
       clearActualPreview();
       showPricingMessage("");
@@ -2592,6 +2616,7 @@
     printQuantityInput.addEventListener("click", () => printQuantityInput.select());
     printQuantityInput.addEventListener("input", () => {
       printQuantityInput.value = printQuantityInput.value.replace(/\D/g, "");
+      printQuantityInput.setCustomValidity(copyCountError(printQuantityInput.value));
       fields.copies.value = printQuantityInput.value || "1";
       saveWorkflowState();
     });
@@ -2610,6 +2635,7 @@
       printDialogQuantityInput.addEventListener("click", () => printDialogQuantityInput.select());
       printDialogQuantityInput.addEventListener("input", () => {
         printDialogQuantityInput.value = printDialogQuantityInput.value.replace(/\D/g, "");
+        printDialogQuantityInput.setCustomValidity(copyCountError(printDialogQuantityInput.value));
       });
       printDialogQuantityInput.addEventListener("keydown", event => {
         if (printSubmissionPending) {

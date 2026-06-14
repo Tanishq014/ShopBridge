@@ -617,8 +617,15 @@ def quick_reprint(
     if not template_path_exists(template) or not parse_required_fields(template.required_fields):
         return RedirectResponse("/new-stock", status_code=303)
 
-    job = _create_print_job(db, variant, template, copies)
-    return _print_redirect(job, template, variant.family.category or "clothes")
+    variant_category = variant.family.category if variant.family else "clothes"
+    try:
+        job = _create_print_job(db, variant, template, copies)
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/new-stock?{urlencode({'template_id': template.id, 'category': variant_category, 'print_error': str(exc)})}",
+            status_code=303,
+        )
+    return _print_redirect(job, template, variant_category)
 
 
 @router.get("/items/{variant_id}", response_class=HTMLResponse)
@@ -646,7 +653,10 @@ def item_reprint(
     template = db.get(TemplateMaster, selected_template_id) if selected_template_id else None
     if not template or not template.active_status:
         return RedirectResponse(f"/items/{variant.id}", status_code=303)
-    job = _create_print_job(db, variant, template, copies)
+    try:
+        job = _create_print_job(db, variant, template, copies)
+    except ValueError as exc:
+        return RedirectResponse(f"/items/{variant.id}?{urlencode({'print_error': str(exc)})}", status_code=303)
     return RedirectResponse(f"/items/{variant.id}?printed={job.id}", status_code=303)
 
 
@@ -663,7 +673,10 @@ def recent_prints(request: Request, db: Session = Depends(get_db)):
 def reprint_job(job_id: int, db: Session = Depends(get_db)):
     old_job = db.get(PrintJob, job_id)
     if old_job and old_job.variant and old_job.template:
-        job = _create_print_job(db, old_job.variant, old_job.template, old_job.copies)
+        try:
+            job = _create_print_job(db, old_job.variant, old_job.template, old_job.copies)
+        except ValueError as exc:
+            return RedirectResponse(f"/recent-prints?{urlencode({'print_error': str(exc)})}", status_code=303)
         return _print_redirect(job, old_job.template, old_job.variant.family.category or "clothes")
     return RedirectResponse("/recent-prints", status_code=303)
 

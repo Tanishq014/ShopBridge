@@ -134,7 +134,7 @@
       <div class="form-grid phone-pricing-grid">
         <label data-phone-field="coded_price">
           Code
-          <input name="coded_price" id="phoneCode" value="{{ submitted.get('coded_price', '') }}" autocomplete="off">
+          <input name="coded_price" id="phoneCode" value="{{ submitted.get('coded_price', '') }}" autocomplete="off" pattern=".*[^0-9].*" title="Code cannot be only numbers. Use coded letters too.">
         </label>
         <label data-phone-field="margin_percent">
           Margin %
@@ -193,7 +193,7 @@
         </div>
         <label>
           Copies
-          <input name="copies" id="phoneCopies" value="{{ submitted.get('copies', 1) }}" inputmode="numeric" required>
+          <input name="copies" id="phoneCopies" value="{{ submitted.get('copies', 1) }}" inputmode="numeric" min="1" max="24" required>
         </label>
         <div class="copy-chip-row" aria-label="Quick copy count">
           <button class="chip-button" type="button" data-copy-count="1">1</button>
@@ -835,7 +835,17 @@
 
     function phoneCleanCopies() {
       phoneFields.copies.value = phoneFields.copies.value.replace(/\D/g, "") || "1";
+      phoneFields.copies.setCustomValidity(phoneCopyCountError(phoneFields.copies.value));
       return phoneFields.copies.value;
+    }
+
+    function phoneCopyCountError(copyCount) {
+      const cleanCopies = Math.max(1, Number.parseInt(copyCount || "1", 10) || 1);
+      return cleanCopies > 24 ? "Maximum print quantity is 24. Change Copies to 24 or less." : "";
+    }
+
+    function phoneCodeIsNumbersOnly() {
+      return /^\d+$/.test(String(phoneFields.code.value || "").trim());
     }
 
     function phoneOpenCopiesDialog() {
@@ -864,6 +874,10 @@
 
     function phoneSubmitAfterCopiesConfirm() {
       phoneCleanCopies();
+      if (phoneFields.copies.validationMessage) {
+        phoneFields.copies.reportValidity();
+        return;
+      }
       phonePrintCopiesConfirmed = true;
       if (phoneForm.requestSubmit) {
         phoneForm.requestSubmit(phoneSubmitPrintButton);
@@ -1357,10 +1371,21 @@
       phoneCodeChoices.innerHTML = "";
       const codeVisible = !document.querySelector('[data-phone-field="coded_price"]').hidden;
       if (!codeVisible) {
+        phoneFields.code.setCustomValidity("");
         phonePriceState.hidden = true;
         return;
       }
+      phoneFields.code.setCustomValidity(phoneCodeIsNumbersOnly() ? "Code cannot be only numbers. Use coded letters too." : "");
       phonePriceState.hidden = true;
+      if (phoneCodeIsNumbersOnly()) {
+        phoneSelectedPriceCodeKey.value = "";
+        phoneSellingPrice.value = "";
+        phonePriceState.className = "workflow-state compact-message warn-state";
+        phonePriceState.querySelector("strong").textContent = "Code invalid";
+        phonePriceState.querySelector("span").textContent = "Code cannot be only numbers. Use coded letters too.";
+        phonePriceState.hidden = false;
+        return;
+      }
       const candidates = phonePriceCandidates();
       if (phoneSelectedPriceCodeKey.value) {
         const selected = candidates.find(candidate => candidate.key === phoneSelectedPriceCodeKey.value);
@@ -1485,7 +1510,7 @@
     function phoneRefreshReadyState() {
       const ready = phoneTemplateReady() && !phonePrinting;
       const codeVisible = !document.querySelector('[data-phone-field="coded_price"]').hidden;
-      const priceReady = !codeVisible || Boolean(String(phoneSellingPrice.value || "").trim());
+      const priceReady = !codeVisible || (Boolean(String(phoneSellingPrice.value || "").trim()) && !phoneCodeIsNumbersOnly());
       phonePrintButton.disabled = !(ready && priceReady);
       phoneActualPreviewButton.disabled = !ready;
       phoneForceNewButton.hidden = !phoneExistingVariantId.value;
@@ -1671,6 +1696,7 @@
     });
     phoneFields.copies.addEventListener("input", () => {
       phoneFields.copies.value = phoneFields.copies.value.replace(/\D/g, "") || "1";
+      phoneFields.copies.setCustomValidity(phoneCopyCountError(phoneFields.copies.value));
       phoneRefreshReadyState();
       phoneSaveState();
     });
@@ -2707,6 +2733,11 @@
         const c = parseInt(rowData.copies, 10);
         if (!c || isNaN(c) || c <= 0) {
           blockers.push("Copies / Qty must be a valid positive number to print.");
+        } else if (c > 24) {
+          blockers.push("Maximum print quantity is 24. Change Copies / Qty to 24 or less.");
+        }
+        if (/^\d+$/.test(String(fields.coded_price || "").trim())) {
+          blockers.push("Code cannot be only numbers. Use coded letters too.");
         }
       }
 

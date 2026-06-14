@@ -8,6 +8,7 @@ from app.models import LabelVariant, PrintJob, TemplateMaster
 from app.services.bartender_service import process_print_job
 from app.services.field_config import parse_required_fields
 from app.services.settings_service import get_bartender_settings
+from app.services.workflow.validation_service import validate_print_copies
 
 
 def create_print_job(
@@ -16,6 +17,7 @@ def create_print_job(
     template: TemplateMaster,
     copies: int,
 ) -> PrintJob:
+    clean_copies = validate_print_copies(copies)
     if not variant.id:
         raise ValueError("Cannot print before the item is saved.")
     if not (variant.barcode or "").strip():
@@ -28,7 +30,7 @@ def create_print_job(
     job = PrintJob(
         variant_id=variant.id,
         template_id=template.id,
-        copies=max(1, copies),
+        copies=clean_copies,
         status="pending",
     )
     db.add(job)

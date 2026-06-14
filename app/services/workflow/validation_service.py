@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+import re
 
 from app.models import LabelVariant, TemplateMaster
 from app.services.workflow.form_state_service import parse_extra_field_values, variant_template_id
+
+MAX_PRINT_COPIES = 24
 
 
 def decimal_or_none(value: str | None) -> Decimal | None:
@@ -19,6 +22,23 @@ def int_or_none(value: str | None) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def validate_print_copies(copies: int | str | None) -> int:
+    try:
+        clean_copies = int(copies or 1)
+    except (TypeError, ValueError):
+        clean_copies = 1
+    if clean_copies < 1:
+        clean_copies = 1
+    if clean_copies > MAX_PRINT_COPIES:
+        raise ValueError(f"Maximum print quantity is {MAX_PRINT_COPIES}. Change Print Quantity to {MAX_PRINT_COPIES} or less.")
+    return clean_copies
+
+
+def code_is_numbers_only(value: str | None) -> bool:
+    clean_value = str(value or "").strip()
+    return bool(clean_value) and bool(re.fullmatch(r"\d+", clean_value))
 
 
 def same_text(left: str | None, right: str | None) -> bool:

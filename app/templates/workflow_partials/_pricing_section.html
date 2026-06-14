@@ -1,7 +1,7 @@
           <label id="codedField" data-field="coded_price">
             Code
             <div class="code-entry-row">
-              <input name="coded_price" id="codedInput">
+              <input name="coded_price" id="codedInput" pattern=".*[^0-9].*" title="Code cannot be only numbers. Use coded letters too.">
               <div class="price-code-inline-panel" id="priceCodeInlinePanel" hidden>
                 <span class="field-hint-inline price-code-inline" id="priceCodeInlineMessage" hidden></span>
                 <div class="choice-list compact-choice-list" id="priceCodeInlineChoices" hidden></div>

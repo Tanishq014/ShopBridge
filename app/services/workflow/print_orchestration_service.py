@@ -14,7 +14,13 @@ from app.services.workflow.form_state_service import format_extra_field_values, 
 from app.services.workflow.item_service import find_exact_variant, find_or_create_family
 from app.services.workflow.pricing_workflow_service import candidate_payload, compact_money, find_candidate_by_key, money
 from app.services.workflow.print_service import create_print_job
-from app.services.workflow.validation_service import decimal_or_none, int_or_none, label_details_changed
+from app.services.workflow.validation_service import (
+    code_is_numbers_only,
+    decimal_or_none,
+    int_or_none,
+    label_details_changed,
+    validate_print_copies,
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,11 @@ class WorkflowPrintError(Exception):
 
 
 def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewStockResult:
+    try:
+        copies = validate_print_copies(data.copies)
+    except ValueError as exc:
+        raise WorkflowPrintError(str(exc)) from exc
+
     template = db.get(TemplateMaster, data.template_id)
     if not template or not template.active_status:
         raise WorkflowPrintError("Select an active template.")
@@ -70,11 +81,13 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
     if data.workflow_mode == "quick_reprint":
         if not source_variant:
             raise WorkflowPrintError("Select an existing item before quick reprint.")
-        job = create_print_job(db, source_variant, template, data.copies)
+        job = create_print_job(db, source_variant, template, copies)
         return PrintNewStockResult(job=job, template=template, category=data.category)
 
     required_fields = parse_required_fields(template.required_fields)
     required_field_set = set(required_fields)
+    if code_is_numbers_only(data.coded_price):
+        raise WorkflowPrintError("Code cannot be only numbers. Enter coded letters too, for example CP45.")
     template_field_settings = get_template_field_settings()
 
     def is_in_template(field_name: str) -> bool:
@@ -304,7 +317,7 @@ def process_new_stock_print(db: Session, data: PrintNewStockInput) -> PrintNewSt
     db.refresh(variant)
 
     try:
-        job = create_print_job(db, variant, template, data.copies)
+        job = create_print_job(db, variant, template, copies)
     except Exception as exc:
         raise WorkflowPrintError(f"Variant saved, but print job failed: {exc}", status_code=500) from exc
 

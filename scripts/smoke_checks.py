@@ -167,6 +167,7 @@ def main() -> None:
         sale_receipt_markup = (ROOT / "app" / "templates" / "sale_receipt.html").read_text(encoding="utf-8")
         sales_route_source = (ROOT / "app" / "routes" / "sales.py").read_text(encoding="utf-8")
         print_orchestration_service_source = (ROOT / "app" / "services" / "workflow" / "print_orchestration_service.py").read_text(encoding="utf-8")
+        workflow_print_code = print_orchestration_service_source
         app_css = (ROOT / "app" / "static" / "app.css").read_text(encoding="utf-8")
         assert_true("focusBillingItem" in workflow_markup and "familyName.focus" in workflow_markup, "/new-stock does not wire Billing Item focus")
         assert_true("familyName.addEventListener(\"click\"" in workflow_markup and "familyName.select();" in workflow_markup, "Billing Item does not select text on click")
@@ -179,6 +180,8 @@ def main() -> None:
         assert_true("event.key === \"Enter\"" in workflow_markup and "printFromInlineQuantity();" in workflow_markup, "Enter on print quantity does not trigger print")
         assert_true("resetPrintSubmissionState" in workflow_markup and "form.addEventListener(\"invalid\"" in workflow_markup, "browser validation can leave print stuck")
         assert_true("restoreVariantForRetry" in workflow_markup and "hasPrintError && initialVariantId" in workflow_markup, "print error retry state is not restored from saved item")
+        assert_true('"coded_price" in required_field_set and code_is_numbers_only' not in workflow_print_code, "numeric-only code block must not depend on coded_price being required")
+        assert_true("if code_is_numbers_only(data.coded_price)" in workflow_print_code, "numeric-only code must be blocked whenever coded_price is entered")
         assert_true("uppercaseVisibleFieldValues" in workflow_markup and "uppercaseFieldValue(field)" in workflow_markup, "laptop inputs should uppercase visible text fields")
         assert_true("scanner_qr_url" not in pos_markup and "phone_print_qr_url" not in pos_markup and "scanner_url" in settings_markup and "phone_print_url" in settings_markup, "POS top QR shortcuts should be removed and URLs should remain in settings")
         assert_true("topbar-menu-toggle" in base_markup and "topbarMenuPanel" in base_markup and "topbar-menu-panel" in base_markup, "shared mobile hamburger menu is missing")
@@ -606,6 +609,28 @@ def main() -> None:
         prefixed_item = db.query(LabelVariant).filter_by(item_display_name="Prefixed Code").one()
         assert_true(prefixed_item.coded_price == "QSPA", "prefixed code should preserve the raw text")
         assert_true(str(prefixed_item.selling_price) in {"750.00", "750"}, "prefixed code should still decode the selling price")
+
+        numeric_code_response = print_item(
+            db,
+            priority_template,
+            item_display_name="Numeric Only Code",
+            coded_price="1234",
+            selling_price="1234",
+            mrp="",
+            size="",
+        )
+        assert_true(getattr(numeric_code_response, "status_code", None) == 400, "numeric-only code did not block print")
+
+        too_many_copies_response = print_item(
+            db,
+            priority_template,
+            item_display_name="Too Many Copies",
+            coded_price="QSPA",
+            copies=25,
+            mrp="",
+            size="",
+        )
+        assert_true(getattr(too_many_copies_response, "status_code", None) == 400, "more than 24 print copies did not block print")
 
         save_price_code_settings(
             digit_to_code={

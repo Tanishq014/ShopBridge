@@ -1,7 +1,7 @@
         <div class="quick-row print-inline-row">
           <label>
             Print Quantity
-            <input id="printQuantityInput" inputmode="numeric" value="1">
+            <input id="printQuantityInput" inputmode="numeric" min="1" max="24" value="1">
           </label>
           <button class="button primary print-button" type="button" id="printButton" disabled>Print Labels</button>
         </div>
@@ -11,7 +11,7 @@
             <h3 id="printQuantityDialogTitle">Print Labels</h3>
             <label>
               Quantity
-              <input id="printDialogQuantityInput" inputmode="numeric" value="1">
+              <input id="printDialogQuantityInput" inputmode="numeric" min="1" max="24" value="1">
             </label>
             <div class="form-actions">
               <button class="button" type="button" id="cancelPrintDialogButton">Cancel</button>
