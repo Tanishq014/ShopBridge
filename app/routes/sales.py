@@ -297,9 +297,12 @@ def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depe
 
     try:
         try:
+            print(f"[Direct Print] Attempting image print to {printer_name} for sale {sale.id}")
             print_receipt_direct_image(printer_name, sale, receipt_url=receipt_url)
+            print("[Direct Print] Image print successful")
             return {"ok": True, "message": "Receipt sent to printer (Image Mode)"}
         except Exception as img_e:
+            print(f"[Direct Print] Image mode failed: {img_e}")
             if sale.upi_vpa:
                 return {
                     "ok": False,
@@ -307,9 +310,14 @@ def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depe
                 }
 
             # Fallback to ESC/POS text
+            print(f"[Direct Print] Falling back to text mode print for sale {sale.id}")
             print_receipt_direct(printer_name, sale)
+            print("[Direct Print] Text mode print successful")
             return {"ok": True, "message": f"Receipt sent to printer (Text Mode Fallback). Image mode failed: {img_e}"}
     except Exception as e:
+        print(f"[Direct Print] Text mode or general failure: {e}")
+        import traceback
+        traceback.print_exc()
         return {"ok": False, "error": str(e)}
 
 
