@@ -6,7 +6,12 @@
       <h1>Label Variants</h1>
       <p>Exact sticker identities with barcode, MRP, coded price, and template choice.</p>
     </div>
-    <a class="button primary" href="/variants/new">New Variant</a>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <form id="bulkDeleteForm" method="post" action="/variants/bulk-delete" onsubmit="return handleBulkDelete(event);" style="margin: 0;">
+        <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Items</button>
+      </form>
+      <a class="button primary" href="/variants/new">New Variant</a>
+    </div>
   </section>
 
   <div style="margin-bottom: 1rem; display: flex; gap: 1rem;">
@@ -22,13 +27,9 @@
   </div>
   {% endif %}
 
-  <form id="bulkDeleteForm" method="post" action="/variants/bulk-delete" onsubmit="return handleBulkDelete(event);">
-    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
-      <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Items</button>
-    </div>
-  </form>
+
   <div class="table-wrap">
-    <table>
+    <table class="compact-table">
       <thead>
         <tr>
           <th style="width: 40px;"><input type="checkbox" id="selectAllVisible"></th>
@@ -64,7 +65,7 @@
               {% if variant.billing_price_missing %}<span class="badge warn">missing</span>{% endif %}
             </td>
             <td>{{ variant.coded_price or "" }}</td>
-            <td>{{ variant.created_at|local_time }}</td>
+            <td class="nowrap">{{ variant.created_at|local_time }}</td>
             <td><span class="badge {{ 'ok' if variant.status == 'active' else 'muted' }}">{{ variant.status }}</span></td>
             <td class="row-actions" style="flex-wrap: nowrap;">
               <a class="button small" href="/variants/{{ variant.id }}/preview">Preview</a>
@@ -74,6 +75,9 @@
               {% else %}
                 <form method="post" action="/variants/{{ variant.id }}/activate" style="display: inline;"><button class="button small" type="submit">Activate</button></form>
               {% endif %}
+              <form method="post" action="/variants/{{ variant.id }}/delete" style="display: inline;" onsubmit="return confirm('Are you sure you want to permanently delete this item? Items with history will be skipped.');">
+                <button type="submit" class="button small danger">Delete</button>
+              </form>
             </td>
           </tr>
         {% else %}

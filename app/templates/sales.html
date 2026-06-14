@@ -4,9 +4,11 @@
   <section class="page-header">
     <div>
       <h1>Sales</h1>
-      <p>Saved local POS bills. Tally sync and direct printer status are tracked but not active yet.</p>
     </div>
     <div class="form-actions">
+      <form id="bulkDeleteForm" method="post" action="/sales/bulk-delete" onsubmit="return handleBulkDelete(event);" style="margin: 0;">
+        <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Bills</button>
+      </form>
       <a class="button primary" href="/pos">Back to POS</a>
     </div>
   </section>
@@ -187,13 +189,9 @@
   </div>
   {% endif %}
 
-  <form id="bulkDeleteForm" method="post" action="/sales/bulk-delete" onsubmit="return handleBulkDelete(event);">
-    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
-      <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Bills</button>
-    </div>
-  </form>
+
   <div class="table-wrap">
-    <table>
+    <table class="compact-table">
       <thead>
         <tr>
           <th style="width: 40px;"><input type="checkbox" id="selectAllVisible"></th>
@@ -212,7 +210,7 @@
           <tr class="sale-row">
             <td><input type="checkbox" name="sale_ids" value="{{ sale.id }}" class="row-checkbox" form="bulkDeleteForm" {% if sale.tally_sync_status == 'synced' %}disabled title="Cannot delete synced bill"{% endif %}></td>
             <td class="mono">{{ sale.bill_number }}</td>
-            <td>{{ sale.created_at|local_time }}</td>
+            <td class="nowrap">{{ sale.created_at|local_time }}</td>
             <td>{{ sale.items|length }}</td>
             <td>{{ "%.2f"|format(sale.total) }}</td>
             <td>{{ sale.payment_mode|title }}</td>
@@ -229,7 +227,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="8" class="empty">
+            <td colspan="9" class="empty">
               <div class="empty-state">
                 <strong>No sales yet.</strong>
                 <span>Checkout the POS cart and saved local bills will appear here.</span>

@@ -605,9 +605,14 @@ table {
 th,
 td {
   border-bottom: 1px solid #e6eaf0;
-  padding: 10px 12px;
+  padding: 4px 12px;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.compact-table th,
+.compact-table td {
+  white-space: nowrap;
 }
 
 th {
@@ -702,6 +707,10 @@ tbody tr:last-child td {
 
 .mono {
   font-family: Consolas, Monaco, monospace;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .path-cell {
