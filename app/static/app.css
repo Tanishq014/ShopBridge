@@ -2014,8 +2014,8 @@ tbody tr:last-child td {
   .receipt {
     border: 0;
     box-shadow: none;
-    padding: 0 3mm;
-    width: 74mm;
+    padding: 0 2mm;
+    width: 76mm;
   }
 
   .no-print {
