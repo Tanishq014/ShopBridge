@@ -2215,6 +2215,15 @@
           let val = parseFloat(cleanExpr);
           if (isNaN(val)) return;
           
+          if (op === '' && !isPercentage) {
+            isPercentage = true;
+            if (val < 100) {
+              op = '-';
+            } else {
+              op = '/';
+            }
+          }
+          
           let newRate = currentMrp;
           if (isPercentage) {
             if (op === '-' || op === '+') {
@@ -2246,13 +2255,15 @@
              state.focusTransition = true;
              try {
                await saveCartField(rowIndex, "rate");
-               const freshRateInput = inputForCartField(rowIndex, "rate");
-               if (freshRateInput) {
-                  freshRateInput.focus();
-                  freshRateInput.select();
-               }
              } finally {
-               state.focusTransition = false;
+               window.setTimeout(() => {
+                 const freshRateInput = inputForCartField(rowIndex, "rate");
+                 if (freshRateInput) {
+                    freshRateInput.focus();
+                    freshRateInput.select();
+                 }
+                 state.focusTransition = false;
+               }, 50);
              }
           })();
         };
