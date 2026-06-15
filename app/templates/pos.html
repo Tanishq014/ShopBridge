@@ -2182,7 +2182,7 @@
         return;
       }
 
-      if (fieldName === "mrp" && event.ctrlKey && event.key.toLowerCase() === "c") {
+      if (fieldName === "mrp" && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "c") {
         event.preventDefault();
         event.stopPropagation();
         
