@@ -279,6 +279,7 @@ def main() -> None:
         assert_true("/sales/{sale_id}/data" in sales_route_source and "sale_payload" in sales_route_source, "sales replay data route is missing")
         assert_true("window.print()" in sale_receipt_markup and "Thank you" in sale_receipt_markup, "receipt template is missing browser print UI")
         assert_true("size: 80mm auto" in app_css and ".receipt" in app_css, "80mm receipt print CSS is missing")
+        assert_true((ROOT / "app" / "static" / "html2pdf.bundle.min.js").exists(), "Local html2pdf bundle is missing")
 
         assert_true("item_search" in sales_route_source, "item_search parameter exists in sales route")
         assert_true("SaleItem" in sales_route_source and "exists" in sales_route_source, "SaleItem is used for item search")

@@ -219,7 +219,8 @@
             <td class="row-actions" style="flex-wrap: nowrap;">
               <a class="button small" href="/sales/{{ sale.id }}">Open</a>
               <a class="button small" href="/pos?sale_id={{ sale.id }}">Open in POS</a>
-              <a class="button small" href="/sales/{{ sale.id }}/receipt">Receipt</a>
+              <a class="button small" href="/sales/{{ sale.id }}/receipt" target="_blank">Open Receipt</a>
+              <a class="button small" href="/sales/{{ sale.id }}/receipt?download_pdf=1" target="_blank" title="Download PDF">Download PDF</a>
               <form method="post" action="/sales/{{ sale.id }}/delete" style="display: inline;" onsubmit="return confirm('Are you sure you want to permanently delete this bill? This cannot be undone.');">
                 <button type="submit" class="button small danger" {% if sale.tally_sync_status == 'synced' %}disabled title="Cannot delete synced bill"{% endif %}>Delete</button>
               </form>
