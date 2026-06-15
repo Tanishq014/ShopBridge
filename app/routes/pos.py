@@ -844,7 +844,7 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
         return {"ok": True, "items": []}
 
     lowered = term.lower()
-    like = f"%{lowered}%" if len(lowered) >= 3 else f"{lowered}%"
+    like = f"%{lowered}%" if len(lowered) >= 2 else f"{lowered}%"
     clean_barcode = normalize_barcode(term)
     barcode_like = bool(clean_barcode) and len(clean_barcode) >= 4 and clean_barcode.replace("-", "").isalnum()
     variants = db.execute(

@@ -205,7 +205,26 @@
         </form>
       </div>
     </dialog>
-
+    <dialog id="mrpCalcModal" class="pos-modal elegant-modal">
+      <div class="pos-modal-content">
+        <h2 class="elegant-modal-title">Calculate Rate</h2>
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 12px; text-align: center;">
+          Examples: <kbd>-15%</kbd>, <kbd>/ 115%</kbd>, <kbd>* 0.8</kbd>, <kbd>- 100</kbd>
+        </p>
+        <div style="margin-bottom: 16px;">
+          <input type="text" id="mrpCalcInput" class="input" style="width: 100%; text-align: center; font-size: 18px; font-weight: bold; letter-spacing: 1px;" autocomplete="off" placeholder="Type calculation...">
+        </div>
+        <div class="pos-modal-actions action-grid" style="grid-template-columns: 1fr;">
+          <button class="button action-btn primary" id="mrpCalcApplyBtn">
+            <span class="action-text">Apply to Rate</span>
+            <kbd>Enter</kbd>
+          </button>
+        </div>
+        <form method="dialog" style="text-align: center; margin-top: 16px;">
+          <button class="button small outline" type="submit" value="cancel">Cancel (Esc)</button>
+        </form>
+      </div>
+    </dialog>
 
 
     <footer class="pos-help-bar" id="posHelpBar" hidden>
@@ -678,7 +697,7 @@
         const exactBarcode = Boolean(barcodeQuery && barcode === barcodeQuery);
         const exactNameOrAlias = values.some(value => value === query);
         const starts = values.some(value => value.startsWith(query));
-        const contains = query.length >= 3 && values.some(value => value.includes(query));
+        const contains = query.length >= 2 && values.some(value => value.includes(query));
         if (!exactBarcode && !exactNameOrAlias && !starts && !contains) {
           return;
         }
@@ -2160,6 +2179,112 @@
         event.preventDefault();
         event.stopPropagation();
         await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
+        return;
+      }
+
+      if (fieldName === "mrp" && event.ctrlKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        const mrpCalcModal = document.getElementById("mrpCalcModal");
+        const mrpCalcInput = document.getElementById("mrpCalcInput");
+        const mrpCalcApplyBtn = document.getElementById("mrpCalcApplyBtn");
+        
+        const currentMrpStr = input.value;
+        const currentMrp = parseFloat(currentMrpStr) || 0;
+        if (currentMrp <= 0) {
+           setStatus("Enter a valid MRP before calculating rate.", "error");
+           return;
+        }
+        
+        mrpCalcInput.value = "";
+        
+        const applyCalculation = () => {
+          const expr = mrpCalcInput.value.trim();
+          if (!expr) return;
+          
+          let isPercentage = expr.endsWith('%');
+          let cleanExpr = isPercentage ? expr.slice(0, -1).trim() : expr;
+          
+          let op = '';
+          if (['+', '-', '*', '/'].includes(cleanExpr[0])) {
+            op = cleanExpr[0];
+            cleanExpr = cleanExpr.slice(1).trim();
+          }
+          
+          let val = parseFloat(cleanExpr);
+          if (isNaN(val)) return;
+          
+          let newRate = currentMrp;
+          if (isPercentage) {
+            if (op === '-' || op === '+') {
+               val = (currentMrp * val) / 100;
+            } else if (op === '/' || op === '*') {
+               val = val / 100;
+            }
+          }
+          
+          if (op === '-') newRate = currentMrp - val;
+          else if (op === '+') newRate = currentMrp + val;
+          else if (op === '*') newRate = currentMrp * val;
+          else if (op === '/') newRate = currentMrp / val;
+          else newRate = val;
+          
+          if (!Number.isFinite(newRate) || newRate <= 0) {
+            setStatus("Invalid rate calculation.", "error");
+            return;
+          }
+
+          const rateInput = inputForCartField(rowIndex, "rate");
+          if (rateInput) {
+            rateInput.value = newRate.toFixed(2);
+          }
+          
+          mrpCalcModal.close("apply");
+          
+          (async () => {
+             state.focusTransition = true;
+             try {
+               await saveCartField(rowIndex, "rate");
+               const freshRateInput = inputForCartField(rowIndex, "rate");
+               if (freshRateInput) {
+                  freshRateInput.focus();
+                  freshRateInput.select();
+               }
+             } finally {
+               state.focusTransition = false;
+             }
+          })();
+        };
+        
+        const onCalcKeydown = (e) => {
+          if (e.key === "Enter") {
+             e.preventDefault();
+             applyCalculation();
+          }
+        };
+        const onApplyClick = () => {
+          applyCalculation();
+        };
+        
+        mrpCalcInput.addEventListener("keydown", onCalcKeydown);
+        mrpCalcApplyBtn.addEventListener("click", onApplyClick);
+        
+        mrpCalcModal.addEventListener("close", () => {
+           mrpCalcInput.removeEventListener("keydown", onCalcKeydown);
+           mrpCalcApplyBtn.removeEventListener("click", onApplyClick);
+           if (mrpCalcModal.returnValue !== "apply") {
+               const mrpInput = inputForCartField(rowIndex, "mrp");
+               if (mrpInput) {
+                   mrpInput.focus();
+                   mrpInput.select();
+               }
+           }
+        }, {once: true});
+        
+        mrpCalcModal.returnValue = "";
+        mrpCalcModal.showModal();
+        mrpCalcInput.focus();
         return;
       }
 
