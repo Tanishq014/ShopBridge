@@ -367,21 +367,23 @@
       clearRowSelection();
       const addRow = document.querySelector(".pos-add-row");
       if (addRow) addRow.classList.add("selected");
-      window.setTimeout(() => {
+      const applyFocus = () => {
         state.selectedIndex = -1;
         clearRowSelection();
         if (addRow) {
-          window.scrollTo({
-            top: document.body.scrollHeight,
-            behavior: "smooth"
-          });
-          addRow.scrollIntoView({ block: "end", behavior: "smooth" });
+          addRow.scrollIntoView({block: "nearest", inline: "nearest"});
         }
-        searchInput.focus();
+        searchInput.focus({preventScroll: true});
         if (selectText) {
           searchInput.select();
+        } else if (typeof searchInput.setSelectionRange === "function") {
+          const caretPosition = searchInput.value.length;
+          searchInput.setSelectionRange(caretPosition, caretPosition);
         }
-      }, 50);
+        return document.activeElement === searchInput;
+      };
+      window.requestAnimationFrame(applyFocus);
+      return applyFocus;
     }
 
     function lineEditIsActive() {
@@ -525,20 +527,29 @@
 
     async function exitPreview(refresh = true, force = false) {
       if (!state.previewMode) {
-        return;
+        return true;
       }
       if (!force && state.loadedSaleDirty && !window.confirm("Discard edits to this opened bill and return to the active bill?")) {
-        return;
+        return false;
       }
       const returnHeldCartId = state.returnHeldCartId;
-      setPreviewState(false, null);
-      state.previewSaleId = null;
       if (returnHeldCartId) {
-        await resumeHeldBillById(returnHeldCartId, {discardActive: true});
+        const resumed = await resumeHeldBillById(returnHeldCartId, {
+          discardActive: true,
+          focusAfter: false,
+        });
+        if (!resumed) {
+          return false;
+        }
       } else if (refresh) {
-        await discardActiveCart();
+        if (!await discardActiveCart()) {
+          return false;
+        }
         await loadCart(false);
       }
+      setPreviewState(false, null);
+      state.previewSaleId = null;
+      return true;
     }
 
     function scrollSelectedCartRowIntoView() {
@@ -1287,13 +1298,13 @@
       }
     }
 
-    async function resumeHeldBillById(cartId, {discardActive = false} = {}) {
+    async function resumeHeldBillById(cartId, {discardActive = false, focusAfter = true} = {}) {
       if (!cartId) {
         setStatus("No held bill selected.", "info");
-        return;
+        return false;
       }
       if (!discardActive && !await saveFocusedLineInput()) {
-        return;
+        return false;
       }
       try {
         const suffix = discardActive ? "?discard_active=true" : "";
@@ -1322,9 +1333,13 @@
         state.heldSelectionActive = false;
         await loadBillNavItems();
         setStatus("Held bill resumed.", "success");
-        focusItemInput(false);
+        if (focusAfter) {
+          focusItemInput(false);
+        }
+        return true;
       } catch (error) {
         setStatus(error.message || "Could not resume held bill.", "error");
+        return false;
       }
     }
 
@@ -1410,7 +1425,7 @@
       }
     }
 
-    async function discardActiveCart() {
+    async function discardActiveCart({focusAfter = false} = {}) {
       try {
         const response = await fetch("/pos/cart/active/discard", {method: "POST"});
         const data = await response.json();
@@ -1420,8 +1435,13 @@
         history.replaceState({}, document.title, window.location.pathname);
         renderCart(data.cart);
         await loadBillNavItems();
+        if (focusAfter) {
+          focusItemInput(false);
+        }
+        return true;
       } catch (error) {
         setStatus(error.message || "Could not discard active bill.", "error");
+        return false;
       }
     }
     async function confirmLeaveDirtySaleEdit() {
@@ -2290,7 +2310,7 @@
                    mrpInput.focus();
                    mrpInput.select();
                }
-           }
+          }
         }, {once: true});
         
         mrpCalcModal.returnValue = "";
@@ -2454,10 +2474,12 @@
       }
     }
 
-    async function postCartAction(url, successMessage) {
+    async function postCartAction(url, successMessage, {focusAfter = true} = {}) {
       if (!confirmLoadedSaleEdit()) {
-        focusSelectedCartItem(true);
-        return;
+        if (focusAfter) {
+          focusSelectedCartItem(true);
+        }
+        return false;
       }
       try {
         const response = await fetch(url, {method: "POST"});
@@ -2468,11 +2490,17 @@
         renderCart(cart);
         markLoadedSaleDirty();
         setStatus(successMessage || "Cart updated.", "success");
-        focusSelectedCartItem(true);
+        if (focusAfter) {
+          focusSelectedCartItem(true);
+        }
+        return true;
       } catch (error) {
         setStatus(error.message || "Cart action failed.", "error");
         playBeep(false);
-        focusSelectedCartItem(true);
+        if (focusAfter) {
+          focusSelectedCartItem(true);
+        }
+        return false;
       }
     }
 
@@ -2879,6 +2907,7 @@
              } else {
                setStatus("Bill finalized. Started a new bill.", "success");
              }
+             focusItemInput(false);
              return data.sale_id || true;
           } else {
              setStatus(data.message || "Could not save bill.", "error");
@@ -2893,7 +2922,7 @@
                }
              }
              return false;
-          }
+           }
         } catch (e) {
           setStatus("Could not save bill.", "error");
           state.checkoutSubmitting = false;
@@ -2908,7 +2937,12 @@
     }
 
     searchInput.addEventListener("focus", () => {
-      focusItemInput(false);
+      state.selectedIndex = -1;
+      cartRows.querySelectorAll(".pos-billing-row").forEach(row => {
+        row.classList.remove("selected");
+      });
+      const addRow = document.querySelector(".pos-add-row");
+      if (addRow) addRow.classList.add("selected");
     });
 
     searchInput.addEventListener("input", () => {
@@ -3118,7 +3152,12 @@
           ctrlAModal.removeEventListener("click", onClick);
           ctrlAModal.removeEventListener("close", onClose);
           document.removeEventListener("keydown", onKeyDown, true);
-          if (ctrlAModal.open) ctrlAModal.close();
+          if (ctrlAModal.open) {
+            ctrlAModal.addEventListener("close", () => {
+              focusItemInput(false);
+            }, {once: true});
+            ctrlAModal.close();
+          }
           resolve(value);
         }
         function onClick(event) {
@@ -3247,21 +3286,38 @@
         setStatus("Bill held. Started a new bill.", "success");
         return true;
       } else if (action === "save_print") {
-        await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: true});
-        return true;
+        return Boolean(await checkoutNow({
+          silentAfterSave: true,
+          skipConfirm: true,
+          printAfterSave: true,
+        }));
       } else if (action === "save_no_print") {
-        await checkoutNow({silentAfterSave: true, skipConfirm: true, printAfterSave: false});
-        return true;
+        return Boolean(await checkoutNow({
+          silentAfterSave: true,
+          skipConfirm: true,
+          printAfterSave: false,
+        }));
       } else if (action === "discard") {
-        if (state.openedSaleMode === "edit") {
-          await exitPreview(true, true);
+        let discarded = false;
+        const discardingOpenedSale = state.openedSaleMode === "edit";
+        if (discardingOpenedSale) {
+          discarded = await exitPreview(true, true);
         } else {
+          discarded = await postCartAction(
+            "/pos/cart/clear",
+            "Bill cleared.",
+            {focusAfter: false},
+          );
+        }
+        if (!discarded) {
+          return false;
+        }
+        if (!discardingOpenedSale) {
           state.buyerNameDraft = "";
           if (buyerNameInput) buyerNameInput.value = "";
           setBillDateDraft();
-          await postCartAction("/pos/cart/clear", "Bill cleared.");
-          await loadCart();
         }
+        focusItemInput(false);
         return true;
       }
     }

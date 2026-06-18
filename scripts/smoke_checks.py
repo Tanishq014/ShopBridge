@@ -1205,6 +1205,34 @@ def main() -> None:
         assert_true("fetch(\"/pos/checkout/json\"" in pos_html_source, "checkout must call JSON checkout endpoint")
         assert_true('fetch("/pos/cart/active/discard"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Discard must call discard endpoint and continue")
         assert_true('fetch("/pos/cart/hold"' in pos_html_source and "return true" in pos_html_source, "Ctrl A Hold must call hold endpoint and continue")
+        assert_true(
+            "return Boolean(await checkoutNow({" in pos_html_source,
+            "Ctrl+A save actions must propagate checkout failure instead of continuing bill navigation",
+        )
+        assert_true(
+            "Secondary forceful focus" not in pos_html_source
+            and "if (document.activeElement !== searchInput)" not in pos_html_source,
+            "POS scan focus must not use a delayed force-focus timer that can steal focus",
+        )
+        assert_true(
+            'ctrlAModal.addEventListener("close", () => {' in pos_html_source
+            and "focusItemInput(false);" in pos_html_source,
+            "Ctrl+A dialog must focus the scan input from its actual close lifecycle",
+        )
+        assert_true(
+            "searchInput.setSelectionRange(caretPosition, caretPosition)" in pos_html_source
+            and "document.activeElement === searchInput" in pos_html_source,
+            "POS scan focus must place a real caret and verify the active element",
+        )
+        assert_true(
+            'searchInput.addEventListener("focus", () => {\n      focusItemInput(false);' not in pos_html_source,
+            "POS scan focus event must not recursively call the focus helper",
+        )
+        assert_true(
+            'discarded = await postCartAction(' in pos_html_source
+            and "if (!discarded)" in pos_html_source,
+            "Ctrl+A discard must stop when clearing the current bill fails",
+        )
         assert_true("qty = item.total_qty ?? item.count ?? 0" in pos_html_source, "held bill qty must use count as fallback so it does not show Qty 0")
         assert_true('selectedItem.status === "held"' in pos_html_source and 'targetItem.status !== "held"' in pos_html_source, "Discard Selected must only act on real held rows")
         assert_true("state.billNavBusy" in pos_html_source and "billNavLoadRequestId" in pos_html_source, "bill navigation must guard overlapping PgUp/PgDn actions")
