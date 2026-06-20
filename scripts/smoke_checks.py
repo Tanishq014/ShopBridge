@@ -1385,6 +1385,7 @@ def main() -> None:
             sale_receipt_code = f.read()
             assert_true("hide_buttons" in sale_receipt_code, "hide_buttons=1 support exists in sale_receipt.html")
             assert_true("{% if not capture_mode %}" in sale_receipt_code and "window.print()" in sale_receipt_code, "window.print() is disabled in capture mode")
+            assert_true('CYII=""' not in sale_receipt_code, "embedded Instagram QR src must not contain an extra quote")
 
         with open("app/services/receipt_print_service.py", "r", encoding="utf-8") as f:
             receipt_service_code = f.read()
@@ -1393,7 +1394,7 @@ def main() -> None:
             assert_true("crop" in receipt_service_code and "bbox[3]" in receipt_service_code, "service crops bottom whitespace")
             assert_true("appears blank" in receipt_service_code, "receipt service checks for blank screenshot")
             assert_true("may be clipped" in receipt_service_code, "receipt service checks for clipped screenshot")
-            assert_true("scale = HORZRES / im.size[0]" in receipt_service_code or "scale_x = HORZRES / im.size[0]" in receipt_service_code, "service scales image to printer width")
+            assert_true("scale = HORZRES / im.size[0]" in receipt_service_code or "scale_x = HORZRES / im.size[0]" in receipt_service_code or "scale_x = available_width / im.size[0]" in receipt_service_code, "service scales image to printer width")
         with open("app/templates/base.html", "r", encoding="utf-8") as f:
             base_html = f.read()
             assert_true('href="/scan"' not in base_html, "base.html should not contain /scan links")

@@ -221,8 +221,11 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
             LOGPIXELSX = hDC.GetDeviceCaps(win32con.LOGPIXELSX)
             LOGPIXELSY = hDC.GetDeviceCaps(win32con.LOGPIXELSY)
 
-            # Base scale to stretch the width to full page
-            scale_x = HORZRES / im.size[0]
+            left_offset_px = 18
+            available_width = HORZRES - left_offset_px
+
+            # Base scale to stretch the width to available page width
+            scale_x = available_width / im.size[0]
             
             # If the printer has different X and Y DPI (common in thermal printers),
             # we must adjust the Y scale to maintain the correct visual aspect ratio.
@@ -232,7 +235,7 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
             scaled_height = int(im.size[1] * scale_y)
 
             dib = ImageWin.Dib(im)
-            dib.draw(hDC.GetHandleOutput(), (0, 0, HORZRES, scaled_height))
+            dib.draw(hDC.GetHandleOutput(), (left_offset_px, 0, left_offset_px + available_width, scaled_height))
         finally:
             if page_started:
                 try:
