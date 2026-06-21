@@ -317,6 +317,7 @@
       activeEditField: null,
       activeEditOriginalValue: null,
       activeEditDirty: false,
+      pendingLineSaves: new Map(),
       recentSalesOffset: 0,
       hasMoreRecentSales: true,
       buyerNameDraft: "",
@@ -460,8 +461,6 @@
     }
 
     function confirmLoadedSaleEdit() {
-      // No first-edit confirmation. Just mark the bill dirty and allow the edit.
-      // Confirmation only happens on navigate-away (openBillNavItemAt) or final Save.
       if (state.previewMode && !state.loadedSaleDirty) {
         state.loadedSaleDirty = true;
       }
@@ -1303,6 +1302,9 @@
         setStatus("No held bill selected.", "info");
         return false;
       }
+      if (!await waitForPendingLineSaves()) {
+        return false;
+      }
       if (!discardActive && !await saveFocusedLineInput()) {
         return false;
       }
@@ -1368,6 +1370,9 @@
           focusItemInput(false);
           return;
         }
+        if (!await waitForPendingLineSaves()) {
+          return;
+        }
         try {
           const response = await fetch("/pos/cart/active/discard", {method: "POST"});
           const data = await response.json();
@@ -1426,6 +1431,9 @@
     }
 
     async function discardActiveCart({focusAfter = false} = {}) {
+      if (!await waitForPendingLineSaves()) {
+        return false;
+      }
       try {
         const response = await fetch("/pos/cart/active/discard", {method: "POST"});
         const data = await response.json();
@@ -1809,24 +1817,7 @@
         state.selectedIndex = items.length - 1;
       }
 
-      const lineLabel = `${items.length} ${items.length === 1 ? "line" : "lines"}`;
-      if (cartLineCount) cartLineCount.textContent = lineLabel;
-      if (summaryLines) summaryLines.textContent = items.length;
-      if (cartCount) cartCount.textContent = state.cart.count || 0;
-      if (cartTotal) cartTotal.textContent = money(state.cart.total || "0.00");
-      billFooterLines.textContent = items.length;
-      billFooterQty.textContent = state.cart.count || 0;
-      billFooterTotal.textContent = money(state.cart.total || "0.00");
-      if (searchPanelTotal) { searchPanelTotal.textContent = money(state.cart.total || "0.00"); }
-      if (summarySubtotal) { summarySubtotal.textContent = money(state.cart.total || "0.00"); }
-      state.hasMissingRate = items.some(item => item.missing_price);
-      checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
-
-      if (state.cart.cart_mode === "sale_edit") {
-        checkoutButton.textContent = `Save Bill Changes - ${money(state.cart.total || "0.00")}`;
-      } else {
-        checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
-      }
+      updateCartSummaryDom();
 
       clearCartButton.disabled = state.billNavBusy || items.length === 0;
       holdBillButton.disabled = state.billNavBusy || items.length === 0;
@@ -2047,6 +2038,248 @@
       return false;
     }
 
+    function lineSaveKey(itemId, fieldName) {
+      return `${itemId}:${fieldName}`;
+    }
+
+    function updateCartSummaryDom() {
+      const items = state.cart.items || [];
+      const lineLabel = `${items.length} ${items.length === 1 ? "line" : "lines"}`;
+      if (cartLineCount) cartLineCount.textContent = lineLabel;
+      if (summaryLines) summaryLines.textContent = items.length;
+      if (cartCount) cartCount.textContent = state.cart.count || 0;
+      if (cartTotal) cartTotal.textContent = money(state.cart.total || "0.00");
+      billFooterLines.textContent = items.length;
+      billFooterQty.textContent = state.cart.count || 0;
+      billFooterTotal.textContent = money(state.cart.total || "0.00");
+      if (searchPanelTotal) searchPanelTotal.textContent = money(state.cart.total || "0.00");
+      if (summarySubtotal) summarySubtotal.textContent = money(state.cart.total || "0.00");
+
+      state.hasMissingRate = items.some(item => item.missing_price);
+      checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
+      if (state.cart.cart_mode === "sale_edit") {
+        checkoutButton.textContent = `Save Bill Changes - ${money(state.cart.total || "0.00")}`;
+      } else {
+        checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
+      }
+    }
+
+    function recalculateOptimisticCart() {
+      const items = state.cart.items || [];
+      let quantity = 0;
+      let total = 0;
+      items.forEach(item => {
+        const qty = Number.parseInt(item.qty, 10);
+        const rate = Number.parseFloat(item.selling_price);
+        if (Number.isFinite(qty)) {
+          quantity += qty;
+        }
+        if (Number.isFinite(qty) && Number.isFinite(rate)) {
+          item.amount = qty * rate;
+          total += item.amount;
+        }
+      });
+      state.cart.count = quantity;
+      state.cart.total = total.toFixed(2);
+      updateCartSummaryDom();
+    }
+
+    function updateOptimisticRow(itemId) {
+      const rowIndex = rowIndexForCartItemId(itemId);
+      const item = rowIndex >= 0 ? cartItemAt(rowIndex) : null;
+      const row = cartRows.querySelector(`tr[data-item-id="${itemId}"]`);
+      if (!item || !row) {
+        return;
+      }
+      const amountCell = row.querySelector(".pos-amount-cell");
+      if (amountCell) {
+        amountCell.textContent = item.missing_price ? "" : money(item.amount);
+      }
+      row.classList.toggle("warn", Boolean(item.missing_price));
+    }
+
+    function applyOptimisticCartField(itemId, fieldName, values) {
+      const rowIndex = rowIndexForCartItemId(itemId);
+      const item = rowIndex >= 0 ? cartItemAt(rowIndex) : null;
+      if (!item) {
+        return;
+      }
+
+      if (fieldName === "qty") {
+        const qty = Number.parseInt(String(values.qty ?? "").trim(), 10);
+        if (Number.isFinite(qty)) {
+          item.qty = qty;
+        }
+      } else if (fieldName === "rate") {
+        const rate = Number.parseFloat(String(values.rate ?? "").trim());
+        if (Number.isFinite(rate)) {
+          item.selling_price = rate.toFixed(2);
+          item.missing_price = rate <= 0;
+        }
+      } else if (fieldName === "mrp") {
+        const mrp = Number.parseFloat(String(values.mrp ?? "").trim());
+        if (Number.isFinite(mrp)) {
+          item.mrp = mrp.toFixed(2);
+        }
+      }
+
+      recalculateOptimisticCart();
+      updateOptimisticRow(itemId);
+    }
+
+    function cartStructureMatches(cart) {
+      if (String((state.cart && state.cart.cart_id) || "") !== String((cart && cart.cart_id) || "")) {
+        return false;
+      }
+      const currentIds = (state.cart.items || []).map(item => String(item.id));
+      const incomingIds = ((cart && cart.items) || []).map(item => String(item.id));
+      return currentIds.length === incomingIds.length &&
+        currentIds.every((itemId, index) => itemId === incomingIds[index]);
+    }
+
+    async function reloadCurrentCartFromBackend() {
+      const response = await fetch("/pos/cart", {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error("Could not reload cart.");
+      }
+      renderCart(await response.json());
+    }
+
+    async function syncOptimisticCartResponse(cart, itemId, fieldName) {
+      if (!cartStructureMatches(cart)) {
+        await reloadCurrentCartFromBackend();
+        return false;
+      }
+
+      const currentItem = (state.cart.items || []).find(item => String(item.id) === String(itemId));
+      const savedItem = ((cart && cart.items) || []).find(item => String(item.id) === String(itemId));
+      if (!currentItem || !savedItem) {
+        await reloadCurrentCartFromBackend();
+        return false;
+      }
+      if (fieldName === "qty") {
+        currentItem.qty = savedItem.qty;
+      } else if (fieldName === "rate") {
+        currentItem.selling_price = savedItem.selling_price;
+        currentItem.missing_price = savedItem.missing_price;
+      } else if (fieldName === "mrp") {
+        currentItem.mrp = savedItem.mrp;
+      }
+
+      recalculateOptimisticCart();
+      updateOptimisticRow(itemId);
+
+      const rowIndex = rowIndexForCartItemId(itemId);
+      const item = rowIndex >= 0 ? cartItemAt(rowIndex) : null;
+      const input = inputForCartItemField(itemId, fieldName);
+      if (!item || !input || document.activeElement === input) {
+        return true;
+      }
+      if (fieldName === "qty") input.value = item.qty;
+      if (fieldName === "rate") input.value = item.selling_price || "";
+      if (fieldName === "mrp") input.value = item.mrp || "";
+      return true;
+    }
+
+    function inputMatchesSavedValue(input, fieldName, values) {
+      if (!input) {
+        return false;
+      }
+      if (fieldName === "qty") {
+        return normalizedQtyInput(input.value) === normalizedQtyInput(values.qty);
+      }
+      if (fieldName === "rate") {
+        return normalizedDecimalInput(input.value) === normalizedDecimalInput(values.rate);
+      }
+      if (fieldName === "mrp") {
+        return normalizedDecimalInput(input.value) === normalizedDecimalInput(values.mrp);
+      }
+      return false;
+    }
+
+    function resetSavedActiveEditState(itemId, fieldName, values) {
+      const activeInput = state.activeEditField;
+      const sameActiveField = Boolean(
+        activeInput &&
+        String(activeInput.dataset.cartItemId || "") === String(itemId) &&
+        activeInput.dataset.cartField === fieldName
+      );
+      const activeInputMatchesSave = sameActiveField &&
+        inputMatchesSavedValue(activeInput, fieldName, values);
+      if (activeInputMatchesSave) {
+        resetActiveEditState();
+      }
+      if (
+        state.lastLineEdit &&
+        String(state.lastLineEdit.itemId || "") === String(itemId) &&
+        state.lastLineEdit.fieldName === fieldName &&
+        (!sameActiveField || activeInputMatchesSave)
+      ) {
+        state.lastLineEdit = null;
+      }
+    }
+
+    async function reloadCartAfterLineSaveFailure(message, itemId, fieldName) {
+      try {
+        await reloadCurrentCartFromBackend();
+      } catch (error) {
+        // Keep the original save error visible; the next normal refresh can retry.
+      }
+      setStatus(message || "Cart update failed.", "error");
+      playBeep(false);
+      const rowIndex = rowIndexForCartItemId(itemId);
+      if (rowIndex >= 0) {
+        focusCartField(rowIndex, fieldName, true);
+      }
+    }
+
+    function persistOptimisticCartField(itemId, fieldName, values, successMessage) {
+      const key = lineSaveKey(itemId, fieldName);
+      const previousSave = state.pendingLineSaves.get(key) || Promise.resolve(true);
+      let savePromise;
+      savePromise = previousSave.catch(() => false).then(async () => {
+        try {
+          const response = await fetch(`/pos/cart/items/${itemId}/update`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(values),
+          });
+          const cart = await response.json();
+          if (!response.ok) {
+            throw new Error(cart.message || "Cart update failed.");
+          }
+          if (state.pendingLineSaves.get(key) !== savePromise) {
+            return true;
+          }
+          const responseMatchesCurrentCart = await syncOptimisticCartResponse(cart, itemId, fieldName);
+          if (responseMatchesCurrentCart) {
+            markLoadedSaleDirty();
+            resetSavedActiveEditState(itemId, fieldName, values);
+            setStatus(successMessage || "Line updated.", "success");
+          }
+          return true;
+        } catch (error) {
+          if (state.pendingLineSaves.get(key) !== savePromise) {
+            return false;
+          }
+          await reloadCartAfterLineSaveFailure(
+            error.message || "Cart update failed.",
+            itemId,
+            fieldName,
+          );
+          return false;
+        }
+      });
+
+      state.pendingLineSaves.set(key, savePromise);
+      savePromise.finally(() => {
+        if (state.pendingLineSaves.get(key) === savePromise) {
+          state.pendingLineSaves.delete(key);
+        }
+      });
+      return savePromise;
+    }
+
     async function saveCartField(rowIndex, fieldName) {
       const item = cartItemAt(rowIndex);
       if (!item) {
@@ -2057,8 +2290,10 @@
         return false;
       }
       const values = cartLinePayload(rowIndex, fieldName);
+      const key = lineSaveKey(item.id, fieldName);
+      const pendingSave = state.pendingLineSaves.get(key);
       if (fieldAlreadySaved(item, fieldName, values)) {
-        return true;
+        return pendingSave || true;
       }
       const messages = {
         item: "Item updated.",
@@ -2066,9 +2301,19 @@
         rate: "Rate updated.",
         qty: "Quantity updated.",
       };
-      const result = await updateCartItem(item.id, values, messages[fieldName] || "Line updated.", false);
-      if (result) resetActiveEditState();
-      return result;
+      if (fieldName === "qty" || fieldName === "rate" || fieldName === "mrp") {
+        if (!confirmLoadedSaleEdit()) {
+          return false;
+        }
+        applyOptimisticCartField(item.id, fieldName, values);
+        return persistOptimisticCartField(
+          item.id,
+          fieldName,
+          values,
+          messages[fieldName] || "Line updated.",
+        );
+      }
+      return updateCartItem(item.id, values, messages[fieldName] || "Line updated.", false);
     }
 
     function startItemEditSearch(input, rowIndex) {
@@ -2368,33 +2613,24 @@
         }
         state.skipNextChangeSaveFor = {itemId: itemId, fieldName};
 
-        // Signal that a focus transition is happening so renderCart doesn't steal focus
+        // Optimistically update the line, then move immediately while the save runs.
         state.focusTransition = true;
-        const updated = await saveCartField(rowIndex, fieldName);
-        if (!updated) {
-          state.focusTransition = false;
-          state.skipNextChangeSaveFor = null;
-          return;
-        }
-        
+        const savePromise = saveCartField(rowIndex, fieldName);
         if (fieldName === "qty") {
-          window.setTimeout(() => {
-            focusNextBillingField(itemId, "mrp");
-            state.focusTransition = false;
-          }, 50);
+          focusNextBillingField(itemId, "mrp");
         } else if (fieldName === "mrp") {
-          window.setTimeout(() => {
-            focusNextBillingField(itemId, "rate");
-            state.focusTransition = false;
-          }, 50);
+          focusNextBillingField(itemId, "rate");
         } else if (fieldName === "rate") {
-          window.setTimeout(() => {
-            focusNextBillingField(itemId, "next_row_item");
-            state.focusTransition = false;
-          }, 50);
-        } else {
-          state.focusTransition = false;
+          focusNextBillingField(itemId, "next_row_item");
         }
+        window.requestAnimationFrame(() => {
+          state.focusTransition = false;
+        });
+        void savePromise.then(updated => {
+          if (!updated) {
+            state.skipNextChangeSaveFor = null;
+          }
+        });
         return;
       }
 
@@ -2457,7 +2693,7 @@
     });
 
     async function loadCart(silent = false) {
-      if (silent && (state.checkoutSubmitting || state.cartEditActive || state.billNavBusy || lineEditIsActive() || !searchPanel.hidden || state.focusTransition)) {
+      if (silent && (state.checkoutSubmitting || state.cartEditActive || state.billNavBusy || state.pendingLineSaves.size > 0 || lineEditIsActive() || !searchPanel.hidden || state.focusTransition)) {
         return;
       }
       try {
@@ -2475,6 +2711,9 @@
     }
 
     async function postCartAction(url, successMessage, {focusAfter = true} = {}) {
+      if (!await waitForPendingLineSaves()) {
+        return false;
+      }
       if (!confirmLoadedSaleEdit()) {
         if (focusAfter) {
           focusSelectedCartItem(true);
@@ -2539,6 +2778,9 @@
     }
 
     async function replaceCartItem(itemId, selectedItem, successMessage = "Line replaced.") {
+      if (!await waitForPendingLineSaves()) {
+        return false;
+      }
       if (!confirmLoadedSaleEdit()) {
         focusSelectedCartItem(true);
         return false;
@@ -2576,6 +2818,17 @@
       return null;
     }
 
+    async function waitForPendingLineSaves() {
+      while (state.pendingLineSaves.size > 0) {
+        const pendingSaves = Array.from(state.pendingLineSaves.values());
+        const results = await Promise.all(pendingSaves);
+        if (!results.every(Boolean)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     async function saveFocusedLineInput() {
       if (state.suggestionMode === "edit" && !searchPanel.hidden) {
         setStatus("Select a saved barcode/Tally item or press Esc.", "error");
@@ -2583,6 +2836,9 @@
         if (Number.isFinite(rowIndex)) {
           focusCartField(rowIndex, state.suggestionField || "item", true, true);
         }
+        return false;
+      }
+      if (!await waitForPendingLineSaves()) {
         return false;
       }
       const input = focusedLineInput();
@@ -2629,6 +2885,9 @@
         focusItemInput(false);
         return;
       }
+      if (!await waitForPendingLineSaves()) {
+        return;
+      }
       if (!confirmLoadedSaleEdit()) {
         focusSelectedCartItem(true);
         return;
@@ -2659,6 +2918,9 @@
       if (!clean) {
         setStatus("Type or scan an item first.", "error");
         focusItemInput(false);
+        return;
+      }
+      if (!await waitForPendingLineSaves()) {
         return;
       }
       if (!confirmLoadedSaleEdit()) {
@@ -3079,10 +3341,13 @@
       }
       if (window.confirm("Clear the full bill?")) {
         const wasEdit = state.cart && (state.cart.cart_mode === "sale_edit" || state.cart.cart_mode === "sale_copy");
+        const cleared = await postCartAction("/pos/cart/clear", "Bill cleared.");
+        if (!cleared) {
+          return;
+        }
         state.buyerNameDraft = "";
         if (buyerNameInput) buyerNameInput.value = "";
         setBillDateDraft();
-        await postCartAction("/pos/cart/clear", "Bill cleared.");
         history.replaceState({}, document.title, window.location.pathname);
         setPreviewState(false, null);
         if (wasEdit) {
