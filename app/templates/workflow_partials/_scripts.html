@@ -1963,7 +1963,8 @@
         return;
       }
       billingMatches = searchFamilies(query, 12);
-      billingActiveIndex = billingMatches.length ? 0 : -1;
+      const exactIndex = billingMatches.findIndex(f => sameText(f.family_name, query));
+      billingActiveIndex = exactIndex >= 0 ? exactIndex : -1;
       renderBillingItemMenu(
         billingMatches,
         query ? "No matching billing items" : "No billing items yet"
@@ -2345,7 +2346,7 @@
         moveAfterBillingItem();
         return;
       }
-      const suggestion = billingMatches[billingActiveIndex >= 0 ? billingActiveIndex : 0] || topBillingSuggestion();
+      const suggestion = billingActiveIndex >= 0 ? billingMatches[billingActiveIndex] : null;
       if (!suggestion) {
         const selectedFamily = selectedBillingFamily();
         if (selectedFamily && !sameText(selectedFamily.family_name, familyName.value)) {
