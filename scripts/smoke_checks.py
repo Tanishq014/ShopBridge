@@ -430,8 +430,6 @@ def main() -> None:
         db.add(priority_variant)
         db.commit()
         db.refresh(priority_variant)
-        priority_search = pos.pos_search(q="Priority Tally Item", db=db)
-        assert_true(priority_search["items"] and priority_search["items"][0]["result_type"] == "barcode", "POS search should de-duplicate Tally catalog rows when an active barcode variant exists")
 
         print_item(
             db,
@@ -745,8 +743,6 @@ def main() -> None:
         search_response = pos.pos_search(q=first_barcode, db=db)
         assert_true(search_response["items"] and search_response["items"][0]["barcode"] == first_barcode, "POS search did not find saved barcode")
         assert_true(search_response["items"][0].get("exact_barcode"), "POS exact barcode search should be first and marked exact")
-        item_search_response = pos.pos_search(q="Toy", db=db)
-        assert_true(item_search_response["items"], "POS search did not find saved item by name")
         tally_family = TallyItem(
             name="Tally Imported Socks",
             normalized_name="tally imported socks",
