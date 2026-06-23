@@ -702,24 +702,37 @@
       const barcodeQuery = normalizedBarcodeSearch(term);
       const ranked = [];
       state.searchCatalog.forEach((item, index) => {
-        const values = searchableValues(item);
         const barcode = String(item.barcode || "").toUpperCase();
         const exactBarcode = Boolean(barcodeQuery && barcode === barcodeQuery);
+        const barcodeStarts = Boolean(barcodeQuery && barcode.startsWith(barcodeQuery));
+        const barcodeContains = Boolean(barcodeQuery && barcodeQuery.length >= 3 && barcode.includes(barcodeQuery));
+        
+        const isBarcodeItem = Boolean(item.barcode) || item.result_type !== "tally_item";
+        
+        const values = searchableValues(item);
         const exactNameOrAlias = values.some(value => value === query);
         const starts = values.some(value => value.startsWith(query));
         const contains = query.length >= 2 && values.some(value => value.includes(query));
-        if (!exactBarcode && !exactNameOrAlias && !starts && !contains) {
-          return;
+
+        if (isBarcodeItem) {
+          if (!exactBarcode && !barcodeStarts && !barcodeContains) {
+            return; // Skip barcode items if the barcode doesn't match
+          }
+        } else {
+          if (!exactNameOrAlias && !starts && !contains) {
+            return; // Skip tally items if the name doesn't match
+          }
         }
+
         let rank = 8;
         if (item.result_type === "tally_item" && exactNameOrAlias) rank = 0;
         else if (exactBarcode) rank = 1;
         else if (item.result_type === "tally_item" && starts) rank = 2;
         else if (item.result_type === "tally_item" && contains) rank = 3;
         else if (exactNameOrAlias) rank = 4;
-        else if (barcodeQuery && barcode.startsWith(barcodeQuery)) rank = 5;
+        else if (barcodeStarts) rank = 5;
         else if (starts) rank = 6;
-        else if (contains) rank = 7;
+        else if (barcodeContains) rank = 7;
         ranked.push({
           item: {
             ...item,
