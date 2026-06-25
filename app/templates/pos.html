@@ -3606,7 +3606,7 @@
         const anyModalOpen = Array.from(document.querySelectorAll("dialog")).some(d => d.open);
         const searchPanelOpen = searchPanel && !searchPanel.hidden;
 
-        if (searchPanelOpen || state.billNavBusy || state.checkoutSubmitting || anyModalOpen) {
+        if (state.billNavBusy || state.checkoutSubmitting || anyModalOpen) {
           // let default Select All work
         } else {
           event.preventDefault();
