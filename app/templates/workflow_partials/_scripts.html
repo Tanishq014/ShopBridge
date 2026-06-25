@@ -805,6 +805,9 @@
       } else if (event.key === "ArrowLeft" && caretAtStart(target)) {
         event.preventDefault();
         moveEntryFocus(target, -1);
+      } else if (event.key === "Backspace" && !target.value) {
+        event.preventDefault();
+        moveEntryFocus(target, -1);
       }
     }
 
@@ -2629,6 +2632,11 @@
       if (event.key === "Enter") {
         event.preventDefault();
         printFromInlineQuantity();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveEntryFocus(event.target, -1);
+      } else {
+        handleEntryArrowNavigation(event);
       }
     });
 
