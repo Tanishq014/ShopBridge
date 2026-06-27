@@ -195,8 +195,8 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
         if bbox:
             # Crop horizontally to the exact text bounding box, so when it scales to
             # the printer's HORZRES, it fills the entire width perfectly without white space.
-            crop_left = max(0, bbox[0] - 5)
-            crop_right = min(im.size[0], bbox[2] + 5)
+            crop_left = max(0, bbox[0] - 30)
+            crop_right = min(im.size[0], bbox[2] + 30)
             crop_bottom = min(im.size[1], bbox[3] + 20)
             im = im.crop((crop_left, 0, crop_right, crop_bottom))
 
