@@ -2031,7 +2031,10 @@
       if (!clean) {
         return "";
       }
-      const numeric = Number.parseInt(clean.replace(/[^0-9-]/g, ""), 10);
+      if (!/^-?\d+$/.test(clean)) {
+        return clean;
+      }
+      const numeric = Number.parseInt(clean, 10);
       return Number.isFinite(numeric) ? String(numeric) : clean;
     }
 
@@ -2315,6 +2318,15 @@
         qty: "Quantity updated.",
       };
       if (fieldName === "qty" || fieldName === "rate" || fieldName === "mrp") {
+        if (fieldName === "qty") {
+          const qtyText = String(values.qty ?? "").trim();
+          if (!/^-?\d+$/.test(qtyText) || Number.parseInt(qtyText, 10) === 0) {
+            setStatus("Quantity must be a non-zero whole number.", "error");
+            playBeep(false);
+            focusCartField(rowIndex, "qty", true);
+            return false;
+          }
+        }
         if (!confirmLoadedSaleEdit()) {
           return false;
         }
