@@ -2781,7 +2781,7 @@ tbody tr:last-child td {
 .pos-billing-grid td {
   border: 0;
   border-bottom: 1px solid #edf1f7;
-  padding: 4px 8px;
+  padding: 2px 8px;
   vertical-align: middle;
 }
 
@@ -2827,7 +2827,7 @@ tbody tr:last-child td {
 }
 
 .pos-billing-row {
-  height: 50px;
+  height: 38px;
   scroll-margin-top: 35px;
 }
 
@@ -2890,7 +2890,7 @@ tbody tr:last-child td {
 
 .pos-item-cell {
   min-height: 0;
-  padding-block: 2px;
+  padding-block: 0;
   overflow: hidden;
 }
 
