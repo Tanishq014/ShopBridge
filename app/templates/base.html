@@ -10,6 +10,7 @@
   </head>
   <body>
     {% set navbar_qr = navbar_qr_context(request) %}
+    {% set open_excel_links = navbar_open_excel_links() %}
     <header class="topbar">
       {% block brand %}
       <a class="brand" href="/new-stock">ShopBridge</a>
@@ -23,6 +24,15 @@
         <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
         <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
         <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/families') or path.startswith('/print-jobs') or path.startswith('/tally') else '' }}" href="/settings">Settings</a>
+        {% if open_excel_links %}
+          <span class="nav-section-divider" aria-hidden="true"></span>
+          {% for excel_link in open_excel_links %}
+            <form class="nav-open-file-form" method="post" action="/open-excel/{{ excel_link.id }}">
+              <input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+              <button type="submit" title="{{ excel_link.path }}">{{ excel_link.name }}</button>
+            </form>
+          {% endfor %}
+        {% endif %}
       </nav>
       <div class="topbar-right">
         <button class="topbar-qr-toggle" type="button" data-navbar-qr-toggle aria-expanded="false">Phone QR</button>
@@ -46,6 +56,15 @@
           <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
           <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
           <a class="{{ 'active' if path.startswith('/settings') or path.startswith('/families') or path.startswith('/print-jobs') or path.startswith('/tally') else '' }}" href="/settings">Settings</a>
+        {% if open_excel_links %}
+          <span class="nav-section-divider" aria-hidden="true"></span>
+          {% for excel_link in open_excel_links %}
+            <form class="nav-open-file-form" method="post" action="/open-excel/{{ excel_link.id }}">
+              <input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+              <button type="submit" title="{{ excel_link.path }}">{{ excel_link.name }}</button>
+            </form>
+          {% endfor %}
+        {% endif %}
         </nav>
       </div>
     </header>

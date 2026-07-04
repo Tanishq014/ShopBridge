@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import BARTENDER_MODE, DATA_DIR, SHOW_BARTENDER_WINDOW
 
@@ -35,6 +37,14 @@ UPI_VPA_2_KEY = "upi_vpa_2"
 UPI_KEY_2_KEY = "upi_key_2"
 UPI_DEFAULT_VPA_KEY = "upi_default_vpa"
 RECEIPT_PRINTER_NAME_KEY = "receipt_printer_name"
+OPEN_EXCEL_LINKS_KEY = "open_excel_links"
+
+
+@dataclass(frozen=True)
+class OpenExcelLink:
+    id: str
+    name: str
+    path: str
 
 
 @dataclass(frozen=True)
@@ -243,6 +253,9 @@ def ensure_default_settings() -> None:
         changed = True
     if OPTIONAL_TEMPLATE_FIELDS_KEY not in settings:
         settings[OPTIONAL_TEMPLATE_FIELDS_KEY] = json.dumps(list(DEFAULT_OPTIONAL_TEMPLATE_FIELDS))
+        changed = True
+    if OPEN_EXCEL_LINKS_KEY not in settings:
+        settings[OPEN_EXCEL_LINKS_KEY] = "[]"
         changed = True
     if changed:
         _write_settings(settings)
@@ -471,7 +484,7 @@ def save_upi_settings(
             raise ValueError("Hotkey 1 must be exactly one visible character.")
         if clean_key_1 in reserved_keys:
             raise ValueError(f"Hotkey 1 cannot be a reserved key: '{clean_key_1}'")
-            
+
     if clean_vpa_2:
         if not clean_key_2 or len(clean_key_2) != 1:
             raise ValueError("Hotkey 2 must be exactly one visible character.")
@@ -497,3 +510,81 @@ def set_receipt_printer_name(name: str) -> None:
     settings = _read_settings()
     settings[RECEIPT_PRINTER_NAME_KEY] = (name or "").strip()
     _write_settings(settings)
+
+
+def _clean_file_path(value: str | None) -> str:
+    clean = str(value or "").strip()
+    if len(clean) >= 2 and clean[0] == clean[-1] and clean[0] in {'"', "'"}:
+        return clean[1:-1].strip()
+    return clean
+
+
+def _open_excel_link_id(index: int, name: str, path: str) -> str:
+    seed = f"{name}|{path}".strip().lower()
+    suffix = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10] if seed else str(index)
+    return f"excel-{index}-{suffix}"
+
+
+def _parse_open_excel_links(raw: str | None) -> list[OpenExcelLink]:
+    try:
+        parsed = json.loads(raw or "[]")
+    except (TypeError, json.JSONDecodeError):
+        parsed = []
+    if not isinstance(parsed, list):
+        return []
+
+    links: list[OpenExcelLink] = []
+    used_ids: set[str] = set()
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "") or "").strip()
+        path = _clean_file_path(item.get("path", ""))
+        if not name or not path:
+            continue
+        link_id = str(item.get("id", "") or "").strip() or _open_excel_link_id(index, name, path)
+        if link_id in used_ids:
+            link_id = _open_excel_link_id(index, name, path)
+        used_ids.add(link_id)
+        links.append(OpenExcelLink(id=link_id, name=name[:40], path=path))
+    return links
+
+
+def get_open_excel_links() -> list[OpenExcelLink]:
+    ensure_default_settings()
+    settings = _read_settings()
+    return _parse_open_excel_links(settings.get(OPEN_EXCEL_LINKS_KEY))
+
+
+def save_open_excel_links(*, names: list[str], paths: list[str]) -> list[OpenExcelLink]:
+    rows: list[dict[str, str]] = []
+    for index, (raw_name, raw_path) in enumerate(zip(names, paths)):
+        name = str(raw_name or "").strip()
+        file_path = _clean_file_path(raw_path)
+        if not name and not file_path:
+            continue
+        if not name or not file_path:
+            raise ValueError("Each Excel button needs both a button name and a file path.")
+        expanded_path = Path(file_path).expanduser()
+        if not expanded_path.exists() or not expanded_path.is_file():
+            raise ValueError(f"Excel file was not found: {file_path}")
+        rows.append({
+            "id": _open_excel_link_id(index, name, file_path),
+            "name": name[:40],
+            "path": file_path,
+        })
+    settings = _read_settings()
+    settings[OPEN_EXCEL_LINKS_KEY] = json.dumps(rows, ensure_ascii=True, sort_keys=True)
+    _write_settings(settings)
+    return get_open_excel_links()
+
+
+def get_open_excel_link(link_id: str) -> OpenExcelLink | None:
+    for link in get_open_excel_links():
+        if link.id == link_id:
+            return link
+    return None
+
+
+def clean_open_excel_path(value: str | None) -> str:
+    return _clean_file_path(value)

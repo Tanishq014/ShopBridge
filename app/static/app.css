@@ -71,8 +71,16 @@ a {
 
 .nav {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
 }
 
 .topbar-menu-toggle {
@@ -94,6 +102,37 @@ a {
   background: #e8f0ff;
   color: var(--primary);
   font-weight: 700;
+}
+.nav-open-file-form {
+  display: inline-flex;
+  margin: 0;
+}
+.nav-section-divider {
+  align-self: center;
+  background: var(--border);
+  display: inline-flex;
+  height: 22px;
+  margin: 0 4px;
+  width: 1px;
+}
+
+.nav-open-file-form button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #344054;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 10px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-open-file-form button:hover {
+  background: #eef2f6;
+  color: var(--text);
 }
 
 .topbar-right {
@@ -1280,6 +1319,21 @@ tbody tr:last-child td {
 
 .settings-link span {
   color: var(--muted);
+}
+.open-excel-settings {
+  display: grid;
+  gap: 14px;
+}
+
+.open-excel-list {
+  display: grid;
+  gap: 12px;
+}
+
+.open-excel-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(260px, 2fr);
 }
 
 .admin-tools {
@@ -2505,6 +2559,19 @@ tbody tr:last-child td {
   .topbar-menu-panel .topbar-menu-nav a {
     border-radius: 8px;
     padding: 10px 12px;
+  }
+  .topbar-menu-panel .nav-section-divider {
+    height: 1px;
+    margin: 6px 12px;
+    width: auto;
+  }
+
+  .topbar-menu-panel .nav-open-file-form button {
+    text-align: left;
+    width: 100%;
+  }
+  .open-excel-row {
+    grid-template-columns: 1fr;
   }
 
   .topbar-menu-open .page {
