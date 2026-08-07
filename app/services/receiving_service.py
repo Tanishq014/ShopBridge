@@ -175,9 +175,19 @@ def create_receiving_item(db: Session, data: ReceivingItemCreate) -> ReceivingIt
             raise ValueError("ProductFamily not found")
     else:
         family_id = _resolve_family_id(db, session.supplier_id, data.supplier_product_code)
+        
+    preferred_template_id = None
+    if session.supplier.invoice_profile:
+        import json
+        try:
+            prof = json.loads(session.supplier.invoice_profile)
+            preferred_template_id = prof.get("preferred_template_id")
+        except:
+            pass
 
     item = ReceivingItem(
         session_id=data.session_id,
+        template_id=preferred_template_id,
         bill_row_number=data.bill_row_number,
         raw_description=data.raw_description,
         normalized_description=data.normalized_description,

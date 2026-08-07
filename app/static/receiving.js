@@ -1,3 +1,66 @@
+let extractionPollInterval;
+
+async function handleFileUpload(event, sessionId) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Show loading UI
+    const extractBtn = document.getElementById('btn-ai-extract');
+    const originalText = extractBtn.innerHTML;
+    extractBtn.innerHTML = '⏳ Uploading...';
+    extractBtn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch(`/receiving/${sessionId}/extract`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error("Upload failed");
+        }
+
+        const data = await response.json();
+        
+        // Start polling
+        extractBtn.innerHTML = '⏳ Extracting AI...';
+        pollExtractionStatus(sessionId, extractBtn, originalText);
+        
+    } catch (e) {
+        alert("Extraction request failed: " + e.message);
+        if (extractBtn) {
+            extractBtn.innerHTML = originalText;
+            extractBtn.disabled = false;
+        }
+    }
+}
+
+async function pollExtractionStatus(sessionId, extractBtn, originalText) {
+    extractionPollInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`/receiving/${sessionId}/extraction_status`);
+            if (!response.ok) return;
+            const data = await response.json();
+            
+            if (data.status === 'COMPLETED') {
+                clearInterval(extractionPollInterval);
+                extractBtn.innerHTML = '✅ Done! Reloading...';
+                setTimeout(() => window.location.reload(), 500);
+            } else if (data.status === 'FAILED') {
+                clearInterval(extractionPollInterval);
+                alert("AI Extraction failed: " + (data.error || "Unknown error"));
+                extractBtn.innerHTML = originalText;
+                extractBtn.disabled = false;
+            }
+        } catch (e) {
+            console.error("Polling error", e);
+        }
+    }, 2000);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('receiving-search');
   const filterTabs = document.querySelectorAll('.filter-tab');
@@ -479,6 +542,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   function generateCodedPrice(price) {
+
+
     if (isNaN(price) || price < 0 || price === null || price === '') return '';
     const rounded = Math.round(price).toString();
     const map = window.priceCodeSettings?.digit_to_code || {};

@@ -236,6 +236,49 @@ def _migrate_existing_sqlite() -> None:
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN extracted_attributes TEXT"))
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN manual_overrides TEXT"))
 
+    if "extraction_jobs" not in table_names:
+        with engine.begin() as connection:
+            connection.execute(text("""
+                CREATE TABLE extraction_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER REFERENCES receiving_sessions(id),
+                    provider VARCHAR(50),
+                    provider_version VARCHAR(50),
+                    status VARCHAR(50),
+                    started_at DATETIME,
+                    completed_at DATETIME,
+                    input_pages INTEGER,
+                    tokens_used INTEGER,
+                    cost REAL,
+                    raw_provider_response TEXT,
+                    error TEXT,
+                    processing_time REAL
+                )
+            """))
+
+    if "supplier_extraction_examples" not in table_names:
+        with engine.begin() as connection:
+            connection.execute(text("""
+                CREATE TABLE supplier_extraction_examples (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    supplier_id INTEGER REFERENCES suppliers(id),
+                    raw_description TEXT,
+                    normalized_description TEXT,
+                    billing_item TEXT,
+                    attributes TEXT,
+                    approved_by_user BOOLEAN,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+    if "suppliers" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("suppliers")}
+        if "structured_aliases" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE suppliers ADD COLUMN structured_aliases TEXT"))
+                connection.execute(text("ALTER TABLE suppliers ADD COLUMN extraction_notes TEXT"))
+                connection.execute(text("ALTER TABLE suppliers ADD COLUMN invoice_profile TEXT"))
+
 
 def _seed_demo_tally_items(db, TallyItem) -> None:
     demo_names = [

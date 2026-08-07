@@ -219,6 +219,9 @@ class Supplier(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False, unique=True, index=True)
+    structured_aliases = Column(Text, nullable=True)
+    extraction_notes = Column(Text, nullable=True)
+    invoice_profile = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -299,3 +302,37 @@ class ReceivingItem(Base):
     family = relationship("ProductFamily")
     matched_variant = relationship("LabelVariant")
 
+
+class ExtractionJob(Base):
+    __tablename__ = "extraction_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("receiving_sessions.id"), nullable=True, index=True)
+    provider = Column(String(50), nullable=True)
+    provider_version = Column(String(50), nullable=True)
+    status = Column(String(50), nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    input_pages = Column(Integer, nullable=True)
+    tokens_used = Column(Integer, nullable=True)
+    cost = Column(Numeric(10, 4), nullable=True)
+    raw_provider_response = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    processing_time = Column(Numeric(10, 2), nullable=True)
+
+    session = relationship("ReceivingSession")
+
+
+class SupplierExtractionExample(Base):
+    __tablename__ = "supplier_extraction_examples"
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True, index=True)
+    raw_description = Column(Text, nullable=True)
+    normalized_description = Column(Text, nullable=True)
+    billing_item = Column(Text, nullable=True)
+    attributes = Column(Text, nullable=True)
+    approved_by_user = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    supplier = relationship("Supplier")

@@ -44,13 +44,23 @@
     
     {% if session.status == 'DRAFT' %}
     <div class="workspace-summary draft-mode">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
         <div style="text-align: left;">
           <h3>Draft Session</h3>
-          <p>Invoice rows can be set up manually.</p>
+          <p>Extract rows from invoice, or set up manually.</p>
         </div>
-        <button class="button outline" id="btn-toggle-draft-form" style="width: auto; margin: 0; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.85rem;">+ Add Row</button>
       </div>
+      
+      <div class="workspace-actions" style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+        <button class="button primary" id="btn-ai-extract" style="flex: 1; padding: 0.5rem; font-size: 0.85rem; border-radius: 20px;" onclick="document.getElementById('file-upload').click()">
+          📷 Scan Invoice
+        </button>
+        <button class="button outline" id="btn-toggle-draft-form" style="flex: 1; margin: 0; padding: 0.5rem; font-size: 0.85rem; border-radius: 20px;">
+          + Add Row
+        </button>
+      </div>
+
+      <input type="file" id="file-upload" accept="image/*,application/pdf" style="display: none;" onchange="handleFileUpload(event, {{ session.id }})">
       
       <div class="draft-collapsible" id="draft-form-container">
         <form action="/receiving/{{ session.id }}/items" method="post" style="text-align: left;">

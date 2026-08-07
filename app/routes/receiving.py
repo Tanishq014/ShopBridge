@@ -63,6 +63,53 @@ def add_item(data: ReceivingItemCreate, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+from fastapi import File, UploadFile, BackgroundTasks
+from app.services.extraction_service import start_extraction_job
+import shutil
+import tempfile
+import os
+
+@router.post("/{session_id}/extract")
+def extract_invoice_endpoint(
+    session_id: int, 
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db)
+):
+    # Save upload to temp file
+    ext = ".pdf"
+    if file.content_type == "image/jpeg":
+        ext = ".jpg"
+    elif file.content_type == "image/png":
+        ext = ".png"
+        
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    shutil.copyfileobj(file.file, temp_file)
+    temp_file.close()
+    
+    job = start_extraction_job(
+        db=db,
+        session_id=session_id,
+        file_path=temp_file.name,
+        mime_type=file.content_type,
+        background_tasks=background_tasks
+    )
+    return {"job_id": job.id, "status": job.status}
+
+@router.get("/{session_id}/extraction_status")
+def get_extraction_status_endpoint(session_id: int, db: Session = Depends(get_db)):
+    from app.models import ExtractionJob
+    job = db.query(ExtractionJob).filter(ExtractionJob.session_id == session_id).order_by(ExtractionJob.started_at.desc()).first()
+    if not job:
+        return {"status": "NOT_FOUND"}
+        
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "error": job.error,
+        "processing_time": job.processing_time
+    }
+
 @router.post("/items/{item_id}/tally", response_model=ReceivingItemRead)
 def tally_receiving_item(item_id: int, data: TallyItemRequest, db: Session = Depends(get_db)):
     try:
@@ -226,6 +273,21 @@ def update_draft_endpoint(item_id: int, data: UpdateDraftRequest, db: Session = 
         
     if data.template_id is not None:
         item.template_id = data.template_id
+        
+        # Update Supplier Invoice Profile
+        if item.session and item.session.supplier:
+            supplier = item.session.supplier
+            import json
+            profile = {}
+            if supplier.invoice_profile:
+                try:
+                    profile = json.loads(supplier.invoice_profile)
+                except:
+                    pass
+            profile["preferred_template_id"] = data.template_id
+            profile["last_used_at"] = str(datetime.utcnow())
+            supplier.invoice_profile = json.dumps(profile)
+            db.add(supplier)
     if data.billing_item is not None:
         item.billing_item = data.billing_item
     if data.manual_overrides is not None:
