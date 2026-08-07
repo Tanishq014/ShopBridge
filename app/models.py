@@ -268,6 +268,7 @@ class ReceivingItem(Base):
     normalized_description = Column(String(500), nullable=True)
     billing_item = Column(String(250), nullable=True)
     supplier_product_code = Column(String(120), nullable=True, index=True)
+    hsn_code = Column(String(100), nullable=True)
     extraction_confidence = Column(Numeric(5, 4), nullable=True)
     source_provenance = Column(Text, nullable=True)
     extracted_attributes = Column(Text, nullable=True)

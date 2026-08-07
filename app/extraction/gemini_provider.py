@@ -43,6 +43,7 @@ class AIExtractedItem(BaseModel):
     normalized_description: str | None = None
     suggested_billing_item: str | None = None
     supplier_product_code: str | None = None
+    hsn_code: str | None = None
     quantity: float | None = None
     unit: str | None = None
     purchase_rate: float | None = None
@@ -85,7 +86,12 @@ class GeminiProvider(ExtractionProvider):
         # 1. Build the prompt
         system_instruction = (
             "You are an expert logistics data extractor. Your job is ONLY to extract text directly from the invoice into semantic fields. "
-            f"The extraction vocabulary is strictly limited to the following fields: {json.dumps(VOCABULARY_V1)}\n\n"
+            f"The core extraction vocabulary is: {json.dumps(VOCABULARY_V1['core_fields'])}. "
+            f"The known semantic attributes are: {json.dumps(VOCABULARY_V1['known_attributes'])}.\n\n"
+            "Extract EVERYTHING you can confidently identify. Do not limit yourself to only fields explicitly requested by the template. "
+            "Unknown product attributes should be placed into attributes using their original column names if no canonical semantic field exists. "
+            "For 'normalized_description' and 'suggested_billing_item', strip away arbitrary supplier tokens (like 'N.1 DLX' or size/color codes) to create a clean, canonical POS product name. "
+            "Never invent values."
         )
         
         prompt_parts = []
@@ -152,6 +158,7 @@ class GeminiProvider(ExtractionProvider):
                     normalized_description=ai_item.normalized_description,
                     suggested_billing_item=ai_item.suggested_billing_item,
                     supplier_product_code=ai_item.supplier_product_code,
+                    hsn_code=ai_item.hsn_code,
                     quantity=ai_item.quantity,
                     unit=ai_item.unit,
                     purchase_rate=ai_item.purchase_rate,

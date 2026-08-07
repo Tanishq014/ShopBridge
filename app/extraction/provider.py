@@ -13,6 +13,7 @@ class ExtractedItem(BaseModel):
     normalized_description: str | None = None
     suggested_billing_item: str | None = None
     supplier_product_code: str | None = None
+    hsn_code: str | None = None
     quantity: float | None = None
     unit: str | None = None
     purchase_rate: float | None = None

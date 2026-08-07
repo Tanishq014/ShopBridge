@@ -235,6 +235,10 @@ def _migrate_existing_sqlite() -> None:
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN template_id INTEGER REFERENCES template_masters(id)"))
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN extracted_attributes TEXT"))
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN manual_overrides TEXT"))
+        
+        if "hsn_code" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN hsn_code VARCHAR(100)"))
 
     if "extraction_jobs" not in table_names:
         with engine.begin() as connection:

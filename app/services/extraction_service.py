@@ -140,6 +140,7 @@ async def _run_extraction_task(job_id: int, session_id: int, file_path: str, mim
                 normalized_description=item.normalized_description,
                 billing_item=item.suggested_billing_item,
                 supplier_product_code=item.supplier_product_code,
+                hsn_code=item.hsn_code,
                 expected_qty=item.quantity,
                 unit=item.unit,
                 purchase_rate=item.purchase_rate,
