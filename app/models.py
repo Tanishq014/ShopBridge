@@ -263,6 +263,10 @@ class ReceivingItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("receiving_sessions.id"), nullable=False, index=True)
     bill_row_number = Column(Integer, nullable=True)
+    
+    source_row_number = Column(String(50), nullable=True)
+    source_row_inferred = Column(Boolean, nullable=False, default=False)
+    source_page_number = Column(Integer, nullable=True)
 
     raw_description = Column(String(500), nullable=True)
     normalized_description = Column(String(500), nullable=True)

@@ -1,17 +1,87 @@
 let extractionPollInterval;
 
-async function handleFileUpload(event, sessionId) {
-    const file = event.target.files[0];
-    if (!file) return;
+let stagedFiles = [];
+let dragSourceIndex = null;
 
-    // Show loading UI
+function stageFiles(event) {
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
+    
+    stagedFiles = files;
+    renderStagedFiles();
+    document.getElementById('upload-staging-area').style.display = 'block';
+    
+    // Hide buttons
+    document.getElementById('btn-ai-extract').style.display = 'none';
+    document.getElementById('btn-toggle-draft-form').style.display = 'none';
+}
+
+function renderStagedFiles() {
+    const list = document.getElementById('staged-files-list');
+    list.innerHTML = '';
+    
+    stagedFiles.forEach((file, index) => {
+        const li = document.createElement('li');
+        li.draggable = true;
+        li.style.padding = '0.5rem';
+        li.style.border = '1px solid #ddd';
+        li.style.marginBottom = '0.25rem';
+        li.style.borderRadius = '4px';
+        li.style.background = '#f9fafb';
+        li.style.display = 'flex';
+        li.style.justifyContent = 'space-between';
+        
+        li.innerHTML = `<span><strong style="margin-right: 0.5rem; color: var(--accent-blue);">Page ${index + 1}</strong> ${file.name}</span> <span style="color: #999;">☰</span>`;
+        
+        li.addEventListener('dragstart', (e) => {
+            dragSourceIndex = index;
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        
+        li.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+        
+        li.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (dragSourceIndex === null) return;
+            const targetIndex = index;
+            
+            const draggedItem = stagedFiles[dragSourceIndex];
+            stagedFiles.splice(dragSourceIndex, 1);
+            stagedFiles.splice(targetIndex, 0, draggedItem);
+            
+            dragSourceIndex = null;
+            renderStagedFiles();
+        });
+        
+        list.appendChild(li);
+    });
+}
+
+function cancelUpload() {
+    stagedFiles = [];
+    document.getElementById('file-upload').value = '';
+    document.getElementById('upload-staging-area').style.display = 'none';
+    document.getElementById('btn-ai-extract').style.display = 'block';
+    document.getElementById('btn-toggle-draft-form').style.display = 'block';
+}
+
+async function confirmUpload(sessionId) {
+    if (stagedFiles.length === 0) return;
+    
     const extractBtn = document.getElementById('btn-ai-extract');
     const originalText = extractBtn.innerHTML;
+    document.getElementById('upload-staging-area').style.display = 'none';
+    extractBtn.style.display = 'block';
     extractBtn.innerHTML = '⏳ Uploading...';
     extractBtn.disabled = true;
 
     const formData = new FormData();
-    formData.append('file', file);
+    stagedFiles.forEach(file => {
+        formData.append('files', file);
+    });
 
     try {
         const response = await fetch(`/receiving/${sessionId}/extract`, {
@@ -25,7 +95,6 @@ async function handleFileUpload(event, sessionId) {
 
         const data = await response.json();
         
-        // Start polling
         extractBtn.innerHTML = '⏳ Extracting AI...';
         pollExtractionStatus(sessionId, extractBtn, originalText);
         

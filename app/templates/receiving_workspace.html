@@ -60,8 +60,18 @@
         </button>
       </div>
 
-      <input type="file" id="file-upload" accept="image/*,application/pdf" style="display: none;" onchange="handleFileUpload(event, {{ session.id }})">
+      <input type="file" id="file-upload" accept="image/*,application/pdf" multiple style="display: none;" onchange="stageFiles(event)">
       
+      <div id="upload-staging-area" style="display: none; background: #fff; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+        <h4 style="margin-top: 0; margin-bottom: 0.25rem;">Arrange Pages</h4>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Drag to reorder pages if needed, then confirm.</p>
+        <ul id="staged-files-list" style="list-style: none; padding: 0; margin: 0 0 1rem 0; cursor: grab;"></ul>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="button primary" onclick="confirmUpload({{ session.id }})" style="flex: 1;">Extract</button>
+          <button class="button outline" onclick="cancelUpload()" style="flex: 1;">Cancel</button>
+        </div>
+      </div>
+
       <div class="draft-collapsible" id="draft-form-container">
         <form action="/receiving/{{ session.id }}/items" method="post" style="text-align: left;">
           <div class="form-grid">
@@ -107,27 +117,46 @@
   </header>
 
   <main class="item-list" id="item-list">
-    {% for item in items %}
-      <div class="item-row" 
-           id="item-row-{{ item.id }}"
-           data-item-id="{{ item.id }}" 
-           data-description="{{ item.raw_description | lower if item.raw_description else '' }}" 
-           data-norm-description="{{ item.normalized_description | lower if item.normalized_description else '' }}" 
-           data-code="{{ item.supplier_product_code | lower if item.supplier_product_code else '' }}" 
-           data-purchase-rate="{{ item.purchase_rate if item.purchase_rate is not none else '' }}" 
-           data-list-price="{{ item.list_price if item.list_price is not none else '' }}" 
-           data-mrp="{{ item.mrp if item.mrp is not none else '' }}" 
-           data-tally-status="{{ item.tally_status }}"
-           data-pricing-status="{{ item.pricing_status }}"
-           data-label-status="{{ item.label_status }}"
-           data-family-id="{{ item.family_id or '' }}"
-           data-landing-price="{{ item.landing_price if item.landing_price is not none else '' }}"
-           data-received-qty="{{ item.received_qty if item.received_qty is not none else '' }}"
-           data-confirmed-selling-price="{{ item.confirmed_selling_price if item.confirmed_selling_price is not none else '' }}">
-           
-        <div class="item-details" style="padding-left: 0.25rem; flex-direction: row; align-items: center; justify-content: space-between;">
-          <h4 style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 0.5rem;">{{ item.raw_description }}</h4>
-          
+    {% set items_by_page = items|groupby('source_page_number') %}
+    {% for page_num, page_items in items_by_page %}
+      {% if page_num is not none %}
+        <div class="page-group-header" style="background: #eef2f6; padding: 0.5rem; font-weight: bold; margin-bottom: 0.5rem; border-radius: 4px; color: var(--text-dark);">
+          Page {{ page_num }}
+        </div>
+      {% elif page_num is none and items_by_page|length > 1 %}
+        <div class="page-group-header" style="background: #eef2f6; padding: 0.5rem; font-weight: bold; margin-bottom: 0.5rem; border-radius: 4px; color: var(--text-dark);">
+          Other Rows
+        </div>
+      {% endif %}
+      
+      {% for item in page_items %}
+        <div class="item-row" 
+             id="item-row-{{ item.id }}"
+             data-item-id="{{ item.id }}" 
+             data-description="{{ item.raw_description | lower if item.raw_description else '' }}" 
+             data-norm-description="{{ item.normalized_description | lower if item.normalized_description else '' }}" 
+             data-code="{{ item.supplier_product_code | lower if item.supplier_product_code else '' }}" 
+             data-purchase-rate="{{ item.purchase_rate if item.purchase_rate is not none else '' }}" 
+             data-list-price="{{ item.list_price if item.list_price is not none else '' }}" 
+             data-mrp="{{ item.mrp if item.mrp is not none else '' }}" 
+             data-tally-status="{{ item.tally_status }}"
+             data-pricing-status="{{ item.pricing_status }}"
+             data-label-status="{{ item.label_status }}"
+             data-family-id="{{ item.family_id or '' }}"
+             data-landing-price="{{ item.landing_price if item.landing_price is not none else '' }}"
+             data-received-qty="{{ item.received_qty if item.received_qty is not none else '' }}"
+             data-confirmed-selling-price="{{ item.confirmed_selling_price if item.confirmed_selling_price is not none else '' }}">
+             
+          <div class="item-details" style="padding-left: 0.25rem; flex-direction: row; align-items: center; justify-content: space-between;">
+            <h4 style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 0.5rem;">
+              {% if item.source_row_number %}
+                <span style="color: var(--accent-blue); font-weight: normal; margin-right: 0.25rem;" title="{% if item.source_row_inferred %}Inferred from sequence{% else %}Printed on document{% endif %}">
+                  #{{ item.source_row_number }}{% if item.source_row_inferred %}<span style="opacity: 0.6">*</span>{% endif %}
+                </span>
+              {% endif %}
+              {{ item.raw_description }}
+            </h4>
+            
           <div class="badges" style="margin-top: 0; flex-shrink: 0;">
             <span class="badge" id="badge-expected-{{ item.id }}"><span id="expected-qty-{{ item.id }}">{{ ('%g' % item.expected_qty) if item.expected_qty is not none else '—' }}</span> <span id="item-unit-{{ item.id }}">{{ item.unit or 'PCS' }}</span></span>
             
@@ -153,6 +182,7 @@
           {% endif %}
         </div>
       </div>
+    {% endfor %}
     {% endfor %}
   </main>
 </div>

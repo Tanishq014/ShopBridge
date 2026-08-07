@@ -69,29 +69,36 @@ import shutil
 import tempfile
 import os
 
+from typing import List
+
 @router.post("/{session_id}/extract")
 def extract_invoice_endpoint(
     session_id: int, 
     background_tasks: BackgroundTasks, 
-    file: UploadFile = File(...), 
+    files: List[UploadFile] = File(...), 
     db: Session = Depends(get_db)
 ):
-    # Save upload to temp file
-    ext = ".pdf"
-    if file.content_type == "image/jpeg":
-        ext = ".jpg"
-    elif file.content_type == "image/png":
-        ext = ".png"
-        
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-    shutil.copyfileobj(file.file, temp_file)
-    temp_file.close()
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    file_paths = []
+    for file in files:
+        ext = ".pdf"
+        if file.content_type == "image/jpeg":
+            ext = ".jpg"
+        elif file.content_type == "image/png":
+            ext = ".png"
+            
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        shutil.copyfileobj(file.file, temp_file)
+        temp_file.close()
+        file_paths.append(temp_file.name)
     
     job = start_extraction_job(
         db=db,
         session_id=session_id,
-        file_path=temp_file.name,
-        mime_type=file.content_type,
+        file_paths=file_paths,
+        mime_type=files[0].content_type,
         background_tasks=background_tasks
     )
     return {"job_id": job.id, "status": job.status}

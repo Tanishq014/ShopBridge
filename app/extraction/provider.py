@@ -9,6 +9,9 @@ class ProvenanceInfo(BaseModel):
     source_column: str | None = None
 
 class ExtractedItem(BaseModel):
+    row_number: str | None = None
+    row_number_inferred: bool = False
+    page_number: int | None = None
     raw_description: str | None = None
     normalized_description: str | None = None
     suggested_billing_item: str | None = None
@@ -18,6 +21,7 @@ class ExtractedItem(BaseModel):
     unit: str | None = None
     purchase_rate: float | None = None
     mrp: float | None = None
+    line_amount: float | None = None
     attributes: dict[str, str] = Field(default_factory=dict)
     confidence: dict[str, float] = Field(default_factory=dict)
     review_required: bool = False
@@ -27,6 +31,8 @@ class ExtractionJobResult(BaseModel):
     items: list[ExtractedItem] = Field(default_factory=list)
     raw_provider_response: str | None = None
     tokens_used: int | None = None
+    prompt_tokens: int | None = None
+    candidate_tokens: int | None = None
     cost: float | None = None
     input_pages: int | None = None
 

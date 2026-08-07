@@ -11,7 +11,7 @@ from app.extraction.gemini_provider import GeminiProvider
 def start_extraction_job(
     db: Session,
     session_id: int,
-    file_path: str,
+    file_paths: list[str],
     mime_type: str,
     background_tasks: BackgroundTasks
 ) -> ExtractionJob:
@@ -31,13 +31,13 @@ def start_extraction_job(
         _run_extraction_task,
         job_id=job.id,
         session_id=session_id,
-        file_path=file_path,
+        file_paths=file_paths,
         mime_type=mime_type
     )
     
     return job
 
-async def _run_extraction_task(job_id: int, session_id: int, file_path: str, mime_type: str):
+async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[str], mime_type: str):
     # This needs its own DB session since it runs in the background
     from app.db import SessionLocal
     db = SessionLocal()
@@ -99,7 +99,7 @@ async def _run_extraction_task(job_id: int, session_id: int, file_path: str, mim
         db.commit()
         
         result = await provider.extract_invoice(
-            file_path=file_path,
+            file_paths=file_paths,
             mime_type=mime_type,
             templates=templates_payload,
             structured_aliases=structured_aliases,
@@ -119,7 +119,7 @@ async def _run_extraction_task(job_id: int, session_id: int, file_path: str, mim
         print(f"\n[🚀 {provider.provider_name} EXTRACTION COMPLETED]")
         print(f"   Model: {job.provider_version}")
         print(f"   Rows Extracted: {len(result.items)}")
-        print(f"   Tokens Used: {result.tokens_used}")
+        print(f"   Tokens Used: {result.tokens_used} (Input: {result.prompt_tokens}, Output: {result.candidate_tokens})")
         print(f"   Duration: {duration:.2f}s\n")
         
         preferred_template_id = None
@@ -136,6 +136,9 @@ async def _run_extraction_task(job_id: int, session_id: int, file_path: str, mim
                 session_id=session_id,
                 template_id=preferred_template_id,
                 bill_row_number=idx + 1,
+                source_row_number=item.row_number,
+                source_row_inferred=item.row_number_inferred,
+                source_page_number=item.page_number,
                 raw_description=item.raw_description,
                 normalized_description=item.normalized_description,
                 billing_item=item.suggested_billing_item,
@@ -145,6 +148,7 @@ async def _run_extraction_task(job_id: int, session_id: int, file_path: str, mim
                 unit=item.unit,
                 purchase_rate=item.purchase_rate,
                 mrp=item.mrp,
+                line_amount=item.line_amount,
                 extracted_attributes=json.dumps(item.attributes),
                 source_provenance=json.dumps({k: v.model_dump() for k, v in item.provenance.items()}),
                 extraction_confidence=0.0 

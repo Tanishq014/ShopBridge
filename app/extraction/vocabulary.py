@@ -14,7 +14,8 @@ VOCABULARY_V1 = {
         "purchase_rate", 
         "mrp", 
         "supplier_product_code",
-        "hsn_code"
+        "hsn_code",
+        "line_amount"
     ],
     # Specialized semantic attributes that templates might request
     "known_attributes": [

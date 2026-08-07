@@ -240,6 +240,12 @@ def _migrate_existing_sqlite() -> None:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN hsn_code VARCHAR(100)"))
 
+        if "source_row_number" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN source_row_number VARCHAR(50)"))
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN source_row_inferred BOOLEAN NOT NULL DEFAULT 0"))
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN source_page_number INTEGER"))
+
     if "extraction_jobs" not in table_names:
         with engine.begin() as connection:
             connection.execute(text("""

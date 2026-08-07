@@ -39,6 +39,9 @@ class ProvenancePair(BaseModel):
     provenance: AIRawProvenance
 
 class AIExtractedItem(BaseModel):
+    row_number: str | None = None
+    row_number_inferred: bool = False
+    page_number: int | None = None
     raw_description: str | None = None
     normalized_description: str | None = None
     suggested_billing_item: str | None = None
@@ -48,9 +51,10 @@ class AIExtractedItem(BaseModel):
     unit: str | None = None
     purchase_rate: float | None = None
     mrp: float | None = None
+    line_amount: float | None = None
     attributes: list[AttributePair] = Field(default_factory=list)
-    confidence: list[ConfidencePair] = Field(default_factory=list)
-    provenance: list[ProvenancePair] = Field(default_factory=list)
+    confidence: list[ConfidencePair]
+    provenance: list[ProvenancePair]
 
 class AIExtractionResponse(BaseModel):
     items: list[AIExtractedItem] = Field(default_factory=list)
@@ -74,7 +78,7 @@ class GeminiProvider(ExtractionProvider):
 
     async def extract_invoice(
         self,
-        file_path: str,
+        file_paths: list[str],
         mime_type: str,
         templates: list[dict[str, Any]],
         structured_aliases: dict[str, str] | None,
@@ -88,6 +92,9 @@ class GeminiProvider(ExtractionProvider):
             "You are an expert logistics data extractor. Your job is ONLY to extract text directly from the invoice into semantic fields. "
             f"The core extraction vocabulary is: {json.dumps(VOCABULARY_V1['core_fields'])}. "
             f"The known semantic attributes are: {json.dumps(VOCABULARY_V1['known_attributes'])}.\n\n"
+            "Extract the printed row number (S.No., Sr., Line No., Item No., or equivalent) for every line item into 'row_number'. "
+            "If a document clearly omits repeated numbers while preserving sequential row order, you may infer the missing value but must set 'row_number_inferred=true'. "
+            "Never fabricate a row number when the sequence is ambiguous. Also provide the 'page_number' (1-indexed) where the row was found.\n\n"
             "Extract EVERYTHING you can confidently identify. Do not limit yourself to only fields explicitly requested by the template. "
             "Unknown product attributes should be placed into attributes using their original column names if no canonical semantic field exists. "
             "For 'normalized_description' and 'suggested_billing_item', strip away arbitrary supplier tokens (like 'N.1 DLX' or size/color codes) to create a clean, canonical POS product name. "
@@ -111,8 +118,12 @@ class GeminiProvider(ExtractionProvider):
 
         prompt = "\n".join(prompt_parts)
 
-        # 2. Upload the file to Gemini
-        file_obj = self.client.files.upload(file=file_path, config={'mime_type': mime_type})
+        # 2. Upload the files to Gemini
+        file_objs = []
+        for fp in file_paths:
+            file_objs.append(self.client.files.upload(file=fp, config={'mime_type': mime_type}))
+            
+        contents = file_objs + [prompt]
 
         try:
             # 3. Call the model with Structured Outputs (with retry logic)
@@ -124,7 +135,7 @@ class GeminiProvider(ExtractionProvider):
                 try:
                     response = self.client.models.generate_content(
                         model=self.provider_version,
-                        contents=[file_obj, prompt],
+                        contents=contents,
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
                             response_mime_type="application/json",
@@ -144,8 +155,12 @@ class GeminiProvider(ExtractionProvider):
             
             raw_response = response.text
             tokens_used = 0
+            prompt_tokens = 0
+            candidate_tokens = 0
             if response.usage_metadata:
                 tokens_used = response.usage_metadata.total_token_count
+                prompt_tokens = response.usage_metadata.prompt_token_count
+                candidate_tokens = response.usage_metadata.candidates_token_count
 
             # Parse response
             ai_data = AIExtractionResponse.model_validate_json(raw_response)
@@ -154,6 +169,9 @@ class GeminiProvider(ExtractionProvider):
             result_items = []
             for ai_item in ai_data.items:
                 item = ExtractedItem(
+                    row_number=ai_item.row_number,
+                    row_number_inferred=ai_item.row_number_inferred,
+                    page_number=ai_item.page_number,
                     raw_description=ai_item.raw_description,
                     normalized_description=ai_item.normalized_description,
                     suggested_billing_item=ai_item.suggested_billing_item,
@@ -163,6 +181,7 @@ class GeminiProvider(ExtractionProvider):
                     unit=ai_item.unit,
                     purchase_rate=ai_item.purchase_rate,
                     mrp=ai_item.mrp,
+                    line_amount=ai_item.line_amount,
                     attributes={attr.key: attr.value for attr in ai_item.attributes},
                     confidence={conf.key: conf.score for conf in ai_item.confidence},
                     review_required=False, # Backend business rules can override this later
@@ -176,6 +195,8 @@ class GeminiProvider(ExtractionProvider):
                 items=result_items,
                 raw_provider_response=raw_response,
                 tokens_used=tokens_used,
+                prompt_tokens=prompt_tokens,
+                candidate_tokens=candidate_tokens,
                 cost=0.0, # Implement cost estimation if needed
                 input_pages=1 # Would need a PDF parser to count properly
             )
