@@ -226,7 +226,12 @@ def _message_variant_detail(messages: Any) -> str:
     return "" if value is None else str(value)
 
 
-def _actual_named_substring_names(bt_format: Any) -> list[str]:
+_TEMPLATE_FIELD_CACHE: dict[str, list[str]] = {}
+
+def _actual_named_substring_names(bt_format: Any, template_path: str) -> list[str]:
+    if template_path in _TEMPLATE_FIELD_CACHE:
+        return _TEMPLATE_FIELD_CACHE[template_path]
+
     try:
         raw_fields = bt_format.NamedSubStrings.GetAll(",", ":")
     except Exception:
@@ -242,16 +247,17 @@ def _actual_named_substring_names(bt_format: Any) -> list[str]:
         if field_name and field_name not in seen:
             names.append(field_name)
             seen.add(field_name)
+    _TEMPLATE_FIELD_CACHE[template_path] = names
     return names
 
 
-def _values_for_actual_template_fields(bt_format: Any, values: dict[str, str]) -> dict[str, str]:
+def _values_for_actual_template_fields(bt_format: Any, values: dict[str, str], template_path: str) -> dict[str, str]:
     normalized_values = {
         normalize_field_name(field_name): "" if field_value is None else str(field_value)
         for field_name, field_value in values.items()
         if normalize_field_name(field_name)
     }
-    actual_names = _actual_named_substring_names(bt_format)
+    actual_names = _actual_named_substring_names(bt_format, template_path)
     if not actual_names:
         return normalized_values
 
@@ -300,7 +306,8 @@ def extract_named_substring_values(template_path: str) -> dict[str, str]:
             return defaults
         finally:
             _close_without_saving(bt_format, constants)
-            _quit_without_saving(bt_app, constants)
+            # Do NOT quit the app! Keep the BarTender engine alive for instant consecutive prints.
+            # _quit_without_saving(bt_app, constants)
 
 
 def print_with_named_substrings(
@@ -327,7 +334,7 @@ def print_with_named_substrings(
             except Exception as exc:
                 raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
 
-            clean_values = _values_for_actual_template_fields(bt_format, values)
+            clean_values = _values_for_actual_template_fields(bt_format, values, str(path))
             for field_name, field_value in clean_values.items():
                 try:
                     bt_format.SetNamedSubStringValue(field_name, field_value)
@@ -357,7 +364,8 @@ def print_with_named_substrings(
             }
         finally:
             _close_without_saving(bt_format, constants)
-            _quit_without_saving(bt_app, constants)
+            # Do NOT quit the app! Keep the BarTender engine alive for instant consecutive prints.
+            # _quit_without_saving(bt_app, constants)
 
 
 def print_with_activex(
@@ -409,7 +417,7 @@ def export_print_preview_to_image(
             except Exception as exc:
                 raise BarTenderActiveXError(f"Could not open BarTender template: {path}") from exc
 
-            clean_values = _values_for_actual_template_fields(bt_format, values)
+            clean_values = _values_for_actual_template_fields(bt_format, values, str(path))
             for field_name, field_value in clean_values.items():
                 try:
                     bt_format.SetNamedSubStringValue(field_name, field_value)
@@ -455,4 +463,5 @@ def export_print_preview_to_image(
             return files[0]
         finally:
             _close_without_saving(bt_format, constants)
-            _quit_without_saving(bt_app, constants)
+            # Do NOT quit the app! Keep the BarTender engine alive for instant consecutive prints.
+            # _quit_without_saving(bt_app, constants)

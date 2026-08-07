@@ -186,6 +186,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('input-mrp').value = row.getAttribute('data-mrp') || '';
     document.getElementById('input-selling-price').value = row.getAttribute('data-confirmed-selling-price') || row.getAttribute('data-mrp') || '';
     
+    // Initialize Code
+    const selling = parseFloat(document.getElementById('input-selling-price').value);
+    if (!isNaN(selling)) {
+        document.getElementById('input-coded-price').value = generateCodedPrice(selling);
+    } else {
+        document.getElementById('input-coded-price').value = '';
+    }
+    
     const rowData = window.itemsJson?.find(i => i.id == currentItemId);
     const suggestedCopies = rowData ? rowData.suggested_label_copies : (currentExpectedQty !== null ? Math.ceil(currentExpectedQty) : null);
     
@@ -396,11 +404,52 @@ document.addEventListener('DOMContentLoaded', () => {
     if (discInput && document.activeElement !== discInput) {
         discInput.value = disc !== '--' ? disc : '';
     }
+    
+    // Keep track of coded price in the dedicated UI field
+    const codeInput = document.getElementById('input-coded-price');
+    if (codeInput && document.activeElement !== codeInput && !isNaN(selling)) {
+      codeInput.value = generateCodedPrice(selling);
+    }
+  }
+  
+  function generateCodedPrice(price) {
+    if (isNaN(price) || price < 0 || price === null || price === '') return '';
+    const rounded = Math.round(price).toString();
+    const map = window.priceCodeSettings?.digit_to_code || {};
+    let code = '';
+    for (const char of rounded) {
+      const alias = map[char];
+      if (!alias) return '';
+      code += alias.split(',')[0].trim().toUpperCase();
+    }
+    return code;
+  }
+  
+  function decodePriceCode(code) {
+      if (!code) return null;
+      const map = window.priceCodeSettings?.code_to_digit || {};
+      let priceStr = '';
+      for (const char of code.toUpperCase()) {
+          if (char === ' ') continue;
+          const digit = map[char];
+          if (digit !== undefined) {
+              priceStr += digit;
+          }
+      }
+      return priceStr ? parseFloat(priceStr) : null;
   }
   
   document.getElementById('input-landing-price')?.addEventListener('input', () => { updatePricingIndicators(); if(document.getElementById('pricing-section').hidden === false) loadPricingContext(document.getElementById('item-row-' + currentItemId)); });
   document.getElementById('input-mrp')?.addEventListener('input', () => { updatePricingIndicators(); if(document.getElementById('pricing-section').hidden === false) loadPricingContext(document.getElementById('item-row-' + currentItemId)); });
   document.getElementById('input-selling-price')?.addEventListener('input', updatePricingIndicators);
+  
+  document.getElementById('input-coded-price')?.addEventListener('input', (e) => {
+      const decoded = decodePriceCode(e.target.value);
+      if (decoded !== null) {
+          document.getElementById('input-selling-price').value = decoded;
+          updatePricingIndicators();
+      }
+  });
   
   document.getElementById('input-discount')?.addEventListener('input', async (e) => {
       const disc = parseFloat(e.target.value);
@@ -460,6 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
         const res = await fetch(`/receiving/items/${currentItemId}/draft_status`);
         const draft = await res.json();
+        window.currentDraft = draft;
         
         const select = document.getElementById('select-template');
         if (select) select.value = draft.template_id || '';
@@ -471,7 +521,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!container) return;
         container.innerHTML = '';
         
+        const fieldPriority = {
+            brand: 1,
+            item_display_name: 2,
+            design: 2,
+            article: 3,
+            article_no: 3,
+            size: 4,
+            batch_no: 5,
+            expiry: 6,
+            coded_price: 90,
+            mrp: 91,
+            selling_price: 92
+        };
+
+        draft.fields.sort((a, b) => {
+            const pA = fieldPriority[a.semantic_field] || 50;
+            const pB = fieldPriority[b.semantic_field] || 50;
+            return pA - pB;
+        });
+
         draft.fields.forEach(field => {
+            if (['mrp', 'selling_price', 'coded_price'].includes(field.semantic_field)) {
+                return; // Hide these from dynamic fields, they belong in Pricing Section
+            }
+            
             const div = document.createElement('div');
             div.style.flex = "1 1 45%";
             let sourceBadge = '';
@@ -480,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sourceBadge = `<span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background: ${color}; color: white; margin-left: 4px;">${field.source}</span>`;
             }
             
-            div.innerHTML = `<label style="font-size: 11px; font-weight: 600;">${field.field_name} ${sourceBadge}<br><input type="text" data-field="${field.field_name}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px;" value="${field.resolved_value || ''}"></label>`;
+            div.innerHTML = `<label style="font-size: 11px; font-weight: 600; ${field.missing ? 'color: #ef4444;' : ''}">${field.template_field} ${sourceBadge}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px;" value="${field.value || ''}"></label>`;
             container.appendChild(div);
         });
         
@@ -517,6 +591,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (copies === '') return showToast('Copies is required (0 for none)', 'error');
     
     try {
+      // 1. Force save the exact typed Code into the draft so the backend doesn't overwrite it
+      const coded = document.getElementById('input-coded-price').value;
+      if (coded && window.currentDraft) {
+          const manualOverrides = window.currentDraft.manual_overrides || {};
+          manualOverrides['coded_price'] = coded.toUpperCase();
+          await fetch(`/receiving/items/${currentItemId}/draft`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ manual_overrides: JSON.stringify(manualOverrides) })
+          });
+      }
+      
       const priceRes = await fetch(`/receiving/items/${currentItemId}/price`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

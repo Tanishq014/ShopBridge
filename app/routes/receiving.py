@@ -121,6 +121,10 @@ def receiving_workspace(session_id: int, request: Request, db: Session = Depends
     templates_list = db.execute(select(TemplateMaster).where(TemplateMaster.active_status == True)).scalars().all()
     templates_json = [{"id": t.id, "name": t.template_name} for t in templates_list]
 
+    from app.services.settings_service import get_price_code_settings, get_pricing_settings
+    price_code_settings = get_price_code_settings()
+    pricing_settings = get_pricing_settings()
+
     return templates.TemplateResponse(
         request=request,
         name="receiving_workspace.html",
@@ -129,7 +133,15 @@ def receiving_workspace(session_id: int, request: Request, db: Session = Depends
             "items": items,
             "items_json": item_dicts,
             "templates": templates_list,
-            "templates_json": templates_json
+            "templates_json": templates_json,
+            "price_code_settings_json": {
+                "digit_to_code": price_code_settings.digit_to_code,
+                "code_to_digit": price_code_settings.code_to_digit
+            },
+            "pricing_settings": {
+                "mrp_rounding": pricing_settings.mrp_rounding,
+                "mrp_truncate_decimal": pricing_settings.mrp_truncate_decimal
+            }
         }
     )
 from fastapi import Form

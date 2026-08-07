@@ -38,7 +38,7 @@
 
 .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; transition: opacity 0.2s; }
 .sheet-backdrop[hidden] { display: none; opacity: 0; }
-.bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 16px 16px 0 0; z-index: 101; padding: 1.5rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.1); transform: translateY(0); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1); max-width: 800px; margin: 0 auto; box-sizing: border-box; }
+.bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 16px 16px 0 0; z-index: 101; padding: 1.5rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.1); transform: translateY(0); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1); max-width: 800px; margin: 0 auto; box-sizing: border-box; max-height: 90vh; overflow-y: auto; }
 .bottom-sheet[hidden] { transform: translateY(100%); display: block; /* maintain block for animation, rely on transform */ visibility: hidden; }
 .sheet-header { margin-bottom: 1.5rem; text-align: center; }
 .sheet-header h3 { margin: 0 0 0.25rem 0; font-size: 1.25rem; }

@@ -112,16 +112,16 @@
             <p class="code">{{ item.supplier_product_code }}</p>
           {% endif %}
           <p class="qty">
-            Expected: <span id="expected-qty-{{ item.id }}">{{ item.expected_qty | round(3) if item.expected_qty is not none else '—' }}</span> <span id="item-unit-{{ item.id }}">{{ item.unit or 'PCS' }}</span>
+            Expected: <span id="expected-qty-{{ item.id }}">{{ ('%g' % item.expected_qty) if item.expected_qty is not none else '—' }}</span> <span id="item-unit-{{ item.id }}">{{ item.unit or 'PCS' }}</span>
           </p>
           <p class="mismatch-text {{ 'verified' if item.tally_status == 'VERIFIED' else '' }}" id="mismatch-text-{{ item.id }}" style="display: {{ 'block' if item.tally_status != 'UNVERIFIED' else 'none' }}">
             {% if item.tally_status == 'MISMATCH' %}
-              Received: {{ item.received_qty | round(2) if item.received_qty is not none else '0' }} 
+              Received: {{ ('%g' % item.received_qty) if item.received_qty is not none else '0' }} 
               {% if item.received_qty is not none and item.expected_qty is not none %}
-                ({{ 'Short' if item.received_qty < item.expected_qty else 'Extra' }} {{ (item.expected_qty - item.received_qty) | abs | round(3) }})
+                ({{ 'Short' if item.received_qty < item.expected_qty else 'Extra' }} {{ ('%g' % ((item.expected_qty - item.received_qty) | abs)) }})
               {% endif %}
             {% elif item.tally_status == 'VERIFIED' %}
-              Received: {{ item.received_qty | round(2) if item.received_qty is not none else '0' }}
+              Received: {{ ('%g' % item.received_qty) if item.received_qty is not none else '0' }}
             {% endif %}
           </p>
         </div>
@@ -189,13 +189,19 @@
       </div>
       
       <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
-        <label style="flex:1 1 45%; font-size: 11px; font-weight: 600;">Landing Price
+        <label style="flex:1 1 30%; font-size: 11px; font-weight: 600;">Landing Price
           <input type="number" id="input-landing-price" step="0.01" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
         </label>
-        <label style="flex:1 1 45%; font-size: 11px; font-weight: 600;">MRP
+        <label style="flex:1 1 30%; font-size: 11px; font-weight: 600;">MRP
           <input type="number" id="input-mrp" step="0.01" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
         </label>
         
+        <div style="flex:1 1 30%;">
+          <label style="font-size: 11px; font-weight: 600;">Code
+            <input type="text" id="input-coded-price" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px; text-transform: uppercase;">
+          </label>
+        </div>
+
         <div style="flex:1 1 45%;">
           <label style="font-size: 11px; font-weight: 600;">Selling Price
             <input type="number" id="input-selling-price" step="0.01" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
@@ -226,6 +232,8 @@
 <script>
   window.SESSION_ID = {{ session.id }};
   window.SESSION_STATUS = "{{ session.status }}";
+  window.priceCodeSettings = {{ price_code_settings_json|tojson }};
+  window.pricingSettings = {{ pricing_settings|tojson }};
 </script>
 <script src="{{ url_for('static', path='/receiving.js') }}"></script>
 {% endblock %}

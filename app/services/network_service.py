@@ -16,20 +16,28 @@ def detected_lan_ip() -> str | None:
     return ip
 
 
-def public_lan_url(request_host: str | None, path: str, *, port: int = 8001) -> tuple[str, bool]:
+def public_lan_url(request_host: str | None, path: str, *, port: int = 8000) -> tuple[str, bool]:
     lan_ip = detected_lan_ip()
     clean_path = path if path.startswith("/") else f"/{path}"
+    
+    # Extract dynamic port from the request if available
+    if request_host and ":" in request_host:
+        try:
+            port = int(request_host.split(":", 1)[1])
+        except ValueError:
+            pass
+
     if lan_ip:
         return f"http://{lan_ip}:{port}{clean_path}", True
     host = (request_host or "").split(":", 1)[0] or "127.0.0.1"
     return f"http://{host}:{port}{clean_path}", False
 
 
-def scanner_url(request_host: str | None, *, port: int = 8001) -> tuple[str, bool]:
+def scanner_url(request_host: str | None, *, port: int = 8000) -> tuple[str, bool]:
     return public_lan_url(request_host, "/scanner", port=port)
 
 
-def phone_print_url(request_host: str | None, *, port: int = 8001) -> tuple[str, bool]:
+def phone_print_url(request_host: str | None, *, port: int = 8000) -> tuple[str, bool]:
     return public_lan_url(request_host, "/phone-print", port=port)
 
 
