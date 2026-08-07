@@ -10,10 +10,23 @@ from sqlalchemy import (
     String,
     Text,
     text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
 from app.db import Base
+
+
+class PricingRule(Base):
+    __tablename__ = "pricing_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String(120), unique=True, nullable=True, index=True)
+    cost_rule_type = Column(String(40), nullable=True) # "MARKUP", "GROSS_MARGIN"
+    cost_rule_percent = Column(Numeric(10, 2), nullable=True)
+    mrp_discount_percent = Column(Numeric(10, 2), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class TemplateMaster(Base):
@@ -31,6 +44,7 @@ class TemplateMaster(Base):
     default_field_values = Column(Text, nullable=True)
     barcode_sample_value = Column(String(120), nullable=True)
     fields_extracted_file_mtime = Column(String(80), nullable=True)
+    semantic_mappings = Column(Text, nullable=True)
     active_status = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -61,6 +75,11 @@ class ProductFamily(Base):
     default_tax_rate = Column(Numeric(10, 2), nullable=False, default=0)
     default_unit = Column(String(50), nullable=False, default="PCS")
     default_template_id = Column(Integer, ForeignKey("template_masters.id"), nullable=True)
+    
+    cost_rule_type = Column(String(40), nullable=True) # "MARKUP", "GROSS_MARGIN"
+    cost_rule_percent = Column(Numeric(10, 2), nullable=True)
+    mrp_discount_percent = Column(Numeric(10, 2), nullable=True)
+
     active_status = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -193,3 +212,90 @@ class SaleItem(Base):
 
     sale = relationship("Sale", back_populates="items")
     label_variant = relationship("LabelVariant", foreign_keys=[label_variant_id])
+
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class SupplierProductMapping(Base):
+    __tablename__ = "supplier_product_mappings"
+    __table_args__ = (UniqueConstraint('supplier_id', 'supplier_product_code', name='_supplier_product_code_uc'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False, index=True)
+    supplier_product_code = Column(String(120), nullable=True, index=True)
+    supplier_description = Column(String(250), nullable=True)
+    family_id = Column(Integer, ForeignKey("product_families.id"), nullable=False, index=True)
+    last_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    confidence = Column(Numeric(5, 2), nullable=True)
+
+    supplier = relationship("Supplier")
+    family = relationship("ProductFamily")
+
+
+class ReceivingSession(Base):
+    __tablename__ = "receiving_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False, index=True)
+    invoice_number = Column(String(120), nullable=True, index=True)
+    invoice_date = Column(DateTime, nullable=True)
+    source_document_path = Column(String(500), nullable=True)
+    status = Column(String(40), nullable=False, default="DRAFT", index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    supplier = relationship("Supplier")
+    items = relationship("ReceivingItem", back_populates="session", cascade="all, delete-orphan")
+
+
+class ReceivingItem(Base):
+    __tablename__ = "receiving_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("receiving_sessions.id"), nullable=False, index=True)
+    bill_row_number = Column(Integer, nullable=True)
+
+    raw_description = Column(String(500), nullable=True)
+    normalized_description = Column(String(500), nullable=True)
+    billing_item = Column(String(250), nullable=True)
+    supplier_product_code = Column(String(120), nullable=True, index=True)
+    extraction_confidence = Column(Numeric(5, 4), nullable=True)
+    source_provenance = Column(Text, nullable=True)
+    extracted_attributes = Column(Text, nullable=True)
+    manual_overrides = Column(Text, nullable=True)
+
+    expected_qty = Column(Numeric(10, 3), nullable=True)
+    received_qty = Column(Numeric(10, 3), nullable=True)
+    unit = Column(String(40), nullable=True)
+    
+    purchase_rate = Column(Numeric(10, 2), nullable=True)
+    list_price = Column(Numeric(10, 2), nullable=True)
+    mrp = Column(Numeric(10, 2), nullable=True)
+    discount = Column(Numeric(10, 2), nullable=True)
+    line_amount = Column(Numeric(10, 2), nullable=True)
+
+    landing_price = Column(Numeric(10, 2), nullable=True)
+    confirmed_selling_price = Column(Numeric(10, 2), nullable=True)
+    pricing_rule_applied = Column(String(200), nullable=True)
+    pricing_confirmed_at = Column(DateTime, nullable=True)
+
+    family_id = Column(Integer, ForeignKey("product_families.id"), nullable=True, index=True)
+    matched_variant_id = Column(Integer, ForeignKey("label_variants.id"), nullable=True, index=True)
+    template_id = Column(Integer, ForeignKey("template_masters.id"), nullable=True, index=True)
+
+    tally_status = Column(String(40), nullable=False, default="UNVERIFIED", index=True)
+    pricing_status = Column(String(40), nullable=False, default="PENDING", index=True)
+    label_status = Column(String(40), nullable=False, default="UNRESOLVED", index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    session = relationship("ReceivingSession", back_populates="items")
+    family = relationship("ProductFamily")
+    matched_variant = relationship("LabelVariant")
+

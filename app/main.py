@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import STATIC_DIR
 from app.db import init_db
-from app.routes import families, pos, print_jobs, sales, scan, tally, templates as template_routes, variants, voice as voice_routes, workflow
+from app.routes import families, pos, print_jobs, sales, scan, tally, templates as template_routes, variants, voice as voice_routes, workflow, receiving
 
 
 app = FastAPI(title="ShopBridge", version="0.1.0")
@@ -64,3 +64,4 @@ app.include_router(variants.router)
 app.include_router(template_routes.router)
 app.include_router(print_jobs.router)
 app.include_router(tally.router)
+app.include_router(receiving.router)

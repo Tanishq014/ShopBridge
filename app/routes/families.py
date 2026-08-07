@@ -58,6 +58,34 @@ def list_families(
     )
 
 
+@router.get("/search")
+def search_families(q: str = "", db: Session = Depends(get_db)):
+    if not q:
+        return []
+    
+    q_str = f"%{q}%"
+    families = db.execute(
+        select(ProductFamily)
+        .where(
+            (ProductFamily.family_name.ilike(q_str)) |
+            (ProductFamily.tally_stock_item_name.ilike(q_str)) |
+            (ProductFamily.category.ilike(q_str))
+        )
+        .where(ProductFamily.active_status == True)
+        .limit(20)
+    ).scalars().all()
+    
+    return [
+        {
+            "id": f.id, 
+            "family_name": f.family_name, 
+            "category": f.category or "",
+            "default_unit": f.default_unit
+        } 
+        for f in families
+    ]
+
+
 @router.post("/")
 def create_family(
     family_name: str = Form(...),

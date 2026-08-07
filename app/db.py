@@ -118,6 +118,9 @@ def _migrate_existing_sqlite() -> None:
         if "fields_extracted_file_mtime" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE template_masters ADD COLUMN fields_extracted_file_mtime VARCHAR(80)"))
+        if "semantic_mappings" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE template_masters ADD COLUMN semantic_mappings TEXT"))
 
     if "pos_carts" in table_names:
         columns = {column["name"] for column in inspector.get_columns("pos_carts")}
@@ -207,6 +210,31 @@ def _migrate_existing_sqlite() -> None:
                 )
                 connection.execute(text("DROP TABLE pos_cart_items_old"))
                 connection.execute(text("PRAGMA foreign_keys=ON"))
+
+    if "receiving_items" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("receiving_items")}
+        if "label_status" in columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        UPDATE receiving_items
+                        SET label_status = 'UNRESOLVED'
+                        WHERE label_status = 'NOT_REQUIRED'
+                          AND id IN (
+                              SELECT i.id FROM receiving_items i
+                              JOIN receiving_sessions s ON i.session_id = s.id
+                              WHERE s.status IN ('DRAFT', 'RECEIVING') OR i.tally_status = 'UNVERIFIED'
+                          )
+                        """
+                    )
+                )
+        if "billing_item" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN billing_item VARCHAR(250)"))
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN template_id INTEGER REFERENCES template_masters(id)"))
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN extracted_attributes TEXT"))
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN manual_overrides TEXT"))
 
 
 def _seed_demo_tally_items(db, TallyItem) -> None:

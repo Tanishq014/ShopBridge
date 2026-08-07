@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Smart Stock Receiving{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/receiving.css') }}">
+
+<div class="receiving-home">
+  <div class="receiving-header">
+    <h1>Smart Stock Receiving</h1>
+    <button class="button primary" onclick="document.getElementById('new-session-form').hidden = false;">[+] NEW RECEIVING</button>
+  </div>
+  
+  <div id="new-session-form" class="session-card" hidden style="background: #f1f8ff; border-color: #c8e1ff; margin-bottom: 2rem;">
+    <form action="/receiving/new" method="POST">
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <div><label>Supplier Name</label><br><input type="text" name="supplier_name" required style="padding: 0.5rem;"></div>
+        <div><label>Invoice Number</label><br><input type="text" name="invoice_number" style="padding: 0.5rem;"></div>
+        <div><label>Invoice Date</label><br><input type="date" name="invoice_date" style="padding: 0.5rem;"></div>
+      </div>
+      <button type="submit" class="button primary" style="margin-top: 1rem;">CREATE SESSION</button>
+      <button type="button" class="button outline" style="margin-top: 1rem; margin-left: 0.5rem;" onclick="document.getElementById('new-session-form').hidden = true;">CANCEL</button>
+    </form>
+  </div>
+
+  <h2>ACTIVE</h2>
+  <div class="session-list">
+    {% for session in active_sessions %}
+      <div class="session-card">
+        <h3>{{ session.supplier.name }}</h3>
+        <p>Invoice #{{ session.invoice_number or 'N/A' }}</p>
+        {% set verified_count = session.items | selectattr('tally_status', 'equalto', 'VERIFIED') | list | length %}
+        {% set mismatch_count = session.items | selectattr('tally_status', 'equalto', 'MISMATCH') | list | length %}
+        {% set checked_count = verified_count + mismatch_count %}
+        {% set total_count = session.items | length %}
+        <p>{{ checked_count }} / {{ total_count }} checked {% if mismatch_count > 0 %}({{ mismatch_count }} mismatches){% endif %}</p>
+        <a href="/receiving/{{ session.id }}" class="button">CONTINUE</a>
+      </div>
+    {% else %}
+      <p>No active receiving sessions.</p>
+    {% endfor %}
+  </div>
+
+  <h2>RECENT</h2>
+  <div class="session-list">
+    {% for session in recent_sessions %}
+      <div class="session-card">
+        <h3>{{ session.supplier.name }}</h3>
+        <p>{{ session.status | capitalize }}</p>
+        {% set verified_count = session.items | selectattr('tally_status', 'equalto', 'VERIFIED') | list | length %}
+        {% set mismatch_count = session.items | selectattr('tally_status', 'equalto', 'MISMATCH') | list | length %}
+        {% set checked_count = verified_count + mismatch_count %}
+        {% set total_count = session.items | length %}
+        <p>{{ checked_count }} / {{ total_count }} checked</p>
+        <a href="/receiving/{{ session.id }}" class="button outline">VIEW</a>
+      </div>
+    {% else %}
+      <p>No recent sessions.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,65 @@
+.receiving-home { padding: 1rem; max-width: 800px; margin: 0 auto; }
+.receiving-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+.session-list { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem; }
+.session-card { border: 1px solid #ddd; padding: 1rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.5rem; background: white; }
+.session-card h3 { margin: 0; font-size: 1.2rem; }
+.session-card p { margin: 0; color: #555; font-size: 0.9rem; }
+
+.receiving-workspace { display: flex; flex-direction: column; height: 100vh; max-width: 800px; margin: 0 auto; background: #f8f9fa; }
+.workspace-header { padding: 1rem; border-bottom: 1px solid #ddd; position: sticky; top: 0; background: white; z-index: 10; display: flex; flex-direction: column; gap: 1rem; }
+.workspace-title { display: flex; align-items: center; gap: 1rem; }
+.back-link { text-decoration: none; font-size: 1.5rem; color: #333; }
+.workspace-title h2 { margin: 0; font-size: 1.2rem; }
+.workspace-title p { margin: 0; font-size: 0.9rem; color: #555; }
+.workspace-progress-text { margin-left: auto; font-weight: bold; font-size: 1.1rem; }
+.workspace-progress-bar { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: #28a745; transition: width 0.3s ease; }
+.workspace-search input { width: 100%; padding: 0.75rem 1rem; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+.workspace-filters { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; -ms-overflow-style: none; scrollbar-width: none; }
+.workspace-filters::-webkit-scrollbar { display: none; }
+.filter-tab { padding: 0.5rem 1rem; border: 1px solid #ddd; background: white; border-radius: 20px; cursor: pointer; white-space: nowrap; font-size: 0.9rem; font-weight: 500; }
+.filter-tab.active { background: #1f6feb; color: white; border-color: #1f6feb; }
+.workspace-summary { background: #e6ffed; padding: 1rem; border-radius: 8px; border: 1px solid #acf2bd; text-align: center; }
+.workspace-summary h3 { margin: 0 0 0.5rem 0; color: #22863a; }
+.workspace-summary p { margin: 0 0 0.25rem 0; }
+
+.item-list { padding: 1rem; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 5rem; }
+.item-row { display: flex; align-items: flex-start; gap: 1rem; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.item-row.hidden { display: none !important; }
+.item-icon { flex-shrink: 0; width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; border-radius: 50%; border: 1px solid #ccc; font-size: 1rem; }
+.item-icon[data-status="VERIFIED"] { background: #28a745; color: white; border-color: #28a745; }
+.item-icon[data-status="MISMATCH"] { background: #ffc107; color: black; border-color: #e0a800; }
+.item-details { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; }
+.item-details h4 { margin: 0; font-size: 1rem; line-height: 1.2; }
+.item-details p { margin: 0; font-size: 0.85rem; color: #555; }
+.mismatch-text { color: #d73a49; font-weight: bold; margin-top: 0.25rem; }
+.mismatch-text.verified { color: #28a745; }
+.item-price { font-weight: bold; font-size: 0.9rem; color: #0366d6; text-align: right; }
+
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; transition: opacity 0.2s; }
+.sheet-backdrop[hidden] { display: none; opacity: 0; }
+.bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 16px 16px 0 0; z-index: 101; padding: 1.5rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.1); transform: translateY(0); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1); max-width: 800px; margin: 0 auto; box-sizing: border-box; }
+.bottom-sheet[hidden] { transform: translateY(100%); display: block; /* maintain block for animation, rely on transform */ visibility: hidden; }
+.sheet-header { margin-bottom: 1.5rem; text-align: center; }
+.sheet-header h3 { margin: 0 0 0.25rem 0; font-size: 1.25rem; }
+.sheet-header p { margin: 0; color: #555; }
+.question { text-align: center; font-weight: bold; margin-bottom: 1rem; }
+
+.full-width { width: 100%; padding: 1rem; font-size: 1.1rem; border-radius: 8px; margin-bottom: 1rem; cursor: pointer; text-align: center; box-sizing: border-box; font-weight: bold; }
+.button.primary { background: #1f6feb; color: white; border: none; }
+.button.outline { background: transparent; border: 1px solid #ccc; color: #333; }
+.button.disabled { opacity: 0.5; cursor: not-allowed; }
+
+.mismatch-controls { margin: 1.5rem 0; border-top: 1px solid #eee; padding-top: 1.5rem; }
+.quantity-input-group { display: flex; gap: 1rem; align-items: center; justify-content: center; margin-bottom: 1rem; }
+.quantity-input-group button { width: 48px; height: 48px; font-size: 1.5rem; border-radius: 8px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+.quantity-input-group input { width: 80px; height: 48px; text-align: center; font-size: 1.25rem; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+.diff-indicator { text-align: center; font-weight: bold; margin-bottom: 1rem; height: 1.2rem; }
+.empty-state { text-align: center; padding: 2rem; color: #555; font-style: italic; }
+#toast-container { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
+.toast { background: #333; color: white; padding: 0.75rem 1.5rem; border-radius: 20px; font-size: 0.9rem; animation: fadein 0.3s, fadeout 0.3s 2.7s forwards; white-space: nowrap; }
+.toast.success { background: #28a745; }
+.toast.error { background: #d73a49; }
+@keyframes fadein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeout { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+.session-readonly .item-row { cursor: default; opacity: 0.8; }
