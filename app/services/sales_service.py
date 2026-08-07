@@ -59,16 +59,6 @@ def _clean_buyer_name(name: str | None) -> str | None:
     return (name or "").strip().upper()[:200] or None
 
 
-def checkout_cart(
-    db: Session,
-    cart: PosCart | None,
-    *,
-    payment_mode: str = "cash",
-    notes: str | None = None,
-    upi_vpa: str | None = None,
-) -> Sale:
-    if not cart or cart.status != "active":
-        raise CheckoutError("No active cart to checkout.")
 
 def _build_sale_items(db: Session, cart: PosCart) -> tuple[list[SaleItem], Decimal]:
     items = db.execute(

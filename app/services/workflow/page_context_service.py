@@ -14,6 +14,7 @@ from app.services.settings_service import (
     get_price_code_settings,
     get_pricing_settings,
     get_upi_settings,
+    get_open_excel_links,
     get_template_field_settings,
 )
 from app.services.template_folder_service import scan_bartender_template_folder, template_path_exists
@@ -110,6 +111,7 @@ def settings_context(
         "pricing_settings": get_pricing_settings(),
         "price_code_settings": get_price_code_settings(),
         "upi_settings": get_upi_settings(),
+        "open_excel_links": get_open_excel_links(),
         "settings_saved": bool(settings_saved),
         "settings_error": settings_error,
         "scanner_url": scanner,

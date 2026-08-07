@@ -4,12 +4,14 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from app.services.network_service import phone_print_url, qr_url_for_phone_print, qr_url_for_scanner, scanner_url
+from app.services.settings_service import get_open_excel_links
 from app.services.time_service import format_local_datetime
 
 
 def register_template_filters(templates: Jinja2Templates) -> Jinja2Templates:
     templates.env.filters["local_time"] = format_local_datetime
     templates.env.globals["navbar_qr_context"] = navbar_qr_context
+    templates.env.globals["navbar_open_excel_links"] = get_open_excel_links
     return templates
 
 

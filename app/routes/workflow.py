@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -23,6 +25,9 @@ from app.services.settings_service import (
     save_price_code_settings,
     save_pricing_settings,
     save_upi_settings,
+    get_open_excel_link,
+    clean_open_excel_path,
+    save_open_excel_links,
     get_template_field_settings,
     save_template_field_settings,
 )
@@ -774,6 +779,38 @@ def update_receipt_printer_settings(
     from app.services.settings_service import set_receipt_printer_name
     set_receipt_printer_name(receipt_printer_name)
     return RedirectResponse("/settings?settings_saved=1", status_code=303)
+
+
+@router.post("/settings/open-excel")
+def update_open_excel_settings(
+    excel_button_name: list[str] = Form(default_factory=list),
+    excel_file_path: list[str] = Form(default_factory=list),
+):
+    try:
+        save_open_excel_links(names=excel_button_name, paths=excel_file_path)
+    except ValueError as exc:
+        return RedirectResponse(f"/settings?{urlencode({'settings_error': str(exc)})}", status_code=303)
+    return RedirectResponse("/settings?settings_saved=1", status_code=303)
+
+
+@router.post("/open-excel/{link_id}")
+def open_excel_file(
+    link_id: str,
+    return_to: str = Form(""),
+):
+    target = return_to if return_to.startswith("/") and not return_to.startswith("//") else "/settings"
+    link = get_open_excel_link(link_id)
+    if not link:
+        return RedirectResponse(f"/settings?{urlencode({'settings_error': 'Excel button was not found.'})}", status_code=303)
+    clean_path = clean_open_excel_path(link.path)
+    file_path = Path(clean_path).expanduser()
+    if not file_path.exists() or not file_path.is_file():
+        return RedirectResponse(f"/settings?{urlencode({'settings_error': f'Excel file was not found: {clean_path}'})}", status_code=303)
+    try:
+        os.startfile(str(file_path))  # type: ignore[attr-defined]
+    except Exception as exc:
+        return RedirectResponse(f"/settings?{urlencode({'settings_error': f'Could not open Excel file: {exc}'})}", status_code=303)
+    return RedirectResponse(target, status_code=303)
 
 @router.post("/settings/upi")
 def update_upi_settings(

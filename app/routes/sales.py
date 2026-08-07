@@ -289,8 +289,8 @@ def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depe
     from app.services.receipt_print_service import print_receipt_direct, print_receipt_direct_image
 
     printer_name = get_receipt_printer_name()
-    if not printer_name or not printer_name.strip():
-        return {"ok": False, "error": "Receipt printer name is not configured."}
+    if not printer_name:
+        printer_name = ""
 
     sale = _sale_or_404(db, sale_id)
     receipt_url = str(request.url_for("sale_receipt", sale_id=sale.id)) + "?hide_buttons=1"

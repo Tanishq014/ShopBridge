@@ -88,6 +88,42 @@
 
   <section class="panel setup-panel">
     <div class="section-line">
+      <h2>Open Excel Navbar Buttons</h2>
+      <span class="badge muted">{{ open_excel_links|length }} saved</span>
+    </div>
+    <p>Add Excel shortcuts that appear in the navbar after Settings. Clicking a shortcut opens that file on this PC.</p>
+    <form class="open-excel-settings" method="post" action="/settings/open-excel" id="openExcelSettingsForm">
+      <div class="open-excel-list" id="openExcelList">
+        {% for excel_link in open_excel_links %}
+          <div class="open-excel-row">
+            <label>
+              Button name
+              <input name="excel_button_name" value="{{ excel_link.name }}" maxlength="40" placeholder="Stock Excel">
+            </label>
+            <label class="span-two">
+              File path
+              <input name="excel_file_path" value="{{ excel_link.path }}" placeholder="C:\path\to\file.xlsx">
+            </label>
+          </div>
+        {% endfor %}
+        <div class="open-excel-row">
+          <label>
+            Button name
+            <input name="excel_button_name" maxlength="40" placeholder="Stock Excel">
+          </label>
+          <label class="span-two">
+            File path
+            <input name="excel_file_path" placeholder="C:\path\to\file.xlsx">
+          </label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">Save Excel Buttons</button>
+      </div>
+    </form>
+  </section>
+  <section class="panel setup-panel">
+    <div class="section-line">
       <h2>Navbar QR</h2>
       <span class="badge muted" id="navbarQrStateBadge">hidden</span>
     </div>

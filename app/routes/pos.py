@@ -856,11 +856,6 @@ def pos_search(q: str = Query("", max_length=120), db: Session = Depends(get_db)
             or_(
                 LabelVariant.barcode == clean_barcode,
                 func.lower(LabelVariant.barcode).like(like),
-                func.lower(LabelVariant.item_display_name).like(like),
-                func.lower(LabelVariant.article_no).like(like),
-                func.lower(LabelVariant.brand).like(like),
-                func.lower(ProductFamily.family_name).like(like),
-                func.lower(ProductFamily.tally_stock_item_name).like(like),
             )
         )
         .order_by(LabelVariant.updated_at.desc(), LabelVariant.id.desc())
@@ -1383,10 +1378,7 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
         else:
             _apply_tally_item_to_cart_item(item, tally_item, preserve_values=True)
     elif result_type == "family":
-        family = db.get(ProductFamily, result_id)
-        if not family or not family.active_status:
-            return _json_error("Product family was not found.", status_code=404, status="not_found")
-        _apply_family_to_cart_item(item, family, preserve_values=True)
+        return _json_error("Choose a barcode or Tally item for this POS line.", status_code=400, status="invalid_item")
     else:
         return _json_error("Choose a valid item to replace this line.", status_code=400, status="invalid_item")
 
