@@ -4,78 +4,96 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', path='/receiving.css') }}">
+<style>
+  .topbar { display: none !important; }
+  .page { padding: 0 !important; max-width: 100% !important; margin: 0 !important; width: 100% !important; }
+  body { margin: 0 !important; padding: 0 !important; }
+</style>
 
 <div class="receiving-workspace">
   <header class="workspace-header">
     <div class="workspace-title">
       <a href="/receiving" class="back-link">←</a>
       <div>
-        <h2>{{ session.supplier.name }}</h2>
-        <p>Invoice #{{ session.invoice_number or 'N/A' }}</p>
+        <h2 style="font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          {{ session.supplier.name }}
+          <span id="btn-session-info" style="color: var(--accent-blue); font-size: 1.1rem; cursor: pointer; padding: 0 4px;">ⓘ</span>
+        </h2>
       </div>
       <div class="workspace-progress-text" id="progress-text">
         <span id="progress-verified">0</span> / <span id="progress-total">0</span>
       </div>
     </div>
-    
-    <div class="workspace-progress-bar">
-      <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
-    </div>
 
     <div class="workspace-search">
       <input type="text" id="receiving-search" placeholder="Search name, code, price..." autofocus>
     </div>
-    <div class="workspace-camera-action">
-      <button class="button outline disabled" disabled>[ CAMERA - COMING LATER ]</button>
-    </div>
 
     <div class="workspace-filters">
-      <button class="filter-tab active" data-filter="REMAINING">Tally Pending <span id="count-remaining">0</span></button>
-      <button class="filter-tab" data-filter="NEEDS_MATCH">Needs Match <span id="count-match">0</span></button>
+      <button class="filter-tab active" data-filter="PENDING">Pending <span id="count-pending">0</span></button>
       <button class="filter-tab" data-filter="NEEDS_PRICING">Needs Pricing <span id="count-pricing">0</span></button>
       <button class="filter-tab" data-filter="PRINT_ISSUES">Print Issues <span id="count-issues">0</span></button>
       <button class="filter-tab" data-filter="ALL">All <span id="count-all">0</span></button>
     </div>
     
-    <div class="workspace-summary" id="completion-summary" hidden>
-      <h3>ALL ITEMS CHECKED</h3>
-      <p><span id="summary-total">0</span> rows checked</p>
-      <p><span id="summary-verified">0</span> exact</p>
-      <p><span id="summary-mismatch">0</span> mismatches</p>
-      <button class="button outline" id="btn-review-mismatches">[ REVIEW MISMATCHES ]</button>
+    <div class="workspace-summary success-mode" id="completion-summary" hidden>
+      <h3>All Items Checked</h3>
+      <p><span id="summary-total">0</span> rows checked • <span id="summary-verified">0</span> exact • <span id="summary-mismatch">0</span> mismatches</p>
+      <button class="button outline" id="btn-review-mismatches" style="margin-top: 0.5rem; padding: 0.5rem; font-size: 0.9rem;">Review Mismatches</button>
     </div>
     
     {% if session.status == 'DRAFT' %}
-    <div class="workspace-summary" style="background: #fff3cd; border-color: #ffeeba;">
-      <h3>DRAFT SESSION</h3>
-      <p>Invoice rows can be set up manually.</p>
+    <div class="workspace-summary draft-mode">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="text-align: left;">
+          <h3>Draft Session</h3>
+          <p>Invoice rows can be set up manually.</p>
+        </div>
+        <button class="button outline" id="btn-toggle-draft-form" style="width: auto; margin: 0; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.85rem;">+ Add Row</button>
+      </div>
       
-      <form action="/receiving/{{ session.id }}/items" method="post" style="margin-top: 1rem; text-align: left; background: white; padding: 1rem; border-radius: 4px;">
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <input type="text" name="raw_description" placeholder="Description (Required)" class="form-input" required style="flex: 2;">
-          <input type="text" name="supplier_product_code" placeholder="Code" class="form-input" style="flex: 1;">
-        </div>
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <input type="number" name="expected_qty" placeholder="Qty" class="form-input" min="0" step="0.001" style="flex: 1;">
-          <input type="text" name="unit" placeholder="Unit (e.g. PCS)" class="form-input" style="flex: 1;">
-        </div>
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <input type="number" name="purchase_rate" placeholder="Rate" class="form-input" min="0" step="0.01" style="flex: 1;">
-          <input type="number" name="mrp" placeholder="MRP" class="form-input" min="0" step="0.01" style="flex: 1;">
-        </div>
-        <button type="submit" class="button outline full-width">[+] ADD ROW</button>
-      </form>
+      <div class="draft-collapsible" id="draft-form-container">
+        <form action="/receiving/{{ session.id }}/items" method="post" style="text-align: left;">
+          <div class="form-grid">
+            <div class="form-field full">
+              <input type="text" name="raw_description" placeholder="Description (Required)" class="form-input" required>
+            </div>
+            <div class="form-field">
+              <input type="text" name="supplier_product_code" placeholder="Code" class="form-input">
+            </div>
+            <div class="form-field">
+              <input type="number" name="expected_qty" placeholder="Qty" class="form-input" min="0" step="0.001">
+            </div>
+            <div class="form-field">
+              <input type="text" name="unit" placeholder="Unit (e.g. PCS)" class="form-input">
+            </div>
+            <div class="form-field">
+              <input type="number" name="purchase_rate" placeholder="Rate" class="form-input" min="0" step="0.01">
+            </div>
+            <div class="form-field">
+              <input type="number" name="mrp" placeholder="MRP" class="form-input" min="0" step="0.01">
+            </div>
+            <div class="form-field full" style="margin-top: 0.5rem;">
+              <button type="submit" class="button primary">Add Manual Row</button>
+            </div>
+          </div>
+        </form>
+      </div>
       
       <form action="/receiving/{{ session.id }}/start" method="post" style="margin-top: 1rem;">
-        <button type="submit" class="button primary full-width" id="btn-start-receiving">[ START RECEIVING ]</button>
+        <button type="submit" class="button success" id="btn-start-receiving">Start Receiving</button>
       </form>
     </div>
     {% elif session.status in ['COMPLETED', 'CANCELLED'] %}
-    <div class="workspace-summary" style="background: #e2e3e5; border-color: #d6d8db;">
+    <div class="workspace-summary">
       <h3>{{ session.status }}</h3>
       <p>This session is read-only.</p>
     </div>
     {% endif %}
+    
+    <div class="workspace-progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+    </div>
   </header>
 
   <main class="item-list" id="item-list">
@@ -94,40 +112,35 @@
            data-label-status="{{ item.label_status }}"
            data-family-id="{{ item.family_id or '' }}"
            data-landing-price="{{ item.landing_price if item.landing_price is not none else '' }}"
+           data-received-qty="{{ item.received_qty if item.received_qty is not none else '' }}"
            data-confirmed-selling-price="{{ item.confirmed_selling_price if item.confirmed_selling_price is not none else '' }}">
            
-        <div class="item-icon" id="item-icon-{{ item.id }}" data-status="{{ item.tally_status }}">
-          {% if item.tally_status == 'VERIFIED' %}
-            ✓
-          {% elif item.tally_status == 'MISMATCH' %}
-            ⚠
-          {% else %}
-            ○
-          {% endif %}
-        </div>
-        
-        <div class="item-details">
-          <h4>{{ item.raw_description }}</h4>
-          {% if item.supplier_product_code %}
-            <p class="code">{{ item.supplier_product_code }}</p>
-          {% endif %}
-          <p class="qty">
-            Expected: <span id="expected-qty-{{ item.id }}">{{ ('%g' % item.expected_qty) if item.expected_qty is not none else '—' }}</span> <span id="item-unit-{{ item.id }}">{{ item.unit or 'PCS' }}</span>
-          </p>
-          <p class="mismatch-text {{ 'verified' if item.tally_status == 'VERIFIED' else '' }}" id="mismatch-text-{{ item.id }}" style="display: {{ 'block' if item.tally_status != 'UNVERIFIED' else 'none' }}">
-            {% if item.tally_status == 'MISMATCH' %}
-              Received: {{ ('%g' % item.received_qty) if item.received_qty is not none else '0' }} 
+        <div class="item-details" style="padding-left: 0.25rem; flex-direction: row; align-items: center; justify-content: space-between;">
+          <h4 style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 0.5rem;">{{ item.raw_description }}</h4>
+          
+          <div class="badges" style="margin-top: 0; flex-shrink: 0;">
+            <span class="badge" id="badge-expected-{{ item.id }}"><span id="expected-qty-{{ item.id }}">{{ ('%g' % item.expected_qty) if item.expected_qty is not none else '—' }}</span> <span id="item-unit-{{ item.id }}">{{ item.unit or 'PCS' }}</span></span>
+            
+            <span class="badge mismatch" id="mismatch-badge-{{ item.id }}" style="display: {{ 'flex' if item.tally_status == 'MISMATCH' else 'none' }};">
+              Rec: {{ ('%g' % item.received_qty) if item.received_qty is not none else '0' }} 
               {% if item.received_qty is not none and item.expected_qty is not none %}
                 ({{ 'Short' if item.received_qty < item.expected_qty else 'Extra' }} {{ ('%g' % ((item.expected_qty - item.received_qty) | abs)) }})
               {% endif %}
-            {% elif item.tally_status == 'VERIFIED' %}
-              Received: {{ ('%g' % item.received_qty) if item.received_qty is not none else '0' }}
-            {% endif %}
-          </p>
+            </span>
+            
+            <span class="badge verified" id="verified-badge-{{ item.id }}" style="display: {{ 'flex' if item.tally_status == 'VERIFIED' else 'none' }};">
+              Rec: {{ ('%g' % item.received_qty) if item.received_qty is not none else '0' }}
+            </span>
+          </div>
         </div>
         
-        <div class="item-price">
-          {% if item.purchase_rate is not none %}₹{{ item.purchase_rate | round(2) }}{% elif item.mrp is not none %}₹{{ item.mrp | round(2) }}{% endif %}
+        <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; flex-shrink: 0; padding-right: 0.25rem;">
+          {% if item.mrp is not none %}
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">MRP ₹{{ '%g' % item.mrp }}</span>
+          {% endif %}
+          {% if item.purchase_rate is not none %}
+            <span style="font-size: 0.9rem; color: var(--text-main); font-weight: 700;">₹{{ '%g' % item.purchase_rate }}</span>
+          {% endif %}
         </div>
       </div>
     {% endfor %}
@@ -137,101 +150,119 @@
 <!-- Bottom Sheet Dialog -->
 <div id="tally-sheet-backdrop" class="sheet-backdrop" hidden></div>
 <div id="tally-sheet" class="bottom-sheet" hidden>
-  <div class="sheet-content">
-    <div class="sheet-header">
-      <h3 id="sheet-title">Item Name</h3>
-      <p id="sheet-code" class="code">Code</p>
-      <p class="qty">Expected: <span id="sheet-expected"></span> <span id="sheet-unit"></span></p>
+  
+  <div class="sheet-sticky-header">
+    <div class="sheet-drag-handle"></div>
+    <div class="sheet-header-content">
+      <div class="sheet-title-area">
+        <h3 id="sheet-title">Item Name</h3>
+        <p id="sheet-code">Code • <span id="sheet-expected"></span> <span id="sheet-unit"></span> expected</p>
+      </div>
+      <button class="sheet-close-btn" id="btn-close-sheet">✕</button>
     </div>
+  </div>
+
+  <div class="sheet-scroll-content">
     
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem;">
-      <button class="button primary" id="btn-receive-all" style="flex: 1; padding: 0.5rem; font-size: 12px; display: none;">
-        [ ✓ ALL <span id="sheet-expected-btn"></span> ]
-      </button>
-      
-      <div class="mismatch-controls" style="flex: 1; margin: 0; padding: 0; background: none; display: flex; flex-direction: column; align-items: flex-end;">
-        <div class="quantity-input-group" style="margin: 0;">
-          <button class="button outline" id="btn-qty-dec" style="padding: 0.25rem 0.5rem;">-</button>
-          <input type="number" id="input-receive-qty" step="0.001" min="0" style="width: 70px; text-align: center; padding: 0.25rem;">
-          <button class="button outline" id="btn-qty-inc" style="padding: 0.25rem 0.5rem;">+</button>
+    <!-- CARD 1: Quantity -->
+    <div class="sheet-card" style="padding: 0.25rem 0.5rem;">
+      <div class="quantity-control-row">
+        <button class="button subtle" id="btn-receive-all" style="flex: 1; padding: 0; font-size: 0.9rem;">
+          ✓ Received (<span id="sheet-expected-btn" style="font-weight: 700;"></span>)
+        </button>
+        <div style="flex: 1; display: flex; justify-content: flex-end;">
+          <div class="quantity-input-group" style="padding: 2px; gap: 0.5rem;">
+            <button id="btn-qty-dec">−</button>
+            <input type="number" id="input-receive-qty" step="0.001" min="0">
+            <button id="btn-qty-inc">+</button>
+          </div>
         </div>
-        <p class="diff-indicator" id="diff-indicator" style="margin: 2px 0 0 0; font-size: 10px; text-align: right;"></p>
       </div>
     </div>
 
-    <!-- TEMPLATE & FIELDS UI -->
-    <div id="template-section" style="border-top: 1px solid #e2e8f0; padding-top: 0.5rem; margin-top: 0.5rem;">
-      <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
-        <label style="flex: 1; font-size: 11px; font-weight: 600;">Template
-          <select id="select-template" class="form-input" style="width: 100%; padding: 4px; margin-top: 2px;">
-            <option value="">-- Select --</option>
+    <!-- CARD 2: Pricing -->
+    <div class="sheet-card" id="pricing-section">
+      <div id="pricing-context" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; display: none;"></div>
+      
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
+        <div class="form-field" style="flex: 2;">
+          <label>Landing Price</label>
+          <input type="number" id="input-landing-price" step="0.01" class="form-input">
+        </div>
+        <div class="form-field" style="flex: 1;">
+          <label>Margin %</label>
+          <input type="number" id="input-calc-margin" step="1" class="form-input" placeholder="%">
+        </div>
+        <div class="form-field" style="flex: 1;">
+          <label>MRP Disc %</label>
+          <input type="number" id="input-calc-markup" step="1" class="form-input" placeholder="%">
+        </div>
+      </div>
+      
+      <div style="display: flex; gap: 0.5rem;">
+        <div class="form-field" style="flex: 1;">
+          <label>Selling Price</label>
+          <input type="number" id="input-selling-price" step="0.01" class="form-input">
+        </div>
+        <div class="form-field" style="flex: 1;">
+          <label>MRP</label>
+          <input type="number" id="input-mrp" step="0.01" class="form-input">
+        </div>
+        <div class="form-field" style="flex: 1; min-width: 120px;">
+          <label style="display: flex; justify-content: space-between;">
+            Code
+            <span id="clean-code-preview" style="color: var(--accent-green); font-size: 0.8em; display: none;"></span>
+          </label>
+          <input type="text" id="input-coded-price" class="form-input" style="font-family: monospace;">
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 3: Template & Advanced -->
+    <div class="sheet-card" id="template-section">
+      <div class="form-grid">
+        <div class="form-field">
+          <label style="display: flex; align-items: center; gap: 0.25rem;">
+            Template Style 
+            <span id="btn-preview-template" style="color: var(--accent-blue); font-size: 1rem; cursor: pointer; padding: 0 4px; display: none;" title="Preview Template">ⓘ</span>
+          </label>
+          <select id="select-template" class="form-input" tabindex="-1">
+            <option value="">-- Auto --</option>
             {% for template in templates %}
             <option value="{{ template.id }}">{{ template.template_name }}</option>
             {% endfor %}
           </select>
-        </label>
-        
-        <label style="flex: 2; font-size: 11px; font-weight: 600;">Billing Item
-          <input type="text" id="draft-billing-item" class="form-input" style="width: 100%; padding: 4px; margin-top: 2px;" placeholder="Name...">
-        </label>
+        </div>
+        <div class="form-field">
+          <label>Billing Item</label>
+          <input type="text" id="draft-billing-item" class="form-input" placeholder="Name for Tally...">
+        </div>
       </div>
       
-      <div id="dynamic-fields-container" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+      <div id="dynamic-fields-container" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;">
         <!-- Loaded dynamically via JS -->
       </div>
-    </div>
-
-    <!-- PRICING UI -->
-    <div id="pricing-section" style="border-top: 1px solid #e2e8f0; padding-top: 0.5rem; margin-top: 0.5rem;">
-      <h4 style="margin-bottom: 0.25rem;">Pricing & Printing</h4>
-      <div style="font-size: 10px; color: #64748b; margin-bottom: 0.5rem; background: #f8fafc; padding: 4px; border-radius: 4px;" id="pricing-context">
-         <!-- Context loaded dynamically -->
-      </div>
       
-      <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
-        <label style="flex:1 1 30%; font-size: 11px; font-weight: 600;">Landing Price
-          <input type="number" id="input-landing-price" step="0.01" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
-        </label>
-        <label style="flex:1 1 30%; font-size: 11px; font-weight: 600;">MRP
-          <input type="number" id="input-mrp" step="0.01" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
-        </label>
-        
-        <div style="flex:1 1 30%;">
-          <label style="font-size: 11px; font-weight: 600;">Code
-            <input type="text" id="input-coded-price" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px; text-transform: uppercase;">
-          </label>
-        </div>
-
-        <div style="flex:1 1 45%;">
-          <label style="font-size: 11px; font-weight: 600;">Selling Price
-            <input type="number" id="input-selling-price" step="0.01" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
-          </label>
-          <div style="font-size: 9px; color: #64748b; margin-top: 2px;" id="pricing-indicators">
-            Mark: <span id="ind-markup">--</span>% | GM: <span id="ind-margin">--</span>% | 
-            Disc: <input type="number" id="input-discount" style="width: 35px; font-size: 9px; padding: 1px; text-align: center;" step="1">%
-          </div>
-        </div>
-        
-        <label style="flex:1 1 45%; font-size: 11px; font-weight: 600;">Labels
-          <input type="number" id="input-label-copies" step="1" class="form-input" style="width: 100%; margin-top: 2px; padding: 4px;">
-        </label>
+      <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; align-items: stretch; height: 3rem;">
+        <input type="number" id="input-label-copies" class="form-input" value="1" min="0" step="1" style="flex: 0 0 60px; text-align: center; font-weight: bold; font-size: 1.2rem; padding: 0;" title="Copies" placeholder="Qty">
+        <button class="button primary" id="btn-confirm-print" style="flex: 1; margin: 0; font-size: 1rem;">[ CONFIRM & PRINT ]</button>
+        <button class="button" id="btn-reprint" style="display: none; flex: 1; margin: 0; font-size: 1rem;">[ REPRINT ]</button>
       </div>
-      
-      <div id="pricing-suggestions" style="margin-bottom: 0.5rem; font-size: 10px; display: flex; gap: 0.25rem; flex-wrap: wrap;">
-        <!-- Suggestions loaded dynamically -->
-      </div>
-      
-      <button class="button primary full-width" id="btn-confirm-print" style="background: #10b981; border-color: #059669; padding: 0.5rem; font-size: 12px; margin-bottom: 0.5rem;">[ CONFIRM & PRINT ]</button>
-      <button class="button secondary full-width" id="btn-reprint" style="margin-top: 0.5rem; display:none; padding: 0.5rem; font-size: 12px; margin-bottom: 0.5rem;">[ REPRINT ]</button>
     </div>
     
-    <button class="button outline full-width" id="btn-close-sheet">Cancel</button>
   </div>
+  
 </div>
 
 <script>
   window.SESSION_ID = {{ session.id }};
   window.SESSION_STATUS = "{{ session.status }}";
+  window.SESSION_INFO = {
+    invoice: "{{ session.invoice_number or 'None' }}",
+    date: "{{ session.invoice_date.strftime('%Y-%m-%d %H:%M') if session.invoice_date else 'None' }}",
+    status: "{{ session.status }}",
+    created: "{{ session.created_at.strftime('%Y-%m-%d %H:%M') if session.created_at else 'None' }}"
+  };
   window.priceCodeSettings = {{ price_code_settings_json|tojson }};
   window.pricingSettings = {{ pricing_settings|tojson }};
 </script>

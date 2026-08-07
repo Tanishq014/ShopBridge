@@ -26,12 +26,14 @@ class DraftField:
     source: str
     required: bool
     missing: bool
+    default_value: str | None = None
 
 @dataclass
 class LabelDraft:
     template_id: int | None
     ready: bool
     fields: list[DraftField]
+    manual_overrides: dict[str, str]
 
 
 def _get_semantic_mapping(template: TemplateMaster) -> dict[str, str]:
@@ -117,7 +119,7 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
     template = db.get(TemplateMaster, item.template_id) if item.template_id else None
     
     if not template:
-        return LabelDraft(template_id=None, ready=False, fields=[])
+        return LabelDraft(template_id=None, ready=False, fields=[], manual_overrides={})
         
     required_fields = parse_required_fields(template.required_fields)
     semantic_mappings = _get_semantic_mapping(template)
@@ -185,13 +187,15 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
             value=val,
             source=source,
             required=True,
-            missing=missing
+            missing=missing,
+            default_value=defaults.get(t_field)
         ))
         
     return LabelDraft(
         template_id=template.id,
         ready=ready,
-        fields=fields
+        fields=fields,
+        manual_overrides=manual
     )
 
 def draft_to_persistence_adapter(draft: LabelDraft, billing_item: str) -> tuple[dict[str, Any], dict[str, str]]:

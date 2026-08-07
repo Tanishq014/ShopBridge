@@ -7,15 +7,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressTotal = document.getElementById('progress-total');
   const progressFill = document.getElementById('progress-fill');
   
-  const countRemaining = document.getElementById('count-remaining');
-  const countVerified = document.getElementById('count-verified');
-  const countMismatch = document.getElementById('count-mismatch');
+  const countPending = document.getElementById('count-pending');
+  const countPricing = document.getElementById('count-pricing');
+  const countIssues = document.getElementById('count-issues');
   const countAll = document.getElementById('count-all');
   
   const completionSummary = document.getElementById('completion-summary');
   const summaryTotal = document.getElementById('summary-total');
   const summaryVerified = document.getElementById('summary-verified');
-  const summaryMismatch = document.getElementById('summary-mismatch');
   
   // Sheet DOM
   const sheet = document.getElementById('tally-sheet');
@@ -28,11 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputQty = document.getElementById('input-receive-qty');
   const diffIndicator = document.getElementById('diff-indicator');
   
-  let activeFilter = 'REMAINING';
+  let activeFilter = 'PENDING';
   let searchTerm = '';
   let currentItemId = null;
   let currentExpectedQty = 0;
   let currentExpectedQtyString = '';
+  let sheetTimeout = null;
 
   // Search logic
   function normalizeSearchText(text) {
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function renderItems() {
-    let total = 0, remaining = 0, match = 0, pricing = 0, issues = 0, visibleCount = 0;
+    let total = 0, pending = 0, pricing = 0, issues = 0, visibleCount = 0, verifiedCount = 0;
 
     itemRows.forEach(row => {
       total++;
@@ -65,24 +65,27 @@ document.addEventListener('DOMContentLoaded', () => {
       const familyId = row.getAttribute('data-family-id');
       const pricingStatus = row.getAttribute('data-pricing-status');
       const labelStatus = row.getAttribute('data-label-status');
-      const recQtyText = document.getElementById(`mismatch-text-${row.getAttribute('data-item-id')}`)?.textContent || "";
-      const isReceived = recQtyText.includes('Received: ') && !recQtyText.includes('Received: 0') && !recQtyText.includes('Received: 0.0');
+      const isReceived = tally !== 'UNVERIFIED';
 
-      if (tally === 'UNVERIFIED') {
-        remaining++;
+      if (tally === 'UNVERIFIED' || tally === 'MISMATCH') {
+        pending++; // Mismatches bundle into pending
       } else if (isReceived) {
-        if (!familyId) match++;
+        if (!familyId) pending++; // Unmapped items also stay in pending
         else if (pricingStatus === 'PENDING') pricing++;
         else if (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE') issues++;
+      }
+      
+      if (isReceived && tally !== 'MISMATCH') {
+          verifiedCount++;
       }
 
       // Filtering logic
       let visibleFilter = false;
       if (activeFilter === 'ALL') visibleFilter = true;
-      else if (activeFilter === 'REMAINING' && tally === 'UNVERIFIED') visibleFilter = true;
-      else if (activeFilter === 'NEEDS_MATCH' && tally !== 'UNVERIFIED' && isReceived && !familyId) visibleFilter = true;
-      else if (activeFilter === 'NEEDS_PRICING' && tally !== 'UNVERIFIED' && isReceived && familyId && pricingStatus === 'PENDING') visibleFilter = true;
-      else if (activeFilter === 'PRINT_ISSUES' && tally !== 'UNVERIFIED' && isReceived && (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE')) visibleFilter = true;
+      else if (activeFilter === 'PENDING' && (tally === 'UNVERIFIED' || tally === 'MISMATCH' || (!familyId && isReceived))) visibleFilter = true;
+      else if (activeFilter === 'NEEDS_PRICING' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && familyId && pricingStatus === 'PENDING') visibleFilter = true;
+      else if (activeFilter === 'PRINT_ISSUES' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE')) visibleFilter = true;
+
 
       // Search logic
       let visibleSearch = true;
@@ -90,7 +93,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const desc = normalizeSearchText(row.getAttribute('data-description') || '');
         const normDesc = normalizeSearchText(row.getAttribute('data-norm-description') || '');
         const cd = normalizeSearchText(row.getAttribute('data-code') || '');
-        if (!desc.includes(searchTerm) && !normDesc.includes(searchTerm) && !cd.includes(searchTerm)) {
+        const mrp = normalizeSearchText(row.getAttribute('data-mrp') || '');
+        const sp = normalizeSearchText(row.getAttribute('data-confirmed-selling-price') || '');
+        const lp = normalizeSearchText(row.getAttribute('data-landing-price') || '');
+        const pr = normalizeSearchText(row.getAttribute('data-purchase-rate') || '');
+        
+        if (!desc.includes(searchTerm) && !normDesc.includes(searchTerm) && !cd.includes(searchTerm) &&
+            !mrp.includes(searchTerm) && !sp.includes(searchTerm) && !lp.includes(searchTerm) && !pr.includes(searchTerm)) {
           visibleSearch = false;
         }
       }
@@ -117,16 +126,27 @@ document.addEventListener('DOMContentLoaded', () => {
       emptyStateEl.style.display = 'none';
     }
 
-    if (document.getElementById('count-remaining')) document.getElementById('count-remaining').textContent = remaining;
-    if (document.getElementById('count-match')) document.getElementById('count-match').textContent = match;
+    if (document.getElementById('count-pending')) document.getElementById('count-pending').textContent = pending;
     if (document.getElementById('count-pricing')) document.getElementById('count-pricing').textContent = pricing;
     if (document.getElementById('count-issues')) document.getElementById('count-issues').textContent = issues;
     if (document.getElementById('count-all')) document.getElementById('count-all').textContent = total;
 
-    const checked = total - remaining;
+    const checked = verifiedCount;
     if (progressTotal) progressTotal.textContent = total;
     if (progressVerified) progressVerified.textContent = checked;
     if (progressFill) progressFill.style.width = (total === 0 ? 0 : (checked / total) * 100) + '%';
+    
+    if (completionSummary) {
+        if (pending === 0 && total > 0 && window.SESSION_STATUS === 'RECEIVING') {
+            completionSummary.hidden = false;
+            if (summaryTotal) summaryTotal.textContent = total;
+            if (summaryVerified) summaryVerified.textContent = checked;
+            document.querySelector('.workspace-filters').style.display = 'none';
+        } else {
+            completionSummary.hidden = true;
+            document.querySelector('.workspace-filters').style.display = 'flex';
+        }
+    }
   }
 
   // Toast UI
@@ -150,6 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     currentItemId = row.getAttribute('data-item-id');
+    window.codeTargetLength = 0; // Reset to avoid flickering padding from previous item
     
     title.textContent = row.querySelector('h4') ? row.querySelector('h4').textContent : 'Unknown';
     code.textContent = row.querySelector('.code') ? row.querySelector('.code').textContent : '';
@@ -164,14 +185,19 @@ document.addEventListener('DOMContentLoaded', () => {
       currentExpectedQtyString = '';
       expectedSpan.textContent = '—';
       document.getElementById('btn-receive-all').style.display = 'none';
-      inputQty.value = '';
     } else {
       currentExpectedQtyString = expQtyText;
       currentExpectedQty = parseFloat(expQtyText);
       expectedSpan.textContent = currentExpectedQtyString;
-      expectedBtnSpan.textContent = currentExpectedQtyString;
+      if (expectedBtnSpan) expectedBtnSpan.textContent = currentExpectedQtyString;
       document.getElementById('btn-receive-all').style.display = 'block';
-      inputQty.value = currentExpectedQtyString;
+    }
+
+    const receivedQty = parseFloat(row.getAttribute('data-received-qty'));
+    if (!isNaN(receivedQty)) {
+      inputQty.value = receivedQty;
+    } else {
+      inputQty.value = 0;
     }
     if (row.getAttribute('data-label-status') === 'PRINTED' || row.getAttribute('data-label-status') === 'QUEUED') {
         document.getElementById('btn-confirm-print').style.display = 'none';
@@ -183,15 +209,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Populate pricing fields from data attrs
     document.getElementById('input-landing-price').value = row.getAttribute('data-landing-price') || row.getAttribute('data-purchase-rate') || '';
-    document.getElementById('input-mrp').value = row.getAttribute('data-mrp') || '';
-    document.getElementById('input-selling-price').value = row.getAttribute('data-confirmed-selling-price') || row.getAttribute('data-mrp') || '';
+    let mrp = parseFloat(row.getAttribute('data-mrp'));
+    let selling = parseFloat(row.getAttribute('data-confirmed-selling-price') || row.getAttribute('data-mrp'));
+    
+    // Restore calculator preferences
+    const savedMargin = localStorage.getItem('saved_margin_pct');
+    if (savedMargin) {
+        document.getElementById('input-calc-margin').value = savedMargin;
+        if (isNaN(selling)) {
+            const landing = parseFloat(document.getElementById('input-landing-price').value);
+            if (!isNaN(landing) && landing > 0) {
+                selling = landing * (1 + parseFloat(savedMargin) / 100);
+            }
+        }
+    }
+    
+    const savedDisc = localStorage.getItem('saved_disc_pct');
+    if (savedDisc) {
+        document.getElementById('input-calc-markup').value = savedDisc;
+        if (isNaN(mrp) && !isNaN(selling)) {
+            mrp = selling / (1 - parseFloat(savedDisc) / 100);
+        }
+    }
+
+    // Set final UI values
+    document.getElementById('input-mrp').value = !isNaN(mrp) ? Math.round(mrp).toString() : '';
+    document.getElementById('input-selling-price').value = !isNaN(selling) ? Math.round(selling).toString() : '';
     
     // Initialize Code
-    const selling = parseFloat(document.getElementById('input-selling-price').value);
     if (!isNaN(selling)) {
-        document.getElementById('input-coded-price').value = generateCodedPrice(selling);
+        updateCodedPriceBox(generateCodedPrice(selling));
     } else {
-        document.getElementById('input-coded-price').value = '';
+        updateCodedPriceBox('');
     }
     
     const rowData = window.itemsJson?.find(i => i.id == currentItemId);
@@ -208,6 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Automatically load draft and pricing context
     loadDraftStatus();
     loadPricingContext(row);
+    clearTimeout(sheetTimeout);
     sheet.hidden = false;
     backdrop.hidden = false;
     setTimeout(() => {
@@ -220,7 +270,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeSheet() {
     sheet.style.transform = 'translateY(100%)';
     backdrop.style.opacity = '0';
-    setTimeout(() => {
+    clearTimeout(sheetTimeout);
+    sheetTimeout = setTimeout(() => {
       sheet.hidden = true;
       sheet.style.visibility = 'hidden';
       backdrop.hidden = true;
@@ -249,19 +300,18 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDiffIndicator();
     if (inputQty.value !== '') submitTally(inputQty.value, true);
   });
+  
+  inputQty?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          updateDiffIndicator();
+          if (inputQty.value !== '') submitTally(inputQty.value, false); // close on enter
+      }
+  });
 
   function updateDiffIndicator() {
-    let val = parseFloat(inputQty.value);
-    if (isNaN(val) || currentExpectedQty === null) {
-      diffIndicator.textContent = ''; return;
-    }
-    if (val === currentExpectedQty) {
-      diffIndicator.textContent = 'EXACT MATCH'; diffIndicator.style.color = '#28a745';
-    } else if (val < currentExpectedQty) {
-      diffIndicator.textContent = 'SHORT BY ' + (currentExpectedQty - val); diffIndicator.style.color = '#d73a49';
-    } else {
-      diffIndicator.textContent = 'EXTRA ' + (val - currentExpectedQty); diffIndicator.style.color = '#ffc107';
-    }
+      // Diff indicator text removed per user request
+      if (diffIndicator) diffIndicator.style.display = 'none';
   }
 
   async function submitTally(qty, skipClose = false) {
@@ -290,29 +340,34 @@ document.addEventListener('DOMContentLoaded', () => {
     row.setAttribute('data-pricing-status', itemData.pricing_status || '');
     row.setAttribute('data-label-status', itemData.label_status || '');
     row.setAttribute('data-landing-price', itemData.landing_price || '');
+    row.setAttribute('data-mrp', itemData.mrp || '');
     row.setAttribute('data-confirmed-selling-price', itemData.confirmed_selling_price || '');
+    row.setAttribute('data-received-qty', itemData.received_qty);
 
-    const icon = document.getElementById('item-icon-' + itemId);
-    if (icon) {
-      icon.setAttribute('data-status', itemData.tally_status);
-      if (itemData.tally_status === 'VERIFIED') icon.textContent = '✓';
-      else if (itemData.tally_status === 'MISMATCH') icon.textContent = '⚠';
-      else icon.textContent = '○';
-    }
-
-    const mismatchText = document.getElementById('mismatch-text-' + itemId);
-    if (mismatchText) {
-      mismatchText.style.display = itemData.tally_status !== 'UNVERIFIED' ? 'block' : 'none';
+    const mismatchBadge = document.getElementById('mismatch-badge-' + itemId);
+    const verifiedBadge = document.getElementById('verified-badge-' + itemId);
+    
+    if (mismatchBadge && verifiedBadge) {
       if (itemData.tally_status === 'VERIFIED') {
-        mismatchText.className = 'mismatch-text verified';
-        mismatchText.textContent = `Received: ${itemData.received_qty}`;
+        mismatchBadge.style.display = 'none';
+        verifiedBadge.style.display = 'flex';
+        verifiedBadge.textContent = `Rec: ${itemData.received_qty}`;
       } else if (itemData.tally_status === 'MISMATCH') {
-        mismatchText.className = 'mismatch-text';
+        verifiedBadge.style.display = 'none';
+        mismatchBadge.style.display = 'flex';
         let diffStr = '';
-        if (itemData.received_qty < itemData.expected_qty) diffStr = ` (Short ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
-        else if (itemData.received_qty > itemData.expected_qty) diffStr = ` (Extra ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
-        mismatchText.textContent = `Received: ${itemData.received_qty}${diffStr}`;
+        if (itemData.received_qty < itemData.expected_qty) diffStr = `(Short ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
+        else if (itemData.received_qty > itemData.expected_qty) diffStr = `(Extra ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
+        mismatchBadge.textContent = `Rec: ${itemData.received_qty} ${diffStr}`;
+      } else {
+        mismatchBadge.style.display = 'none';
+        verifiedBadge.style.display = 'none';
       }
+    }
+    
+    const codeSpan = row.querySelector('.code');
+    if (codeSpan && itemData.coded_price) {
+        codeSpan.textContent = itemData.coded_price;
     }
   }
   document.getElementById('btn-receive-all')?.addEventListener('click', () => {
@@ -358,8 +413,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.createElement('button');
         btn.className = 'button outline';
         btn.style.padding = '4px 8px';
-        btn.textContent = `Cost Based: ₹${suggestions.cost_based_suggestion}`;
-        btn.onclick = () => { document.getElementById('input-selling-price').value = suggestions.cost_based_suggestion; updatePricingIndicators(); };
+        btn.textContent = `Cost Based: ₹${Math.round(parseFloat(suggestions.cost_based_suggestion)).toString()}`;
+        btn.onclick = () => { document.getElementById('input-selling-price').value = Math.round(parseFloat(suggestions.cost_based_suggestion)).toString(); updatePricingIndicators(); };
         suggestionsDiv.appendChild(btn);
       }
       
@@ -367,13 +422,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.createElement('button');
         btn.className = 'button outline';
         btn.style.padding = '4px 8px';
-        btn.textContent = `MRP Based: ₹${suggestions.mrp_based_suggestion}`;
-        btn.onclick = () => { document.getElementById('input-selling-price').value = suggestions.mrp_based_suggestion; updatePricingIndicators(); };
+        btn.textContent = `MRP Based: ₹${Math.round(parseFloat(suggestions.mrp_based_suggestion)).toString()}`;
+        btn.onclick = () => { document.getElementById('input-selling-price').value = Math.round(parseFloat(suggestions.mrp_based_suggestion)).toString(); updatePricingIndicators(); };
         suggestionsDiv.appendChild(btn);
       }
       
       if (!document.getElementById('input-selling-price').value && suggestions.unified_suggestion && !suggestions.is_conflict) {
-        document.getElementById('input-selling-price').value = suggestions.unified_suggestion;
+        document.getElementById('input-selling-price').value = Math.round(parseFloat(suggestions.unified_suggestion)).toString();
       }
       
       updatePricingIndicators();
@@ -383,32 +438,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function updatePricingIndicators() {
+  function updatePricingIndicators(source = 'prices') {
     const landing = parseFloat(document.getElementById('input-landing-price').value);
     const mrp = parseFloat(document.getElementById('input-mrp').value);
     const selling = parseFloat(document.getElementById('input-selling-price').value);
+    const marginInput = document.getElementById('input-calc-margin');
+    const markupInput = document.getElementById('input-calc-markup');
     
-    let markup = '--', gm = '--', disc = '--';
-    
-    if (!isNaN(landing) && landing > 0 && !isNaN(selling)) {
-      markup = (((selling - landing) / landing) * 100).toFixed(1);
-      gm = (((selling - landing) / selling) * 100).toFixed(1);
-    }
-    if (!isNaN(mrp) && mrp > 0 && !isNaN(selling)) {
-      disc = (((mrp - selling) / mrp) * 100).toFixed(1);
-    }
-    
-    document.getElementById('ind-markup').textContent = markup;
-    document.getElementById('ind-margin').textContent = gm;
-    const discInput = document.getElementById('input-discount');
-    if (discInput && document.activeElement !== discInput) {
-        discInput.value = disc !== '--' ? disc : '';
+    if (source === 'prices') {
+        if (!isNaN(landing) && landing > 0 && !isNaN(selling)) {
+            const margin = ((selling - landing) / landing) * 100;
+            if (marginInput && document.activeElement !== marginInput) marginInput.value = margin.toFixed(1);
+        } else if (marginInput && document.activeElement !== marginInput) {
+            marginInput.value = '';
+        }
+        
+        if (!isNaN(selling) && selling > 0 && !isNaN(mrp)) {
+            const markup = ((mrp - selling) / mrp) * 100;
+            if (markupInput && document.activeElement !== markupInput) markupInput.value = markup.toFixed(1);
+        } else if (markupInput && document.activeElement !== markupInput) {
+            markupInput.value = '';
+        }
     }
     
     // Keep track of coded price in the dedicated UI field
     const codeInput = document.getElementById('input-coded-price');
-    if (codeInput && document.activeElement !== codeInput && !isNaN(selling)) {
-      codeInput.value = generateCodedPrice(selling);
+    if (codeInput && document.activeElement !== codeInput) {
+      if (!isNaN(selling)) {
+          const generated = generateCodedPrice(selling);
+          const decodedTyped = decodePriceCode(codeInput.value);
+          
+          // Only overwrite if the manually typed code doesn't mathematically equal the current selling price
+          if (decodedTyped !== selling) {
+              updateCodedPriceBox(generated);
+          }
+      } else {
+          updateCodedPriceBox('');
+      }
     }
   }
   
@@ -439,49 +505,108 @@ document.addEventListener('DOMContentLoaded', () => {
       return priceStr ? parseFloat(priceStr) : null;
   }
   
+  function getJunkPadding(deficit) {
+      if (deficit <= 0) return '';
+      const cipherMap = window.priceCodeSettings?.code_to_digit || {};
+      const cipherLetters = Object.keys(cipherMap).map(k => k.toUpperCase());
+      const allLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const safeLetters = allLetters.split('').filter(c => !cipherLetters.includes(c));
+      
+      let junk = '';
+      for (let i = 0; i < deficit; i++) {
+          junk += safeLetters[Math.floor(Math.random() * safeLetters.length)] || 'X';
+      }
+      return junk;
+  }
+  
+  function updateCodedPriceBox(cleanCode) {
+      const codeInput = document.getElementById('input-coded-price');
+      const previewSpan = document.getElementById('clean-code-preview');
+      if (!codeInput) return;
+      
+      if (!cleanCode) {
+          codeInput.value = '';
+          if (previewSpan) previewSpan.style.display = 'none';
+          return;
+      }
+      
+      const targetLen = window.codeTargetLength || 0;
+      
+      let padded = cleanCode;
+      const deficit = targetLen - cleanCode.length;
+      if (deficit > 0) {
+          const junk = getJunkPadding(deficit);
+          const front = Math.floor(junk.length / 2);
+          padded = junk.substring(0, front) + cleanCode + junk.substring(front);
+      }
+      
+      codeInput.value = cleanCode;
+      
+      if (previewSpan) {
+          previewSpan.textContent = `(${padded})`;
+          previewSpan.style.display = 'inline';
+      }
+  }
+  
   document.getElementById('input-landing-price')?.addEventListener('input', () => { updatePricingIndicators(); if(document.getElementById('pricing-section').hidden === false) loadPricingContext(document.getElementById('item-row-' + currentItemId)); });
   document.getElementById('input-mrp')?.addEventListener('input', () => { updatePricingIndicators(); if(document.getElementById('pricing-section').hidden === false) loadPricingContext(document.getElementById('item-row-' + currentItemId)); });
   document.getElementById('input-selling-price')?.addEventListener('input', updatePricingIndicators);
   
   document.getElementById('input-coded-price')?.addEventListener('input', (e) => {
-      const decoded = decodePriceCode(e.target.value);
+      e.target.value = e.target.value.toUpperCase(); // Force uppercase
+      const raw = e.target.value;
+      const decoded = decodePriceCode(raw);
+      
+      const previewSpan = document.getElementById('clean-code-preview');
+      
       if (decoded !== null) {
-          document.getElementById('input-selling-price').value = decoded;
+          document.getElementById('input-selling-price').value = Math.round(decoded).toString();
           updatePricingIndicators();
+      }
+      
+      const targetLen = window.codeTargetLength || 0;
+      const deficit = targetLen - raw.length;
+      let padded = raw;
+      if (deficit > 0) {
+          const junk = getJunkPadding(deficit);
+          const front = Math.floor(junk.length / 2);
+          padded = junk.substring(0, front) + raw + junk.substring(front);
+      }
+      
+      if (previewSpan && raw) {
+          previewSpan.textContent = `(${padded})`;
+          previewSpan.style.display = 'inline';
+      } else if (previewSpan) {
+          previewSpan.style.display = 'none';
       }
   });
   
-  document.getElementById('input-discount')?.addEventListener('input', async (e) => {
-      const disc = parseFloat(e.target.value);
-      const mrp = parseFloat(document.getElementById('input-mrp').value);
-      const selling = parseFloat(document.getElementById('input-selling-price').value);
-      
-      if (isNaN(disc)) return;
-      
-      if (!isNaN(selling) && isNaN(mrp)) {
-          // Derive MRP from Selling + Disc
-          try {
-              const res = await fetch(`/receiving/items/${currentItemId}/derive_mrp?selling_price=${selling}&discount_percent=${disc}`);
-              if (res.ok) {
-                  const data = await res.json();
-                  if (data.mrp) {
-                      document.getElementById('input-mrp').value = data.mrp;
-                  }
-              }
-          } catch(e) {}
-      } else if (!isNaN(mrp) && isNaN(selling)) {
-          // Derive Selling from MRP + Disc
-          try {
-              const res = await fetch(`/receiving/items/${currentItemId}/derive_selling?mrp=${mrp}&discount_percent=${disc}`);
-              if (res.ok) {
-                  const data = await res.json();
-                  if (data.selling_price) {
-                      document.getElementById('input-selling-price').value = data.selling_price;
-                  }
-              }
-          } catch(e) {}
+  document.getElementById('input-calc-margin')?.addEventListener('input', (e) => {
+      const margin = parseFloat(e.target.value);
+      const landing = parseFloat(document.getElementById('input-landing-price').value);
+      if (!isNaN(margin) && !isNaN(landing)) {
+          const selling = landing * (1 + margin / 100);
+          document.getElementById('input-selling-price').value = Math.round(selling).toString();
+          updatePricingIndicators('calc');
+          
+          const markup = parseFloat(document.getElementById('input-calc-markup').value);
+          if (!isNaN(markup) && markup < 100) {
+              const mrp = Math.round(selling / (1 - markup / 100));
+              document.getElementById('input-mrp').value = mrp.toString();
+          }
       }
-      updatePricingIndicators();
+      localStorage.setItem('saved_margin_pct', e.target.value);
+  });
+
+  document.getElementById('input-calc-markup')?.addEventListener('input', (e) => {
+      const markup = parseFloat(e.target.value);
+      const selling = parseFloat(document.getElementById('input-selling-price').value);
+      if (!isNaN(markup) && !isNaN(selling) && markup < 100) {
+          const mrp = Math.round(selling / (1 - markup / 100));
+          document.getElementById('input-mrp').value = mrp.toString();
+          updatePricingIndicators('calc');
+      }
+      localStorage.setItem('saved_disc_pct', e.target.value);
   });
 
   async function updateDraft(payload) {
@@ -498,7 +623,43 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.getElementById('select-template')?.addEventListener('change', (e) => {
+    if (e.target.value) localStorage.setItem('saved_template_id', e.target.value);
+    const previewBtn = document.getElementById('btn-preview-template');
+    if (previewBtn) previewBtn.style.display = e.target.value ? 'inline-block' : 'none';
     updateDraft({ template_id: e.target.value ? parseInt(e.target.value) : null });
+  });
+
+  document.getElementById('btn-preview-template')?.addEventListener('click', () => {
+      const templateId = document.getElementById('select-template').value;
+      if (!templateId) return;
+      
+      let overlay = document.getElementById('template-preview-overlay');
+      if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = 'template-preview-overlay';
+          Object.assign(overlay.style, {
+              position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
+              backgroundColor: 'rgba(0,0,0,0.8)', zIndex: '9999',
+              display: 'flex', justifyContent: 'center', alignItems: 'center',
+              cursor: 'pointer'
+          });
+          
+          const img = document.createElement('img');
+          img.id = 'template-preview-image';
+          Object.assign(img.style, {
+              maxWidth: '90%', maxHeight: '90%', objectFit: 'contain',
+              backgroundColor: 'white', padding: '1rem', borderRadius: '8px'
+          });
+          
+          overlay.appendChild(img);
+          document.body.appendChild(overlay);
+          
+          overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+      }
+      
+      const img = document.getElementById('template-preview-image');
+      img.src = `/new-stock/template-preview/${templateId}`;
+      overlay.style.display = 'flex';
   });
 
   document.getElementById('draft-billing-item')?.addEventListener('change', (e) => {
@@ -512,7 +673,20 @@ document.addEventListener('DOMContentLoaded', () => {
         window.currentDraft = draft;
         
         const select = document.getElementById('select-template');
-        if (select) select.value = draft.template_id || '';
+        const previewBtn = document.getElementById('btn-preview-template');
+        if (select) {
+            select.value = draft.template_id || '';
+            if (previewBtn) previewBtn.style.display = select.value ? 'inline-block' : 'none';
+            if (!draft.template_id) {
+                const savedTemplate = localStorage.getItem('saved_template_id');
+                if (savedTemplate) {
+                    select.value = savedTemplate;
+                    if (previewBtn) previewBtn.style.display = 'inline-block';
+                    updateDraft({ template_id: parseInt(savedTemplate) });
+                    return; // updateDraft calls loadDraftStatus again
+                }
+            }
+        }
         
         const billInput = document.getElementById('draft-billing-item');
         if (billInput) billInput.value = draft.billing_item || '';
@@ -541,24 +715,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return pA - pB;
         });
 
+        window.codeTargetLength = 0;
         draft.fields.forEach(field => {
+            if (field.semantic_field === 'coded_price' && field.default_value) {
+                window.codeTargetLength = field.default_value.length;
+            }
             if (['mrp', 'selling_price', 'coded_price'].includes(field.semantic_field)) {
                 return; // Hide these from dynamic fields, they belong in Pricing Section
             }
             
             const div = document.createElement('div');
-            div.style.flex = "1 1 45%";
-            let sourceBadge = '';
-            if (field.source) {
-                const color = field.source === 'MANUAL' ? '#3b82f6' : (field.source === 'AI' ? '#8b5cf6' : (field.source === 'PREVIOUS' ? '#10b981' : '#64748b'));
-                sourceBadge = `<span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background: ${color}; color: white; margin-left: 4px;">${field.source}</span>`;
-            }
+            div.style.flex = "1 1 calc(50% - 0.5rem)";
+            div.style.minWidth = "120px";
             
-            div.innerHTML = `<label style="font-size: 11px; font-weight: 600; ${field.missing ? 'color: #ef4444;' : ''}">${field.template_field} ${sourceBadge}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px;" value="${field.value || ''}"></label>`;
+            div.innerHTML = `<label style="font-size: 11px; font-weight: 600;">${field.template_field}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px;" value="${field.value || ''}"></label>`;
             container.appendChild(div);
         });
         
         document.querySelectorAll('.draft-field-input').forEach(input => {
+            input.addEventListener('input', (e) => {
+                // Capitalize Billing Item or Code fields if they are dynamically rendered
+                const fieldName = e.target.getAttribute('data-field');
+                if (fieldName === 'billing_item' || fieldName === 'supplier_product_code') {
+                    e.target.value = e.target.value.toUpperCase();
+                }
+            });
             input.addEventListener('change', (e) => {
                 const fieldName = e.target.getAttribute('data-field');
                 const val = e.target.value;
@@ -576,6 +757,12 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('btn-confirm-print').textContent = '[ CONFIRM & PRINT ]';
         }
         
+        // Re-pad the code badge in case the target length changed from switching templates
+        const codeInput = document.getElementById('input-coded-price');
+        if (codeInput) {
+            updateCodedPriceBox(codeInput.value);
+        }
+        
     } catch(err) {
         console.error("Draft error", err);
     }
@@ -591,9 +778,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (copies === '') return showToast('Copies is required (0 for none)', 'error');
     
     try {
-      // 1. Force save the exact typed Code into the draft so the backend doesn't overwrite it
-      const coded = document.getElementById('input-coded-price').value;
-      if (coded && window.currentDraft) {
+      // 1. Force save the exact padded Code into the draft so the backend doesn't overwrite it
+      const previewSpan = document.getElementById('clean-code-preview');
+      let coded = document.getElementById('input-coded-price').value;
+      if (previewSpan && previewSpan.style.display !== 'none' && previewSpan.textContent) {
+          coded = previewSpan.textContent.replace(/^\(|\)$/g, ''); 
+      }
+      
+      if (coded !== undefined && window.currentDraft) {
           const manualOverrides = window.currentDraft.manual_overrides || {};
           manualOverrides['coded_price'] = coded.toUpperCase();
           await fetch(`/receiving/items/${currentItemId}/draft`, {
@@ -623,8 +815,10 @@ document.addEventListener('DOMContentLoaded', () => {
         })
       });
       if (!printRes.ok) throw new Error((await printRes.json()).detail);
+      const itemData = await printRes.json();
+      itemData.coded_price = (coded !== undefined) ? coded.toUpperCase() : '';
+      updateRowDOM(currentItemId, itemData);
       
-      updateRowDOM(currentItemId, await printRes.json());
       renderItems();
       closeSheet();
       showToast(isReprint ? 'Reprint requested!' : 'Saved and print requested!');
@@ -635,6 +829,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-confirm-print')?.addEventListener('click', () => confirmAndPrint(false));
   document.getElementById('btn-reprint')?.addEventListener('click', () => confirmAndPrint(true));
+
+  // Toggle Draft Form
+  document.getElementById('btn-toggle-draft-form')?.addEventListener('click', (e) => {
+      const form = document.getElementById('draft-form-container');
+      if (form) {
+          form.classList.toggle('open');
+          e.target.textContent = form.classList.contains('open') ? 'Hide Form' : '+ Add Row';
+      }
+  });
+
+  // Review Mismatches
+  document.getElementById('btn-review-mismatches')?.addEventListener('click', () => {
+      activeFilter = 'MISMATCHES';
+      filterTabs.forEach(t => t.classList.remove('active'));
+      renderItems();
+  });
+
+  // Session Info Modal
+  document.getElementById('btn-session-info')?.addEventListener('click', () => {
+      if (window.SESSION_INFO) {
+          alert(`Invoice: ${window.SESSION_INFO.invoice}\nDate: ${window.SESSION_INFO.date}\nStatus: ${window.SESSION_INFO.status}\nCreated: ${window.SESSION_INFO.created}`);
+      }
+  });
+
+  // Force uppercase on draft billing item form field
+  const mainBillingInput = document.getElementById('draft-billing-item');
+  if (mainBillingInput) {
+      mainBillingInput.addEventListener('input', (e) => e.target.value = e.target.value.toUpperCase());
+  }
+  
+  // Select all text on focus
+  document.querySelectorAll('input[type="number"], input[type="text"]').forEach(input => {
+      input.addEventListener('focus', function() {
+          this.select();
+      });
+  });
+  
+  // Ensure focused inputs remain visible when mobile keyboard appears
+  const scrollContent = document.querySelector('.sheet-scroll-content');
+  if (scrollContent) {
+      scrollContent.addEventListener('focusin', (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+              setTimeout(() => {
+                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 300); // Wait for keyboard animation
+          }
+      });
+  }
 
   renderItems(); // initial
 });
