@@ -759,7 +759,6 @@
       let nextField = current + delta;
       if (nextField < 0) {
         if (rowIndex <= 0) {
-          focusItemInput(true);
           return;
         }
         nextRow = Math.max(0, rowIndex - 1);
@@ -2398,10 +2397,11 @@
         input.select();
       }
       if (fieldName === "item") {
-        if (state.skipItemSearchOnce) {
+        if (state.skipItemSearchOnce && (!input.value || !input.value.trim())) {
           state.skipItemSearchOnce = false;
           closeSuggestions();
         } else {
+          state.skipItemSearchOnce = false;
           startItemEditSearch(input, rowIndex);
         }
       } else {
@@ -2681,21 +2681,16 @@
         event.preventDefault();
         event.stopPropagation();
         resetActiveEditState();
-        const searchWasOpen = !searchPanel.hidden;
-        const item = cartItemAt(rowIndex);
-        if (fieldName === "item" && item) {
-          input.value = previewItemLabel(item);
+
+        if (input.value !== "") {
+          input.value = "";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
           closeSuggestions();
-        } else if (fieldName === "rate" && item) {
-          input.value = item.selling_price || "";
-        } else if (fieldName === "qty" && item) {
-          input.value = item.qty;
+          return;
         }
-        if (searchWasOpen) {
-          input.select();
-        } else {
-          focusItemInput(false);
-        }
+
+        focusItemInput(false);
         return;
       }
 
@@ -3702,6 +3697,18 @@
           return;
         }
         event.preventDefault();
+
+        const active = document.activeElement;
+        const isInputField = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+
+        if (isInputField && active.value !== "") {
+          active.value = "";
+          active.dispatchEvent(new Event("input", { bubbles: true }));
+          active.dispatchEvent(new Event("change", { bubbles: true }));
+          closeSuggestions();
+          return;
+        }
+
         if (!searchPanel.hidden) {
           const mode = state.suggestionMode;
           const rIndex = state.suggestionRowIndex;

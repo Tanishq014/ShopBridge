@@ -3350,7 +3350,8 @@ body.pos-page .pos-header {
 .pos-search-results-list .pos-suggestion {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 3px 12px;
+  min-height: auto;
   text-align: left;
   width: 100%;
 }
@@ -3379,14 +3380,13 @@ body.pos-page .pos-header {
   align-items: flex-start;
   display: flex;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: 0px;
 }
 
-.pos-search-item-name {
-  font-size: 19px;
-  font-weight: 900;
+.pos-search-results-list .pos-suggestion .pos-search-item-name {
+  font-size: 16px;
+  font-weight: 700;
   color: #000000;
-  letter-spacing: -0.3px;
   line-height: 1.2;
 }
 
