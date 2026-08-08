@@ -20,3 +20,5 @@ status_before_voice_cleanup.txt
 bartender_templates/DEFAULT - Copy.btw
 shopbridge.db
 misc/
+implementation_plan.md
+data/job_11_all_pages.json

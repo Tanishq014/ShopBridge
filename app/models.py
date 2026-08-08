@@ -274,7 +274,8 @@ class ReceivingItem(Base):
     supplier_product_code = Column(String(120), nullable=True, index=True)
     hsn_code = Column(String(100), nullable=True)
     extraction_confidence = Column(Numeric(5, 4), nullable=True)
-    source_provenance = Column(Text, nullable=True)
+    source_provenance = Column(Text, nullable=True) # Legacy
+    extracted_payload = Column(Text, nullable=True) # Full Document AI row JSON
     extracted_attributes = Column(Text, nullable=True)
     manual_overrides = Column(Text, nullable=True)
 

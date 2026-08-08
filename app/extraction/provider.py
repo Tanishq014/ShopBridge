@@ -2,33 +2,42 @@ from abc import ABC, abstractmethod
 from typing import Any
 from pydantic import BaseModel, Field
 
-class ProvenanceInfo(BaseModel):
-    source_text: str
-    page: int | None = None
-    bbox: list[int] | None = None
+class ExtractedField(BaseModel):
+    value: str | float | None = None
     source_column: str | None = None
+    bbox: list[int] | None = Field(default=None, description="[ymin, xmin, ymax, xmax]")
 
-class ExtractedItem(BaseModel):
-    row_number: str | None = None
-    row_number_inferred: bool = False
-    page_number: int | None = None
-    raw_description: str | None = None
-    normalized_description: str | None = None
+class ExtractedAttribute(BaseModel):
+    semantic_key: str
+    template_names: list[str] = Field(default_factory=list)
+    field: ExtractedField
+
+class ExtractedRow(BaseModel):
+    source_row_number: ExtractedField | None = None
+    raw_description: ExtractedField | None = None
     suggested_billing_item: str | None = None
-    supplier_product_code: str | None = None
-    hsn_code: str | None = None
-    quantity: float | None = None
-    unit: str | None = None
-    purchase_rate: float | None = None
-    mrp: float | None = None
-    line_amount: float | None = None
-    attributes: dict[str, str] = Field(default_factory=dict)
-    confidence: dict[str, float] = Field(default_factory=dict)
-    review_required: bool = False
-    provenance: dict[str, ProvenanceInfo] = Field(default_factory=dict)
+    hsn_code: ExtractedField | None = None
+    quantity: ExtractedField | None = None
+    unit: ExtractedField | None = None
+    purchase_rate: ExtractedField | None = None
+    line_amount: ExtractedField | None = None
+    attributes: list[ExtractedAttribute] = Field(default_factory=list)
+    
+class ExtractedPage(BaseModel):
+    page_number: int
+    image_width: int | None = None
+    image_height: int | None = None
+    rows: list[ExtractedRow] = Field(default_factory=list)
+
+class ExtractedDocument(BaseModel):
+    provider: str
+    provider_model: str
+    provider_version: str
+    extracted_at: str
+    pages: list[ExtractedPage] = Field(default_factory=list)
 
 class ExtractionJobResult(BaseModel):
-    items: list[ExtractedItem] = Field(default_factory=list)
+    document: ExtractedDocument | None = None
     raw_provider_response: str | None = None
     tokens_used: int | None = None
     prompt_tokens: int | None = None

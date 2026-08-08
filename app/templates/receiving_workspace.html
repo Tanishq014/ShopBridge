@@ -17,7 +17,8 @@
       <div>
         <h2 style="font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
           {{ session.supplier.name }}
-          <span id="btn-session-info" style="color: var(--accent-blue); font-size: 1.1rem; cursor: pointer; padding: 0 4px;">ⓘ</span>
+          <span id="btn-session-info" style="color: var(--accent-blue); font-size: 1.1rem; cursor: pointer; padding: 0 4px;" title="Session Info">ⓘ</span>
+          <span id="btn-copy-json" style="color: var(--text-muted); font-size: 1rem; cursor: pointer; padding: 0 4px;" title="Copy AI JSON Payload" onclick="copySessionJson({{ session.id }})">📋</span>
         </h2>
       </div>
       <div class="workspace-progress-text" id="progress-text">
@@ -195,8 +196,13 @@
     <div class="sheet-drag-handle"></div>
     <div class="sheet-header-content">
       <div class="sheet-title-area">
-        <h3 id="sheet-title">Item Name</h3>
-        <p id="sheet-code">Code • <span id="sheet-expected"></span> <span id="sheet-unit"></span> expected</p>
+        <h3 id="sheet-title" style="display: flex; align-items: center; gap: 0.25rem;">
+          Item Name
+        </h3>
+        <p id="sheet-code">
+          Code • <span id="sheet-expected"></span> <span id="sheet-unit"></span> expected
+          <span class="ai-mark" data-ai-key="quantity" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span>
+        </p>
       </div>
       <button class="sheet-close-btn" id="btn-close-sheet">✕</button>
     </div>
@@ -223,10 +229,11 @@
     <!-- CARD 2: Pricing -->
     <div class="sheet-card" id="pricing-section">
       <div id="pricing-context" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; display: none;"></div>
+      <div id="pricing-suggestions"></div>
       
       <div style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
         <div class="form-field" style="flex: 2;">
-          <label>Landing Price</label>
+          <label>Landing Price <span class="ai-mark" data-ai-key="purchase_rate" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span></label>
           <input type="number" id="input-landing-price" step="0.01" class="form-input">
         </div>
         <div class="form-field" style="flex: 1;">
@@ -245,7 +252,7 @@
           <input type="number" id="input-selling-price" step="0.01" class="form-input">
         </div>
         <div class="form-field" style="flex: 1;">
-          <label>MRP</label>
+          <label>MRP <span class="ai-mark" data-ai-key="mrp" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span></label>
           <input type="number" id="input-mrp" step="0.01" class="form-input">
         </div>
         <div class="form-field" style="flex: 1; min-width: 120px;">
@@ -274,7 +281,7 @@
           </select>
         </div>
         <div class="form-field">
-          <label>Billing Item</label>
+          <label>Billing Item <span class="ai-mark" data-ai-key="suggested_billing_item" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span></label>
           <input type="text" id="draft-billing-item" class="form-input" placeholder="Name for Tally...">
         </div>
       </div>
@@ -305,6 +312,21 @@
   };
   window.priceCodeSettings = {{ price_code_settings_json|tojson }};
   window.pricingSettings = {{ pricing_settings|tojson }};
+  
+  async function copySessionJson(sessionId) {
+    try {
+      const response = await fetch(`/receiving/${sessionId}/extracted_json`);
+      if (!response.ok) {
+        throw new Error("No JSON payload found or error fetching it.");
+      }
+      const data = await response.text();
+      await navigator.clipboard.writeText(data);
+      alert("AI Extracted JSON copied to clipboard!");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to copy JSON: " + err.message);
+    }
+  }
 </script>
 <script src="{{ url_for('static', path='/receiving.js') }}"></script>
 {% endblock %}

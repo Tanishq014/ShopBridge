@@ -5,6 +5,7 @@ import time
 from typing import Any
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
@@ -14,50 +15,13 @@ from google.genai import types
 from app.extraction.provider import (
     ExtractionProvider,
     ExtractionJobResult,
-    ExtractedItem,
-    ProvenanceInfo
+    ExtractedDocument,
+    ExtractedPage,
+    ExtractedRow,
+    ExtractedField,
+    ExtractedAttribute
 )
 from app.extraction.vocabulary import VOCABULARY_V1
-
-
-class AIRawProvenance(BaseModel):
-    source_text: str
-    page: int | None = None
-    bbox: list[int] | None = None
-    source_column: str | None = None
-
-class AttributePair(BaseModel):
-    key: str
-    value: str
-
-class ConfidencePair(BaseModel):
-    key: str
-    score: float
-
-class ProvenancePair(BaseModel):
-    key: str
-    provenance: AIRawProvenance
-
-class AIExtractedItem(BaseModel):
-    row_number: str | None = None
-    row_number_inferred: bool = False
-    page_number: int | None = None
-    raw_description: str | None = None
-    normalized_description: str | None = None
-    suggested_billing_item: str | None = None
-    supplier_product_code: str | None = None
-    hsn_code: str | None = None
-    quantity: float | None = None
-    unit: str | None = None
-    purchase_rate: float | None = None
-    mrp: float | None = None
-    line_amount: float | None = None
-    attributes: list[AttributePair] = Field(default_factory=list)
-    confidence: list[ConfidencePair]
-    provenance: list[ProvenancePair]
-
-class AIExtractionResponse(BaseModel):
-    items: list[AIExtractedItem] = Field(default_factory=list)
 
 
 class GeminiProvider(ExtractionProvider):
@@ -89,16 +53,17 @@ class GeminiProvider(ExtractionProvider):
         
         # 1. Build the prompt
         system_instruction = (
-            "You are an expert logistics data extractor. Your job is ONLY to extract text directly from the invoice into semantic fields. "
+            "You are an expert Document AI data extractor. Your job is to extract rich structured data from the provided invoice pages. "
             f"The core extraction vocabulary is: {json.dumps(VOCABULARY_V1['core_fields'])}. "
             f"The known semantic attributes are: {json.dumps(VOCABULARY_V1['known_attributes'])}.\n\n"
-            "Extract the printed row number (S.No., Sr., Line No., Item No., or equivalent) for every line item into 'row_number'. "
-            "If a document clearly omits repeated numbers while preserving sequential row order, you may infer the missing value but must set 'row_number_inferred=true'. "
-            "Never fabricate a row number when the sequence is ambiguous. Also provide the 'page_number' (1-indexed) where the row was found.\n\n"
-            "Extract EVERYTHING you can confidently identify. Do not limit yourself to only fields explicitly requested by the template. "
-            "Unknown product attributes should be placed into attributes using their original column names if no canonical semantic field exists. "
-            "For 'normalized_description' and 'suggested_billing_item', strip away arbitrary supplier tokens (like 'N.1 DLX' or size/color codes) to create a clean, canonical POS product name. "
-            "Never invent values."
+            "Return the full hierarchical `ExtractedDocument` payload. For EVERY extracted field, you MUST provide:\n"
+            "1. The interpreted `value` (if numeric, convert it. If string, clean it up / normalize it. E.g. 'HANUMAN .P' -> 'Hanuman P').\n"
+            "   - Exception: `suggested_billing_item` is just a simple string, not an object. Infer a clean, standardized product name (e.g. 'Alarm Clock Red' instead of 'ALRM CLK R') and output it as a plain string. This will be printed on customer POS receipts.\n"
+            "2. The `source_column` name under which this value was found (e.g., 'Description', 'List Price', 'Amount(Rs.)').\n"
+            "3. A `bbox` as [ymin, xmin, ymax, xmax] normalized to a 0-1000 scale.\n\n"
+            "For row metadata:\n"
+            "- Extract the printed row number into `source_row_number` exactly as printed.\n"
+            "Do not invent values. If a field is missing, omit it."
         )
         
         prompt_parts = []
@@ -114,91 +79,129 @@ class GeminiProvider(ExtractionProvider):
         if few_shot_examples and len(few_shot_examples) > 0:
             prompt_parts.append(f"\n\nHere are some previously verified successful extractions from this supplier to use as examples:\n{json.dumps(few_shot_examples, indent=2)}")
 
-        prompt_parts.append("\n\nPlease extract all line items from the attached invoice. Provide field-level confidence scores (0.0 to 1.0) and provenance for each extracted field (source text and column name).")
+        prompt_parts.append("\n\nPlease extract all line items from the attached invoice. Provide provenance for each extracted field (column name and bbox).")
 
         prompt = "\n".join(prompt_parts)
 
-        # 2. Upload the files to Gemini
+        # 2. Extract page by page to avoid token limits
         file_objs = []
-        for fp in file_paths:
+        page_dimensions = {} # 1-indexed page mapping
+        print(f"\n[Gemini] Starting extraction for {len(file_paths)} pages...")
+        for idx, fp in enumerate(file_paths):
+            print(f"[Gemini] Uploading {fp} to Gemini...")
             file_objs.append(self.client.files.upload(file=fp, config={'mime_type': mime_type}))
+            try:
+                from PIL import Image
+                with Image.open(fp) as img:
+                    page_dimensions[idx + 1] = (img.width, img.height)
+                    print(f"[Gemini] Loaded PIL dimensions for page {idx + 1}: {img.width}x{img.height}")
+            except Exception as e:
+                print(f"[Gemini] ⚠️ Failed to load PIL dimensions for {fp}: {e}")
+                page_dimensions[idx + 1] = (None, None)
             
-        contents = file_objs + [prompt]
+        doc = ExtractedDocument(
+            provider=self.provider_name,
+            provider_model=self.provider_version,
+            provider_version="v1",
+            extracted_at="",
+            pages=[]
+        )
+        
+        from datetime import datetime
+        doc.extracted_at = datetime.utcnow().isoformat()
+        import uuid
+        
+        tokens_used = 0
+        prompt_tokens = 0
+        candidate_tokens = 0
+        raw_responses = []
 
         try:
-            # 3. Call the model with Structured Outputs (with retry logic)
-            max_retries = 3
-            base_delay = 2
-            
-            response = None
-            for attempt in range(max_retries):
+            for page_idx, file_obj in enumerate(file_objs):
+                page_num = page_idx + 1
+                contents = [file_obj, prompt]
+                
+                print(f"[Gemini] Generating structured output for Page {page_num}/{len(file_objs)}...")
+                
+                # 3. Call the model with Structured Outputs for a SINGLE PAGE
+                max_retries = 3
+                base_delay = 2
+                
+                response = None
+                for attempt in range(max_retries):
+                    if attempt > 0:
+                        print(f"[Gemini] 🔄 Retry attempt {attempt + 1}/{max_retries} for page {page_num}...")
+                        
+                    try:
+                        response = self.client.models.generate_content(
+                            model=self.provider_version,
+                            contents=contents,
+                            config=types.GenerateContentConfig(
+                                system_instruction=system_instruction,
+                                response_mime_type="application/json",
+                                response_schema=ExtractedPage,
+                                temperature=0.1,
+                            ),
+                        )
+                        break
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            print(f"[Gemini] ❌ Error extracting page {page_num} on final attempt: {e}")
+                            raise e
+                        err_str = str(e).lower()
+                        if "503" in err_str or "429" in err_str or "unavailable" in err_str or "quota" in err_str:
+                            print(f"[Gemini] ⚠️ Rate limit or unavailable error on page {page_num}, retrying in {base_delay * (2 ** attempt)}s...")
+                            await asyncio.sleep(base_delay * (2 ** attempt))
+                        else:
+                            print(f"[Gemini] ❌ Error extracting page {page_num}: {e}")
+                            raise e
+                
+                raw_response = response.text
+                raw_responses.append(raw_response)
+                
+                t_used = 0
+                if response.usage_metadata:
+                    t_used = response.usage_metadata.total_token_count
+                    tokens_used += t_used
+                    prompt_tokens += response.usage_metadata.prompt_token_count
+                    candidate_tokens += response.usage_metadata.candidates_token_count
+
+                print(f"[Gemini] ✅ Page {page_num} inference complete! Parsing JSON ({t_used} tokens)...")
+
+                # Parse response directly into our Document AI model for this page
                 try:
-                    response = self.client.models.generate_content(
-                        model=self.provider_version,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            response_mime_type="application/json",
-                            response_schema=AIExtractionResponse,
-                            temperature=0.1,
-                        ),
-                    )
-                    break
+                    page = ExtractedPage.model_validate_json(raw_response)
+                    print(f"[Gemini] ✅ Page {page_num} successfully parsed! Extracted {len(page.rows)} rows.")
                 except Exception as e:
-                    if attempt == max_retries - 1:
-                        raise e
-                    err_str = str(e).lower()
-                    if "503" in err_str or "429" in err_str or "unavailable" in err_str or "quota" in err_str:
-                        await asyncio.sleep(base_delay * (2 ** attempt))
-                    else:
-                        raise e
+                    # Save the partial payload for inspection
+                    import os
+                    debug_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', f'failed_payload_debug_page_{page_num}.json')
+                    with open(debug_path, 'w', encoding='utf-8') as f:
+                        f.write(raw_response)
+                    print(f"[Gemini] ❌ JSON Parse Error on page {page_num}. Saved to {debug_path}.")
+                    raise RuntimeError(f"Failed to parse JSON payload for page {page_num}. Saved raw payload to {debug_path}. Error: {e}")
+                
+                # Ensure page number is correct
+                page.page_number = page_num
+                
+                # Inject PIL dimensions and assign row UUIDs
+                if page_num in page_dimensions:
+                    page.image_width = page_dimensions[page_num][0]
+                    page.image_height = page_dimensions[page_num][1]
+                
+                doc.pages.append(page)
             
-            raw_response = response.text
-            tokens_used = 0
-            prompt_tokens = 0
-            candidate_tokens = 0
-            if response.usage_metadata:
-                tokens_used = response.usage_metadata.total_token_count
-                prompt_tokens = response.usage_metadata.prompt_token_count
-                candidate_tokens = response.usage_metadata.candidates_token_count
-
-            # Parse response
-            ai_data = AIExtractionResponse.model_validate_json(raw_response)
-            
-            # Map to the core interface
-            result_items = []
-            for ai_item in ai_data.items:
-                item = ExtractedItem(
-                    row_number=ai_item.row_number,
-                    row_number_inferred=ai_item.row_number_inferred,
-                    page_number=ai_item.page_number,
-                    raw_description=ai_item.raw_description,
-                    normalized_description=ai_item.normalized_description,
-                    suggested_billing_item=ai_item.suggested_billing_item,
-                    supplier_product_code=ai_item.supplier_product_code,
-                    hsn_code=ai_item.hsn_code,
-                    quantity=ai_item.quantity,
-                    unit=ai_item.unit,
-                    purchase_rate=ai_item.purchase_rate,
-                    mrp=ai_item.mrp,
-                    line_amount=ai_item.line_amount,
-                    attributes={attr.key: attr.value for attr in ai_item.attributes},
-                    confidence={conf.key: conf.score for conf in ai_item.confidence},
-                    review_required=False, # Backend business rules can override this later
-                    provenance={prov.key: ProvenanceInfo(**prov.provenance.model_dump()) for prov in ai_item.provenance}
-                )
-                result_items.append(item)
-
             processing_time = time.time() - start_time
+            print(f"[Gemini] 🎉 All pages processed successfully in {processing_time:.2f}s!")
             
             return ExtractionJobResult(
-                items=result_items,
-                raw_provider_response=raw_response,
+                document=doc,
+                raw_provider_response="[" + ",".join(raw_responses) + "]",
                 tokens_used=tokens_used,
                 prompt_tokens=prompt_tokens,
                 candidate_tokens=candidate_tokens,
                 cost=0.0, # Implement cost estimation if needed
-                input_pages=1 # Would need a PDF parser to count properly
+                input_pages=len(doc.pages)
             )
             
         except Exception as e:
@@ -206,7 +209,8 @@ class GeminiProvider(ExtractionProvider):
             raise e
         finally:
             # Cleanup file
-            try:
-                self.client.files.delete(name=file_obj.name)
-            except:
-                pass
+            for file_obj in file_objs:
+                try:
+                    self.client.files.delete(name=file_obj.name)
+                except Exception:
+                    pass

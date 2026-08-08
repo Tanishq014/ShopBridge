@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select, desc
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import ReceivingItem, TemplateMaster, LabelVariant, ProductFamily
+from app.services.settings_service import get_template_field_settings
 from app.services.field_config import parse_required_fields, normalize_field_name, parse_field_defaults
 from app.services.price_code_service import generate_coded_price
 from app.services.workflow.form_state_service import parse_extra_field_values
@@ -145,6 +147,8 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
         pricing_context["family_name"] = item.billing_item
         
         
+    template_field_settings = get_template_field_settings()
+    
     for t_field in required_fields:
         sem_field = semantic_mappings.get(t_field, t_field)
         
@@ -178,7 +182,9 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
             source = "DEFAULT"
             missing = False
             
-        if missing:
+        is_strictly_required = not template_field_settings.is_optional(sem_field) and sem_field not in ["barcode", "coded_price"]
+        
+        if missing and is_strictly_required:
             ready = False
             
         fields.append(DraftField(
@@ -186,8 +192,8 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
             semantic_field=sem_field,
             value=val,
             source=source,
-            required=True,
-            missing=missing,
+            required=is_strictly_required,
+            missing=missing if is_strictly_required else False,
             default_value=defaults.get(t_field)
         ))
         

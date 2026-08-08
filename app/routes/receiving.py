@@ -162,6 +162,24 @@ def receiving_home(request: Request, db: Session = Depends(get_db)):
         }
     )
 
+@router.get("/{session_id}/extracted_json")
+def get_extracted_json(session_id: int, db: Session = Depends(get_db)):
+    from app.models import ExtractionJob
+    job = db.execute(
+        select(ExtractionJob)
+        .where(ExtractionJob.session_id == session_id)
+        .order_by(ExtractionJob.started_at.desc())
+    ).scalars().first()
+    
+    if not job or not job.raw_provider_response:
+        raise HTTPException(status_code=404, detail="No extracted JSON found for this session")
+        
+    import json
+    try:
+        return Response(content=job.raw_provider_response, media_type="application/json")
+    except:
+        return {"raw_payload": job.raw_provider_response}
+
 @router.get("/{session_id}", response_class=HTMLResponse)
 def receiving_workspace(session_id: int, request: Request, db: Session = Depends(get_db)):
     session = db.get(ReceivingSession, session_id)
@@ -199,7 +217,7 @@ def receiving_workspace(session_id: int, request: Request, db: Session = Depends
         }
     )
 from fastapi import Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from datetime import datetime
 from decimal import Decimal
 

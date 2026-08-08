@@ -227,7 +227,9 @@ def tally_item(db: Session, item_id: int, received_qty: Decimal) -> ReceivingIte
         
     item.received_qty = received_qty
     
-    if item.expected_qty is not None and item.received_qty == item.expected_qty:
+    if received_qty == 0:
+        item.tally_status = "UNVERIFIED"
+    elif item.expected_qty is not None and item.received_qty == item.expected_qty:
         item.tally_status = "VERIFIED"
     else:
         item.tally_status = "MISMATCH"

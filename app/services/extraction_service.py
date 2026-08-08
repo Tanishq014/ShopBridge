@@ -116,9 +116,14 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
         job.raw_provider_response = result.raw_provider_response
         
         duration = (job.completed_at - job.started_at).total_seconds()
+        row_count = 0
+        if result.document:
+            for page in result.document.pages:
+                row_count += len(page.rows)
+                
         print(f"\n[🚀 {provider.provider_name} EXTRACTION COMPLETED]")
         print(f"   Model: {job.provider_version}")
-        print(f"   Rows Extracted: {len(result.items)}")
+        print(f"   Rows Extracted: {row_count}")
         print(f"   Tokens Used: {result.tokens_used} (Input: {result.prompt_tokens}, Output: {result.candidate_tokens})")
         print(f"   Duration: {duration:.2f}s\n")
         
@@ -131,29 +136,48 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
                 pass
         
         # Insert ReceivingItems
-        for idx, item in enumerate(result.items):
-            r_item = ReceivingItem(
-                session_id=session_id,
-                template_id=preferred_template_id,
-                bill_row_number=idx + 1,
-                source_row_number=item.row_number,
-                source_row_inferred=item.row_number_inferred,
-                source_page_number=item.page_number,
-                raw_description=item.raw_description,
-                normalized_description=item.normalized_description,
-                billing_item=item.suggested_billing_item,
-                supplier_product_code=item.supplier_product_code,
-                hsn_code=item.hsn_code,
-                expected_qty=item.quantity,
-                unit=item.unit,
-                purchase_rate=item.purchase_rate,
-                mrp=item.mrp,
-                line_amount=item.line_amount,
-                extracted_attributes=json.dumps(item.attributes),
-                source_provenance=json.dumps({k: v.model_dump() for k, v in item.provenance.items()}),
-                extraction_confidence=0.0 
-            )
-            db.add(r_item)
+        bill_row_idx = 1
+        if result.document:
+            for page in result.document.pages:
+                for row in page.rows:
+                    
+                    def safe_val(field):
+                        if not field: return None
+                        return field.value
+                        
+                    def safe_float(val):
+                        if val is None: return None
+                        if isinstance(val, (int, float)): return float(val)
+                        if isinstance(val, str):
+                            try:
+                                return float(val.replace(',', ''))
+                            except ValueError:
+                                pass
+                        return None
+
+                    r_item = ReceivingItem(
+                        session_id=session_id,
+                        template_id=preferred_template_id,
+                        bill_row_number=bill_row_idx,
+                        source_row_number=str(safe_val(row.source_row_number)) if safe_val(row.source_row_number) is not None else None,
+                        source_row_inferred=False, 
+                        source_page_number=page.page_number,
+                        raw_description=str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None,
+                        normalized_description=str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None,
+                        billing_item=str(row.suggested_billing_item) if row.suggested_billing_item is not None else None,
+                        supplier_product_code=None, # Can map later
+                        hsn_code=str(safe_val(row.hsn_code)) if safe_val(row.hsn_code) is not None else None,
+                        expected_qty=safe_float(safe_val(row.quantity)),
+                        unit=str(safe_val(row.unit)) if safe_val(row.unit) is not None else None,
+                        purchase_rate=safe_float(safe_val(row.purchase_rate)),
+                        mrp=None,
+                        line_amount=safe_float(safe_val(row.line_amount)),
+                        extracted_attributes=json.dumps([a.model_dump() for a in row.attributes]),
+                        extracted_payload=row.model_dump_json(), # Full Document AI row JSON
+                        extraction_confidence=0.0 
+                    )
+                    db.add(r_item)
+                    bill_row_idx += 1
             
         db.commit()
         

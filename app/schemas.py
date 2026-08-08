@@ -143,6 +143,7 @@ class ReceivingItemRead(ReceivingItemCreate):
     id: int
     received_qty: Optional[Decimal] = None
     matched_variant_id: Optional[int] = None
+    extracted_payload: Optional[str] = None
     tally_status: str
     pricing_status: str
     label_status: str

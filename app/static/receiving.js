@@ -202,8 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tally === 'UNVERIFIED' || tally === 'MISMATCH') {
         pending++; // Mismatches bundle into pending
       } else if (isReceived) {
-        if (!familyId) pending++; // Unmapped items also stay in pending
-        else if (pricingStatus === 'PENDING') pricing++;
+        if (pricingStatus === 'PENDING') pricing++;
         else if (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE') issues++;
       }
       
@@ -214,8 +213,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Filtering logic
       let visibleFilter = false;
       if (activeFilter === 'ALL') visibleFilter = true;
-      else if (activeFilter === 'PENDING' && (tally === 'UNVERIFIED' || tally === 'MISMATCH' || (!familyId && isReceived))) visibleFilter = true;
-      else if (activeFilter === 'NEEDS_PRICING' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && familyId && pricingStatus === 'PENDING') visibleFilter = true;
+      else if (activeFilter === 'PENDING' && (tally === 'UNVERIFIED' || tally === 'MISMATCH')) visibleFilter = true;
+      else if (activeFilter === 'NEEDS_PRICING' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && pricingStatus === 'PENDING') visibleFilter = true;
       else if (activeFilter === 'PRINT_ISSUES' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE')) visibleFilter = true;
 
 
@@ -307,6 +306,38 @@ document.addEventListener('DOMContentLoaded', () => {
     title.textContent = row.querySelector('h4') ? row.querySelector('h4').textContent : 'Unknown';
     code.textContent = row.querySelector('.code') ? row.querySelector('.code').textContent : '';
     
+    // Reset AI marks
+    document.querySelectorAll('.ai-mark').forEach(el => el.style.display = 'none');
+    
+    window.currentSuggestedBilling = '';
+    const rowData = window.itemsJson?.find(i => i.id == currentItemId);
+    if (rowData && rowData.extracted_payload) {
+      try {
+        const payload = JSON.parse(rowData.extracted_payload);
+        
+        // Dynamically toggle AI marks based on payload keys
+        for (const key of Object.keys(payload)) {
+            const markEl = document.querySelector(`.ai-mark[data-ai-key="${key}"]`);
+            if (markEl && payload[key] !== null) {
+                // If it's an object with a value property, check that. Otherwise assume it's a raw string.
+                const hasValue = typeof payload[key] === 'object' && payload[key] !== null ? payload[key].value !== null : true;
+                if (hasValue) {
+                    markEl.style.display = 'inline-block';
+                }
+            }
+        }
+        
+        if (payload.suggested_billing_item) {
+            window.currentSuggestedBilling = typeof payload.suggested_billing_item === 'object' ? payload.suggested_billing_item.value : payload.suggested_billing_item;
+            // Also light up title mark if suggested_billing_item is present but raw_description is not
+            const titleMark = document.querySelector('.ai-mark[data-ai-key="raw_description"]');
+            if (titleMark) titleMark.style.display = 'inline-block';
+        }
+      } catch (e) {
+        console.warn("Failed to parse extracted_payload", e);
+      }
+    }
+    
     const expectedEl = document.getElementById('expected-qty-' + currentItemId);
     const expQtyText = expectedEl ? expectedEl.textContent.trim() : '';
     const unitEl = document.getElementById('item-unit-' + currentItemId);
@@ -375,7 +406,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCodedPriceBox('');
     }
     
-    const rowData = window.itemsJson?.find(i => i.id == currentItemId);
     const suggestedCopies = rowData ? rowData.suggested_label_copies : (currentExpectedQty !== null ? Math.ceil(currentExpectedQty) : null);
     
     if (suggestedCopies !== null) {
@@ -513,9 +543,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const mrp = document.getElementById('input-mrp').value;
     
     const suggestionsDiv = document.getElementById('pricing-suggestions');
-    suggestionsDiv.innerHTML = '';
+    if (suggestionsDiv) suggestionsDiv.innerHTML = '';
     const contextDiv = document.getElementById('pricing-context');
-    contextDiv.innerHTML = 'Loading context...';
+    if (contextDiv) contextDiv.innerHTML = 'Loading context...';
     
     try {
       const [sugRes, prevRes] = await Promise.all([
@@ -823,7 +853,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const billInput = document.getElementById('draft-billing-item');
-        if (billInput) billInput.value = draft.billing_item || '';
+        if (billInput) {
+            billInput.value = draft.billing_item || window.currentSuggestedBilling || '';
+            if (!draft.billing_item && window.currentSuggestedBilling) {
+                updateDraft({ billing_item: window.currentSuggestedBilling });
+            }
+        }
         
         const container = document.getElementById('dynamic-fields-container');
         if (!container) return;
@@ -861,8 +896,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const div = document.createElement('div');
             div.style.flex = "1 1 calc(50% - 0.5rem)";
             div.style.minWidth = "120px";
-            
-            div.innerHTML = `<label style="font-size: 11px; font-weight: 600;">${field.template_field}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px;" value="${field.value || ''}"></label>`;
+            const isMissing = field.missing;
+            div.innerHTML = `<label style="font-size: 11px; font-weight: 600;">${field.template_field}${isMissing ? ' <span style="color:var(--danger)">*</span>' : ''}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px; ${isMissing ? 'border-color:var(--danger)' : ''}" value="${field.value || ''}"></label>`;
             container.appendChild(div);
         });
         
