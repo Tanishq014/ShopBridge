@@ -286,11 +286,14 @@ def sale_detail(sale_id: int, request: Request, db: Session = Depends(get_db)):
 @router.post("/sales/{sale_id}/receipt/direct")
 def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depends(get_db)):
     from app.services.settings_service import get_receipt_printer_name
-    from app.services.receipt_print_service import print_receipt_direct, print_receipt_direct_image
+    from app.services.receipt_print_service import print_receipt_direct_image
 
     printer_name = get_receipt_printer_name()
-    if not printer_name:
-        printer_name = ""
+    if not printer_name or not printer_name.strip():
+        return {
+            "ok": False,
+            "error": "No printer configured. Falling back to browser receipt.",
+        }
 
     sale = _sale_or_404(db, sale_id)
     receipt_url = str(request.url_for("sale_receipt", sale_id=sale.id)) + "?hide_buttons=1"
@@ -303,17 +306,10 @@ def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depe
             return {"ok": True, "message": "Receipt sent to printer (Image Mode)"}
         except Exception as img_e:
             print(f"[Direct Print] Image mode failed: {img_e}")
-            if sale.upi_vpa:
-                return {
-                    "ok": False,
-                    "error": f"Image direct print failed for UPI receipt, opening browser receipt so QR is preserved. Error: {img_e}",
-                }
-
-            # Fallback to ESC/POS text
-            print(f"[Direct Print] Falling back to text mode print for sale {sale.id}")
-            print_receipt_direct(printer_name, sale)
-            print("[Direct Print] Text mode print successful")
-            return {"ok": True, "message": f"Receipt sent to printer (Text Mode Fallback). Image mode failed: {img_e}"}
+            return {
+                "ok": False,
+                "error": f"Image direct print failed, falling back to browser receipt. Error: {img_e}",
+            }
     except Exception as e:
         print(f"[Direct Print] Text mode or general failure: {e}")
         import traceback

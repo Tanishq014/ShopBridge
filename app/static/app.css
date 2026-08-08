@@ -1942,6 +1942,7 @@ tbody tr:last-child td {
 .receipt {
   background: #ffffff;
   border: 1px solid var(--border);
+  box-sizing: border-box;
   color: #111827;
   font-family: "Courier New", monospace;
   font-size: 12px;
@@ -2068,8 +2069,9 @@ tbody tr:last-child td {
   .receipt {
     border: 0;
     box-shadow: none;
+    box-sizing: border-box;
     margin: 0;
-    padding: 0 2mm 0 4mm;
+    padding: 0 4mm 0 2mm;
     width: 80mm;
   }
 
