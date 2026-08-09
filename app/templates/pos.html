@@ -771,7 +771,9 @@
         nextRow = Math.min((state.cart.items || []).length - 1, rowIndex + 1);
         nextField = 0;
       }
+      state.isGridNavigating = true;
       focusCartField(nextRow, order[nextField], true);
+      window.setTimeout(() => { state.isGridNavigating = false; }, 50);
     }
 
     function moveCartFieldVertical(rowIndex, fieldName, delta) {
@@ -788,7 +790,9 @@
         return;
       }
       const safeNextRow = Math.max(0, Math.min(nextRow, items.length - 1));
+      state.isGridNavigating = true;
       focusCartField(safeNextRow, fieldName, true);
+      window.setTimeout(() => { state.isGridNavigating = false; }, 50);
     }
 
     function selectCartIndex(index) {
@@ -2407,9 +2411,11 @@
         if (state.skipItemSearchOnce && (!input.value || !input.value.trim())) {
           state.skipItemSearchOnce = false;
           closeSuggestions();
-        } else {
+        } else if (!state.isGridNavigating) {
           state.skipItemSearchOnce = false;
           startItemEditSearch(input, rowIndex);
+        } else {
+          state.skipItemSearchOnce = false;
         }
       } else {
         closeSuggestions();
@@ -3318,7 +3324,9 @@
           event.preventDefault();
           event.stopPropagation();
           closeSuggestions();
+          state.isGridNavigating = true;
           focusCartField(items.length - 1, "item", true);
+          window.setTimeout(() => { state.isGridNavigating = false; }, 50);
           return;
         }
       }
