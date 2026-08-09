@@ -95,6 +95,18 @@ def _migrate_existing_sqlite() -> None:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE tally_items ADD COLUMN aliases TEXT"))
 
+    if "product_families" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("product_families")}
+        if "cost_rule_type" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE product_families ADD COLUMN cost_rule_type VARCHAR(40)"))
+        if "cost_rule_percent" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE product_families ADD COLUMN cost_rule_percent NUMERIC(10, 2)"))
+        if "mrp_discount_percent" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE product_families ADD COLUMN mrp_discount_percent NUMERIC(10, 2)"))
+
     if "label_variants" in table_names:
         columns = {column["name"] for column in inspector.get_columns("label_variants")}
         if "expiry" not in columns:

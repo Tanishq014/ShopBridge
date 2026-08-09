@@ -2317,6 +2317,13 @@
         qty: "Quantity updated.",
       };
       if (fieldName === "qty" || fieldName === "rate" || fieldName === "mrp") {
+        if (fieldName === "rate") {
+          const rateText = String(values.rate ?? "").trim();
+          if (!rateText) {
+            state.activeEditDirty = false;
+            return true;
+          }
+        }
         if (fieldName === "qty") {
           const qtyText = String(values.qty ?? "").trim();
           if (!/^-?\d+$/.test(qtyText) || Number.parseInt(qtyText, 10) === 0) {
@@ -2685,7 +2692,9 @@
         if (input.value !== "") {
           input.value = "";
           input.dispatchEvent(new Event("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
+          if (fieldName !== "rate") {
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
           closeSuggestions();
           return;
         }
@@ -3087,6 +3096,19 @@
         focusItemInput(false);
         return false;
       }
+      const visibleRateInputs = Array.from(document.querySelectorAll(".pos-line-input[data-cart-field='rate']"));
+      for (const input of visibleRateInputs) {
+        if (!input.value || !input.value.trim()) {
+          setStatus("Enter rate for every bill line before checkout.", "error");
+          playBeep(false);
+          setTimeout(() => {
+            input.focus();
+            if (typeof input.select === 'function') input.select();
+          }, 50);
+          return false;
+        }
+      }
+      
       if (state.hasMissingRate) {
         setStatus("Enter rate for every bill line before checkout.", "error");
         playBeep(false);
