@@ -239,9 +239,32 @@
       if (!field || typeof field.value !== "string") {
         return;
       }
-      const upper = field.value.toUpperCase();
-      if (field.value !== upper) {
-        field.value = upper;
+      
+      let formatted;
+      if (field === fields.item || field === familyName) {
+        // Title case for item names: first letter of each word caps, rest small
+        formatted = field.value.toLowerCase().replace(/(?:^|\s)\S/g, function(a) { return a.toUpperCase(); });
+      } else {
+        formatted = field.value.toUpperCase();
+      }
+
+      if (field.value !== formatted) {
+        let start = null;
+        let end = null;
+        try {
+          if (document.activeElement === field) {
+            start = field.selectionStart;
+            end = field.selectionEnd;
+          }
+        } catch (e) {}
+        
+        field.value = formatted;
+        
+        try {
+          if (document.activeElement === field && start !== null) {
+            field.setSelectionRange(start, end);
+          }
+        } catch (e) {}
       }
     }
 
