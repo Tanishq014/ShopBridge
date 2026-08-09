@@ -19,3 +19,15 @@
             </div>
           </div>
         </div>
+
+        <div class="print-sheet" id="printDiscountWarningDialog" role="dialog" aria-modal="true" aria-labelledby="printDiscountWarningDialogTitle" hidden>
+          <div class="print-sheet-backdrop" id="printDiscountWarningDialogBackdrop"></div>
+          <div class="print-sheet-panel">
+            <h3 id="printDiscountWarningDialogTitle" style="color: var(--danger);">High Discount Warning</h3>
+            <p id="printDiscountWarningDialogMessage" style="font-weight: 600; font-size: 1.1rem;">Selling Price: ... | MRP: ...</p>
+            <div class="form-actions" style="margin-top: 1rem;">
+              <button class="button" type="button" id="cancelPrintDiscountButton">Cancel (Esc)</button>
+              <button class="button primary" type="button" id="confirmPrintDiscountButton">Print (Enter)</button>
+            </div>
+          </div>
+        </div>

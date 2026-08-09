@@ -74,6 +74,11 @@
     const printQuantityDialogBackdrop = document.getElementById("printQuantityDialogBackdrop");
     const cancelPrintDialogButton = document.getElementById("cancelPrintDialogButton");
     const confirmPrintDialogButton = document.getElementById("confirmPrintDialogButton");
+    const printDiscountWarningDialog = document.getElementById("printDiscountWarningDialog");
+    const printDiscountWarningDialogBackdrop = document.getElementById("printDiscountWarningDialogBackdrop");
+    const cancelPrintDiscountButton = document.getElementById("cancelPrintDiscountButton");
+    const confirmPrintDiscountButton = document.getElementById("confirmPrintDiscountButton");
+    const printDiscountWarningDialogMessage = document.getElementById("printDiscountWarningDialogMessage");
     const actualPreviewButton = document.getElementById("actualPreviewButton");
     const actualPreviewBlock = document.getElementById("actualPreviewBlock");
     const actualPreviewImage = document.getElementById("actualPreviewImage");
@@ -706,7 +711,33 @@
         return;
       }
       closePrintQuantityDialog();
+      
+      const mrpVal = Number(fields.mrp.value || 0);
+      const sellVal = Number(fields.selling.value || 0);
+      if (mrpVal > 0 && sellVal > 0 && sellVal < (mrpVal * 0.50)) {
+        openPrintDiscountWarningDialog(copyCount, sellVal, mrpVal);
+        return;
+      }
+      
       submitPrint(copyCount);
+    }
+    
+    let pendingDiscountPrintQuantity = 1;
+
+    function closePrintDiscountWarningDialog() {
+      if (printDiscountWarningDialog) {
+        printDiscountWarningDialog.hidden = true;
+      }
+    }
+
+    function openPrintDiscountWarningDialog(copyCount, sellVal, mrpVal) {
+      if (printSubmissionPending || !printDiscountWarningDialog) return;
+      pendingDiscountPrintQuantity = copyCount;
+      if (printDiscountWarningDialogMessage) {
+        printDiscountWarningDialogMessage.textContent = `Selling Price: ${sellVal} | MRP: ${mrpVal}`;
+      }
+      printDiscountWarningDialog.hidden = false;
+      window.setTimeout(() => confirmPrintDiscountButton.focus(), 0);
     }
 
     function printFromInlineQuantity() {
@@ -2676,8 +2707,39 @@
         printQuantityInput.focus();
       });
     }
+    
+    if (confirmPrintDiscountButton) {
+      confirmPrintDiscountButton.addEventListener("click", () => {
+        closePrintDiscountWarningDialog();
+        submitPrint(pendingDiscountPrintQuantity);
+      });
+    }
+    if (cancelPrintDiscountButton) {
+      cancelPrintDiscountButton.addEventListener("click", () => {
+        closePrintDiscountWarningDialog();
+        printQuantityInput.focus();
+      });
+    }
+    if (printDiscountWarningDialogBackdrop) {
+      printDiscountWarningDialogBackdrop.addEventListener("click", () => {
+        closePrintDiscountWarningDialog();
+        printQuantityInput.focus();
+      });
+    }
 
     document.addEventListener("keydown", event => {
+      if (printDiscountWarningDialog && !printDiscountWarningDialog.hidden) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePrintDiscountWarningDialog();
+          printQuantityInput.focus();
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          closePrintDiscountWarningDialog();
+          submitPrint(pendingDiscountPrintQuantity);
+        }
+        return;
+      }
       if (printSubmissionPending) {
         event.preventDefault();
         return;
