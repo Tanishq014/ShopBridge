@@ -1,12 +1,15 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import delete
 
 from app.config import STATIC_DIR
-from app.db import init_db
+from app.db import init_db, SessionLocal
+from app.models import Sale
 from app.routes import families, pos, print_jobs, sales, scan, tally, templates as template_routes, variants, voice as voice_routes, workflow, receiving
 
 
@@ -47,6 +50,28 @@ async def serialize_pos_cart_mutations(request, call_next):
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    
+    # Auto-delete bills older than 20 days
+    db = SessionLocal()
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=20)
+        # We must use ORM delete to trigger 'delete-orphan' cascade on SaleItem
+        from sqlalchemy import select, update
+        from app.models import PosCart
+        old_sales = db.scalars(select(Sale).where(Sale.created_at < cutoff_date)).all()
+        count = len(old_sales)
+        if count > 0:
+            sale_ids = [s.id for s in old_sales]
+            db.execute(update(PosCart).where(PosCart.source_sale_id.in_(sale_ids)).values(source_sale_id=None))
+            for sale in old_sales:
+                db.delete(sale)
+            db.commit()
+            logging.info(f"Auto-deleted {count} old bills on startup.")
+    except Exception as e:
+        logging.error(f"Failed to auto-delete old bills on startup: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 @app.get("/")
