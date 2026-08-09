@@ -2071,7 +2071,7 @@ tbody tr:last-child td {
     box-shadow: none;
     box-sizing: border-box;
     margin: 0;
-    padding: 0 6mm 0 4mm;
+    padding: 0 6mm 0 6mm;
     width: 80mm;
   }
 
