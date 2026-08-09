@@ -9,9 +9,30 @@
       <form id="bulkDeleteForm" method="post" action="/sales/bulk-delete" onsubmit="return handleBulkDelete(event);" style="margin: 0;">
         <button type="submit" id="bulkDeleteBtn" class="button danger" disabled>Delete Selected Bills</button>
       </form>
+      <button type="button" class="button" onclick="document.getElementById('addTallyItemModal').showModal()">Add Tally Item</button>
       <a class="button primary" href="/pos">Back to POS</a>
     </div>
   </section>
+
+  <dialog id="addTallyItemModal" class="modal">
+    <div class="modal-content" style="max-width: 400px; padding: 24px; border-radius: 8px; border: 1px solid var(--border);">
+      <h2 style="margin-top: 0;">Add Tally Item</h2>
+      <form method="post" action="/sales/add-tally-item">
+        <div style="margin-bottom: 16px;">
+          <label for="tallyItemName" style="display: block; margin-bottom: 6px; font-weight: 500;">Item Name</label>
+          <input type="text" id="tallyItemName" name="name" class="input" style="width: 100%; text-transform: uppercase; padding: 8px;" required>
+        </div>
+        <div style="margin-bottom: 24px;">
+          <label for="tallyItemAlias" style="display: block; margin-bottom: 6px; font-weight: 500;">Alias (Optional)</label>
+          <input type="text" id="tallyItemAlias" name="aliases" class="input" style="width: 100%; text-transform: uppercase; padding: 8px;" placeholder="Comma separated">
+        </div>
+        <div class="form-actions" style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="button" onclick="document.getElementById('addTallyItemModal').close()">Cancel</button>
+          <button type="submit" class="button primary">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 
   <style>
     .quick-filter-btn {
@@ -186,6 +207,17 @@
     {% if request.query_params.get("skipped") and request.query_params.get("skipped") != "0" %}
     <br>Skipped {{ request.query_params.get("skipped") }} bill(s) because they are synced to Tally or loaded in POS.
     {% endif %}
+  </div>
+  {% endif %}
+
+  {% if request.query_params.get("added") %}
+  <div class="panel" style="background: #ecfdf5; border-color: #10b981; color: #065f46; margin-bottom: 1rem;">
+    Successfully added Tally item!
+  </div>
+  {% endif %}
+  {% if request.query_params.get("error") %}
+  <div class="panel" style="background: #fef2f2; border-color: #f87171; color: #991b1b; margin-bottom: 1rem;">
+    {{ request.query_params.get("error") }}
   </div>
   {% endif %}
 

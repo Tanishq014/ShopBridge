@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from io import BytesIO
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import TEMPLATES_DIR
 from app.db import get_db
-from app.models import PosCart, Sale, SaleItem
+from app.models import PosCart, Sale, SaleItem, TallyItem
 from app.services.template_filters import register_template_filters
 from app.services.time_service import LOCAL_TIMEZONE
 
@@ -159,6 +159,33 @@ async def bulk_delete_sales(request: Request, db: Session = Depends(get_db)):
         url += f"&skipped={skipped}"
     return RedirectResponse(url, status_code=303)
 
+
+@router.post("/sales/add-tally-item")
+def add_tally_item(
+    request: Request,
+    name: str = Form(...),
+    aliases: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    name = name.strip()
+    if not name:
+        return RedirectResponse(url="/sales?error=Name+is+required", status_code=303)
+    
+    normalized = name.lower()
+    existing = db.scalar(select(TallyItem).where(TallyItem.normalized_name == normalized))
+    if existing:
+        return RedirectResponse(url="/sales?error=Item+already+exists", status_code=303)
+    
+    new_item = TallyItem(
+        name=name,
+        normalized_name=normalized,
+        aliases=aliases.strip(),
+        source="manual"
+    )
+    db.add(new_item)
+    db.commit()
+    
+    return RedirectResponse(url="/sales?added=1", status_code=303)
 
 @router.get("/sales", response_class=HTMLResponse)
 def list_sales(
