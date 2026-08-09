@@ -8,6 +8,10 @@
             <input type="checkbox" id="showPricingFieldsToggle" {% if pricing_fields_visible %}checked{% endif %}>
             Show selling price / margin
           </label>
+          <label class="checkline" style="margin-left: 1rem;">
+            <input type="checkbox" id="reverseMrpToggle">
+            Reverse MRP
+          </label>
           <input type="hidden" name="show_pricing_fields_visible" id="showPricingFieldsValue" value="{{ '1' if pricing_fields_visible else '0' }}">
         </div>
         <div class="form-grid three">

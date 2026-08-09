@@ -46,6 +46,7 @@
     const priceCodeInlineChoices = document.getElementById("priceCodeInlineChoices");
     const printWithoutBillingPrice = document.getElementById("printWithoutBillingPrice");
     const showPricingFieldsToggle = document.getElementById("showPricingFieldsToggle");
+    const reverseMrpToggle = document.getElementById("reverseMrpToggle");
     const marginField = document.getElementById("marginField");
     const marginInlinePanel = document.getElementById("marginInlinePanel");
     const marginInlineMessage = document.getElementById("marginInlineMessage");
@@ -308,6 +309,25 @@
       applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
       if (persist) {
         saveWorkflowState();
+      }
+    }
+
+    function applyReverseMrpPreference() {
+      if (!reverseMrpToggle) return;
+      const reverse = reverseMrpToggle.checked;
+      const codedField = document.getElementById("codedField");
+      const mrpField = document.getElementById("mrpField");
+      const marginField = document.getElementById("marginField");
+      if (codedField && mrpField && marginField) {
+        if (reverse) {
+          mrpField.style.order = "1";
+          marginField.style.order = "2";
+          codedField.style.order = "3";
+        } else {
+          codedField.style.order = "";
+          marginField.style.order = "";
+          mrpField.style.order = "";
+        }
       }
     }
 
@@ -765,6 +785,11 @@
       if (itemSection.hidden) {
         return [categorySelect, templateSelect, variantSearch].filter(field => field && !field.disabled && field.offsetParent !== null);
       }
+      const isReversed = reverseMrpToggle && reverseMrpToggle.checked;
+      const pricingFields = isReversed
+        ? [fields.mrp, fields.margin, fields.coded]
+        : [fields.coded, fields.margin, fields.mrp];
+        
       return [
         familyName,
         fields.item,
@@ -774,9 +799,7 @@
         fields.batch,
         fields.expiry,
         ...Object.values(customInputByField),
-        fields.coded,
-        fields.margin,
-        fields.mrp,
+        ...pricingFields,
         printQuantityInput,
         printButton,
       ].filter(field => field && !field.disabled && !field.closest("[hidden]") && field.offsetParent !== null);
@@ -1565,6 +1588,7 @@
         selling_price: fields.selling.value,
         margin_percent: fields.margin.value,
         show_pricing_fields: pricingFieldsPreferenceVisible,
+        reverse_mrp: reverseMrpToggle ? reverseMrpToggle.checked : false,
         coded_price: fields.coded.value,
         coded_price_manual_override: codedPriceManualOverride.value === "true",
         extra_field_values: customFieldState(),
@@ -1597,6 +1621,12 @@
         showPricingFieldsValue.value = pricingFieldsPreferenceVisible ? "1" : "0";
       }
       applyPricingFieldsVisibility(pricingFieldsPreferenceVisible);
+
+      if (reverseMrpToggle && saved.reverse_mrp !== undefined) {
+        reverseMrpToggle.checked = Boolean(saved.reverse_mrp);
+        applyReverseMrpPreference();
+      }
+
       fields.copies.value = saved.copies || "1";
       uppercaseVisibleFieldValues();
       printQuantityInput.value = fields.copies.value;
@@ -2589,6 +2619,13 @@
       refreshPriceCodeDetection();
       updatePreview();
     });
+
+    if (reverseMrpToggle) {
+      reverseMrpToggle.addEventListener("change", () => {
+        applyReverseMrpPreference();
+        saveWorkflowState();
+      });
+    }
 
     regenerateBarcodeButton.addEventListener("click", () => {
       setForceNewBarcode(true);
