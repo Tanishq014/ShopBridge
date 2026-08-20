@@ -370,7 +370,6 @@
     function calculateMrpFromMargin() {
       const marginRaw = String(fields.margin.value || "").trim();
       if (!marginRaw) {
-        focusAndSelectMrp();
         return true;
       }
       const marginPercent = Number(marginRaw);
@@ -414,8 +413,6 @@
       clearActualPreview();
       updatePreview();
       saveWorkflowState();
-      fields.mrp.focus();
-      fields.mrp.select();
       return true;
     }
 
@@ -904,12 +901,7 @@
       event.stopImmediatePropagation();
       if (target === fields.margin) {
         if (calculateMrpFromMargin()) {
-          window.setTimeout(() => {
-            fields.mrp.focus();
-            if (typeof fields.mrp.select === "function") {
-              fields.mrp.select();
-            }
-          }, 0);
+          moveEntryFocus(target, 1);
         }
         return;
       }
