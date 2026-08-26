@@ -128,16 +128,18 @@
 
       <aside class="pos-bill-panel pos-grid-summary">
         <div class="pos-normal-mode" id="posNormalPanel">
-          <form method="post" action="/pos/checkout" id="checkoutForm">
+          <form method="post" action="/pos/checkout" id="checkoutForm" style="display: none;">
             <button class="button primary pos-checkout-button" type="submit" id="checkoutButton" disabled>
               Checkout - Rs. 0.00
             </button>
-
           </form>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; margin-bottom: 8px;">
+          <div style="display: none; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; margin-bottom: 8px;">
             <button class="button" type="button" id="holdBillButton">Hold Bill</button>
             <button class="button danger outline" type="button" id="clearCartButton">Clear</button>
+          </div>
+          <div style="text-align: center; margin-top: 4px; margin-bottom: 4px;">
+            <img src="/scanner/qr.svg?url=SAVE-PRINT" alt="Save + Print" style="width: 85px; height: 85px; margin: 0 auto; display: block; opacity: 0.9;" loading="lazy">
           </div>
 
           <section class="pos-held-panel" aria-labelledby="heldBillsTitle">
@@ -1702,6 +1704,11 @@
           if (requestId !== state.searchRequestId || currentSearchTerm() !== term) {
             return;
           }
+          const isCommand = "SAVE-PRINT".startsWith(term.toUpperCase()) || "*SAVE-PRINT*".startsWith(term.toUpperCase());
+          if (isCommand) {
+             closeSuggestions(true);
+             return;
+          }
           const results = localSearchCatalog(term);
           if (state.suggestionMode === "add" && results.length === 0) {
             searchInput.value = state.lastAcceptedSearchInput || "";
@@ -2950,6 +2957,28 @@
 
     async function addBarcode(barcode, allowMissingPrice = false, playAudio = true) {
       const clean = (barcode || "").trim();
+      
+      if (clean === "*SAVE-PRINT*" || clean === "SAVE-PRINT") {
+        const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
+        if (!hasItems) {
+          searchInput.value = "";
+          setStatus("No active bill to save.", "info");
+          focusItemInput(false);
+          return;
+        }
+        if (!await saveFocusedLineInput()) return;
+        
+        searchInput.value = "";
+        focusItemInput(false);
+        
+        await checkoutNow({
+          silentAfterSave: true,
+          skipConfirm: true,
+          printAfterSave: true,
+        });
+        return;
+      }
+      
       if (!clean) {
         setStatus("Type or scan an item first.", "error");
         focusItemInput(false);
@@ -3011,6 +3040,13 @@
 
     async function submitItemInput() {
       const typedValue = searchInput.value.trim();
+      
+      if (typedValue.toUpperCase() === "SAVE-PRINT" || typedValue.toUpperCase() === "*SAVE-PRINT*") {
+        searchInput.value = "";
+        await addBarcode(typedValue);
+        return;
+      }
+      
       if (typedValue) {
         try {
           await ensureSearchCatalog();
@@ -3191,6 +3227,10 @@
              state.checkoutSubmitting = false;
              checkoutButton.disabled = false;
              checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+             
+             searchInput.value = "";
+             focusItemInput(false);
+             
              if (printAfterSave && data.sale_id) {
                console.log("[Direct Print] POS Checkout: Initiating direct print for sale_id:", data.sale_id);
                fetch(`/sales/${data.sale_id}/receipt/direct`, { method: "POST" })
@@ -3637,6 +3677,64 @@
       }
     }
 
+    let globalScannerBuffer = "";
+    let globalScannerLastTime = 0;
+
+    document.addEventListener("keydown", async event => {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        globalScannerBuffer = "";
+        return;
+      }
+      
+      const now = Date.now();
+      if (now - globalScannerLastTime > 50) {
+        globalScannerBuffer = "";
+      }
+      globalScannerLastTime = now;
+
+      if (event.key.length === 1) {
+        globalScannerBuffer += event.key;
+        if (globalScannerBuffer.length > 30) globalScannerBuffer = globalScannerBuffer.slice(-30);
+      } else if (event.key === "Enter") {
+        const checkBuffer = globalScannerBuffer.toUpperCase();
+        globalScannerBuffer = "";
+        
+        const isCommand = checkBuffer.endsWith("SAVE-PRINT") || checkBuffer.endsWith("*SAVE-PRINT*");
+        const active = document.activeElement;
+        const isSearchInput = active === searchInput;
+        const isFastScan = checkBuffer.length >= 5; 
+
+        if (isCommand || (isFastScan && !isSearchInput)) {
+          event.preventDefault();
+          event.stopPropagation();
+          
+          if (active) {
+            if (active.tagName === "INPUT" || active.tagName === "TEXTAREA") {
+               if (typeof active.value === "string" && active.value.toUpperCase().endsWith(checkBuffer)) {
+                  active.value = active.value.slice(0, -checkBuffer.length);
+                  active.dispatchEvent(new Event("input", { bubbles: true }));
+               }
+            }
+            if (active === searchInput) {
+              active.value = "";
+            } else {
+              active.blur();
+            }
+          }
+          
+          if (isCommand) {
+            await addBarcode("SAVE-PRINT");
+          } else {
+            searchInput.value = "";
+            await addBarcode(checkBuffer);
+          }
+          return;
+        }
+      } else {
+        globalScannerBuffer = "";
+      }
+    }, { capture: true });
+
     document.addEventListener("keydown", async event => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         const searchPanel = document.getElementById("posSearchPanel");
@@ -3842,6 +3940,15 @@
         focusItemInput(false);
       });
     }
+    window.addEventListener("focus", () => {
+      const anyModalOpen = Array.from(document.querySelectorAll("dialog")).some(d => d.open);
+      const activeTag = document.activeElement ? document.activeElement.tagName : "";
+      const isEditing = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
+      if (!anyModalOpen && !isEditing) {
+        focusItemInput(false);
+      }
+    });
+
     window.setInterval(() => loadCart(true), 1000);
   </script>
 {% endblock %}

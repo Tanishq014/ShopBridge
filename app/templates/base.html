@@ -39,11 +39,11 @@
         <button class="topbar-qr-toggle" type="button" data-navbar-qr-toggle aria-expanded="false">Phone QR</button>
         <div class="topbar-qr-links" data-navbar-qr-panel hidden aria-label="Scanner and print QR codes">
           <a class="topbar-qr-link" href="{{ navbar_qr.scanner_url }}" aria-label="Open POS scanner QR">
-            <img src="{{ navbar_qr.scanner_qr_url }}" alt="POS scanner QR code">
+            <img src="{{ navbar_qr.scanner_qr_url }}" alt="POS scanner QR code" loading="lazy">
             <span>POS</span>
           </a>
           <a class="topbar-qr-link" href="{{ navbar_qr.phone_print_url }}" aria-label="Open print QR">
-            <img src="{{ navbar_qr.phone_print_qr_url }}" alt="Phone print QR code">
+            <img src="{{ navbar_qr.phone_print_qr_url }}" alt="Phone print QR code" loading="lazy">
             <span>Print</span>
           </a>
         </div>

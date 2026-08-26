@@ -491,7 +491,15 @@ def scanner_qr(url: str):
         import qrcode.image.svg
     except Exception:
         return Response("QR generator dependency is not installed. Run pip install -r requirements.txt.", status_code=503)
-    image = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathImage)
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=0,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    image = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage)
     output = BytesIO()
     image.save(output)
     return Response(output.getvalue(), media_type="image/svg+xml")
