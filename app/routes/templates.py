@@ -6,12 +6,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
 from app.config import BARTENDER_TEMPLATES_DIR, PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
-from app.models import TemplateMaster
+from app.models import TemplateMaster, ProductFamily, LabelVariant, PrintJob, ReceivingSessionItem
 from app.services.bartender_activex_service import (
     BarTenderActiveXError,
     export_print_preview_to_image,
@@ -527,3 +528,42 @@ def activate_template(template_pk: int, db: Session = Depends(get_db)):
         db.add(template)
         db.commit()
     return RedirectResponse("/templates", status_code=303)
+
+
+@router.post("/{template_pk}/delete")
+def delete_template(template_pk: int, db: Session = Depends(get_db)):
+    template = db.get(TemplateMaster, template_pk)
+    if not template:
+        return RedirectResponse("/templates", status_code=303)
+    
+    # Remove references from ProductFamily
+    db.execute(
+        update(ProductFamily)
+        .where(ProductFamily.default_template_id == template.id)
+        .values(default_template_id=None)
+    )
+    # Remove references from LabelVariant
+    db.execute(
+        update(LabelVariant)
+        .where(LabelVariant.template_id == template.id)
+        .values(template_id=None)
+    )
+    # Delete associated PrintJobs
+    db.execute(
+        delete(PrintJob)
+        .where(PrintJob.template_id == template.id)
+    )
+    # Remove references from ReceivingSessionItem
+    db.execute(
+        update(ReceivingSessionItem)
+        .where(ReceivingSessionItem.template_id == template.id)
+        .values(template_id=None)
+    )
+    
+    db.delete(template)
+    db.commit()
+    
+    return RedirectResponse(
+        f"/templates?{urlencode({'message': f'Deleted template: {template.template_name}'})}",
+        status_code=303,
+    )

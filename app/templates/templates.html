@@ -198,9 +198,14 @@
           <input type="checkbox" name="active_status" value="true" {% if not editing or template.active_status %}checked{% endif %}>
           Active
         </label>
-        <div class="form-actions">
-          <button class="button primary" type="submit">{{ "Save Template" if editing else "Add Template" }}</button>
-          {% if editing %}<a class="button" href="/templates">Cancel</a>{% endif %}
+        <div class="form-actions" style="display: flex; justify-content: space-between; width: 100%;">
+          <div style="display: flex; gap: 8px;">
+            <button class="button primary" type="submit">{{ "Save Template" if editing else "Add Template" }}</button>
+            {% if editing %}<a class="button" href="/templates">Cancel</a>{% endif %}
+          </div>
+          {% if editing %}
+            <button class="button danger" type="submit" formmethod="post" formaction="/templates/{{ template.id }}/delete" onclick="return confirm('Are you sure you want to completely delete this template? This cannot be undone.');" style="background: var(--danger); color: white; border-color: var(--danger);">Delete Template</button>
+          {% endif %}
         </div>
       </form>
     </details>
