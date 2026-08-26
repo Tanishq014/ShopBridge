@@ -29,20 +29,25 @@ def current_bill_year() -> int:
 
 
 def next_bill_number(db: Session, year: int | None = None) -> str:
-    bill_year = year or current_bill_year()
-    prefix = f"SB-{bill_year}-"
+    now = datetime.now(LOCAL_TIMEZONE)
+    yy = now.strftime("%y")
+    dd = now.strftime("%d")
+    mm = now.strftime("%m")
+    prefix = f"SB-{yy}-{dd}{mm}"
+    
     existing = db.execute(
         select(Sale.bill_number)
         .where(Sale.bill_number.like(f"{prefix}%"))
         .order_by(Sale.bill_number.desc())
     ).scalars().all()
+    
     sequence = 0
     for bill_number in existing:
         try:
             sequence = max(sequence, int(str(bill_number).removeprefix(prefix)))
         except ValueError:
             continue
-    return f"{prefix}{sequence + 1:06d}"
+    return f"{prefix}{sequence + 1:02d}"
 
 def _parse_bill_date(date_str: str | None) -> datetime | None:
     if not date_str:

@@ -344,6 +344,7 @@
 
     function setBillDateDraft(value = "") {
       state.billDateDraft = value || currentLocalDateTimeValue();
+      state.billDateManuallyModified = Boolean(value);
       if (billDateInput && document.activeElement !== billDateInput) {
         billDateInput.value = state.billDateDraft;
       }
@@ -3928,8 +3929,15 @@
     if (billDateInput) {
       setBillDateDraft();
       billDateInput.addEventListener("input", () => {
+        state.billDateManuallyModified = true;
         state.billDateDraft = billDateInput.value || currentLocalDateTimeValue();
       });
+      window.setInterval(() => {
+        if (!state.billDateManuallyModified && (!state.cart || state.cart.cart_mode !== "sale_edit") && document.activeElement !== billDateInput) {
+          state.billDateDraft = currentLocalDateTimeValue();
+          billDateInput.value = state.billDateDraft;
+        }
+      }, 1000);
     }
 
     if (initialSaleId) {
