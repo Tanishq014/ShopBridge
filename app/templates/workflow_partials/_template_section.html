@@ -1,31 +1,34 @@
       <div class="workflow-section setup-section">
-        <div class="section-line">
-          <h2>Label Setup</h2>
-          <span class="mode-pill" id="setupPill">Choose template first</span>
+        <div class="section-line" style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <h2 style="margin: 0; font-size: 1.1em;">Label Setup</h2>
+            <span class="mode-pill" id="setupPill">Choose template first</span>
+          </div>
+          <div style="display: flex; gap: 16px; align-items: center; font-size: 0.9em;">
+            <label class="checkline" style="margin: 0;">
+              <input type="checkbox" id="showPricingFieldsToggle" {% if pricing_fields_visible %}checked{% endif %}>
+              Show selling price / margin
+            </label>
+            <label class="checkline" style="margin: 0;">
+              <input type="checkbox" id="reverseMrpToggle">
+              Reverse MRP
+            </label>
+            <input type="hidden" name="show_pricing_fields_visible" id="showPricingFieldsValue" value="{{ '1' if pricing_fields_visible else '0' }}">
+          </div>
         </div>
-        <div class="form-actions pricing-toggle-row">
-          <label class="checkline">
-            <input type="checkbox" id="showPricingFieldsToggle" {% if pricing_fields_visible %}checked{% endif %}>
-            Show selling price / margin
-          </label>
-          <label class="checkline" style="margin-left: 1rem;">
-            <input type="checkbox" id="reverseMrpToggle">
-            Reverse MRP
-          </label>
-          <input type="hidden" name="show_pricing_fields_visible" id="showPricingFieldsValue" value="{{ '1' if pricing_fields_visible else '0' }}">
-        </div>
-        <div class="form-grid three">
-          <label>
+        
+        <div class="form-grid" style="grid-template-columns: 1fr 1fr; row-gap: 8px; column-gap: 12px; margin-bottom: 8px;">
+          <label style="margin: 0;">
             Category
-            <select name="category" id="categorySelect" required>
+            <select name="category" id="categorySelect" required style="padding: 4px;">
               {% for category in categories %}
                 <option value="{{ category.value }}" {% if selected_category == category.value %}selected{% endif %}>{{ category.label }}</option>
               {% endfor %}
             </select>
           </label>
-          <label class="span-two">
+          <label style="margin: 0;">
             Template
-            <select name="template_id" id="templateSelect" required>
+            <select name="template_id" id="templateSelect" required style="padding: 4px;">
               <option value="">Select template</option>
               {% for template in template_rows %}
                 <option value="{{ template.id }}" data-category="{{ (template.category or '')|lower }}" data-path-exists="{{ '1' if template_path_exists(template) else '0' }}" data-template-path="{{ template.bartender_file_path or '' }}" {% if selected_template_id == template.id %}selected{% endif %}>
@@ -36,12 +39,10 @@
               {% endfor %}
             </select>
           </label>
-          <div class="form-actions template-action-row">
-            <button class="button" type="button" id="openTemplateButton" disabled>Open Template</button>
-            <button class="button" type="submit" form="extractTemplateForm" id="refreshTemplateFieldsButton" disabled>Refresh Fields from Template</button>
-            <div class="template-action-status" id="templateActionStatus" hidden></div>
-          </div>
-          <label class="span-two">
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-end;">
+          <label style="margin: 0; flex: 1;">
             Search existing item
             <div class="combo" id="variantCombo">
               <input id="variantSearch" autocomplete="off" placeholder="Type item name, barcode, brand, article..." role="combobox" aria-expanded="false" aria-controls="variantSearchMenu">
@@ -49,5 +50,10 @@
               <div class="combo-menu" id="variantSearchMenu" role="listbox"></div>
             </div>
           </label>
+          <div class="form-actions template-action-row" style="display: flex; gap: 8px; margin: 0; padding-bottom: 2px;">
+            <button class="button" type="button" id="openTemplateButton" disabled style="padding: 4px 8px; min-height: 0;">Open Template</button>
+            <button class="button" type="submit" form="extractTemplateForm" id="refreshTemplateFieldsButton" disabled style="padding: 4px 8px; min-height: 0;">Refresh Fields</button>
+            <div class="template-action-status" id="templateActionStatus" hidden></div>
+          </div>
         </div>
       </div>
