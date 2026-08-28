@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -137,6 +137,14 @@ def checkout_cart(
     if cart.cart_mode == "sale_edit":
         raise CheckoutError("Cart is in edit mode. Use save_sale_edit_cart instead.")
 
+    updated_rows = db.execute(
+        update(PosCart)
+        .where(PosCart.id == cart.id, PosCart.status == "active")
+        .values(status="checking_out")
+    ).rowcount
+    if updated_rows == 0:
+        raise CheckoutError("Cart is already being checked out.")
+
     sale_items, subtotal = _build_sale_items(db, cart)
     payment = (payment_mode or "cash").strip().lower() or "cash"
     clean_notes = (notes or "").strip() or None
@@ -184,6 +192,13 @@ def checkout_cart(
                 )
                 for item in sale_items
             ]
+            
+            # Reset atomic lock for retry
+            db.execute(
+                update(PosCart)
+                .where(PosCart.id == cart.id)
+                .values(status="active")
+            )
             cart.status = "active"
 
     raise CheckoutError("Could not generate a unique bill number. Try checkout again.")
@@ -203,6 +218,14 @@ def save_sale_edit_cart(
         raise CheckoutError("No active cart to checkout.")
     if cart.cart_mode != "sale_edit" or not cart.source_sale_id:
         raise CheckoutError("Cart is not in edit mode.")
+
+    updated_rows = db.execute(
+        update(PosCart)
+        .where(PosCart.id == cart.id, PosCart.status == "active")
+        .values(status="checking_out")
+    ).rowcount
+    if updated_rows == 0:
+        raise CheckoutError("Cart is already being checked out.")
 
     sale = db.get(Sale, cart.source_sale_id)
     if not sale:

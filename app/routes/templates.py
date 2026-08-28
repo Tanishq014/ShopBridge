@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import BARTENDER_TEMPLATES_DIR, PREVIEWS_DIR, TEMPLATES_DIR
 from app.db import get_db
-from app.models import TemplateMaster, ProductFamily, LabelVariant, PrintJob, ReceivingSessionItem
+from app.models import TemplateMaster, ProductFamily, LabelVariant, PrintJob, ReceivingItem
 from app.services.bartender_activex_service import (
     BarTenderActiveXError,
     export_print_preview_to_image,
@@ -553,10 +553,10 @@ def delete_template(template_pk: int, db: Session = Depends(get_db)):
         delete(PrintJob)
         .where(PrintJob.template_id == template.id)
     )
-    # Remove references from ReceivingSessionItem
+    # Remove references from ReceivingItem
     db.execute(
-        update(ReceivingSessionItem)
-        .where(ReceivingSessionItem.template_id == template.id)
+        update(ReceivingItem)
+        .where(ReceivingItem.template_id == template.id)
         .values(template_id=None)
     )
     

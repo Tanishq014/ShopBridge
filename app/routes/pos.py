@@ -1094,18 +1094,24 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
     except Exception:
         payload = {}
     barcode = normalize_barcode(str(payload.get("barcode", "")))
+    variant_id = payload.get("id")
     allow_missing_price = bool(payload.get("allow_missing_price"))
-    if not barcode:
+    if not barcode and not variant_id:
         return _json_error("Enter or scan a barcode.", status_code=400, status="empty")
 
-    variant = lookup_saved_price_by_barcode(db, barcode)
-    if not variant:
-        return _json_error(
-            "Barcode not found.",
-            status_code=404,
-            status="not_found",
-            barcode=barcode,
-        )
+    if variant_id:
+        variant = db.get(LabelVariant, variant_id)
+        if not variant or variant.status != "active":
+            return _json_error("Item not found.", status_code=404, status="not_found")
+    else:
+        variant = lookup_saved_price_by_barcode(db, barcode)
+        if not variant:
+            return _json_error(
+                "Barcode not found.",
+                status_code=404,
+                status="not_found",
+                barcode=barcode,
+            )
 
     if variant.selling_price is None and not allow_missing_price:
         return _json_error(
@@ -1127,7 +1133,7 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
         .where(PosCartItem.qty > 0)
     )
     if item:
-        item.qty += 1
+        item.qty = PosCartItem.qty + 1
         is_update = True
         item.item_name_snapshot = item.item_name_snapshot or (variant.family.family_name if variant.family else variant.item_display_name)
         item.barcode_snapshot = item.barcode_snapshot or variant.barcode
@@ -1415,7 +1421,7 @@ def increase_pos_item(item_id: int, db: Session = Depends(get_db)):
     if isinstance(item, JSONResponse):
         return item
     cart = item.cart
-    item.qty += 1
+    item.qty = PosCartItem.qty + 1
     db.add(item)
     db.commit()
     return _cart_payload(db, cart)
@@ -1427,7 +1433,7 @@ def decrease_pos_item(item_id: int, db: Session = Depends(get_db)):
     if isinstance(item, JSONResponse):
         return item
     cart = item.cart
-    item.qty = max(1, item.qty - 1)
+    item.qty = PosCartItem.qty - 1
     db.add(item)
     db.commit()
     return _cart_payload(db, cart)

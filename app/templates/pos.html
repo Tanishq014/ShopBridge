@@ -302,6 +302,7 @@
       previewSaleIndex: -1,
       loadedSaleBillNumber: "",
       loadedSaleDirty: false,
+      isCartActionPending: false,
       selectedUpiVpa: null,
       upiSettings: {{ upi_settings|default(None)|tojson }},
       loadedSaleCheckoutConfirmed: false,
@@ -710,7 +711,7 @@
         const barcodeStarts = Boolean(barcodeQuery && barcode.startsWith(barcodeQuery));
         const barcodeContains = Boolean(barcodeQuery && barcodeQuery.length >= 3 && barcode.includes(barcodeQuery));
         
-        const isBarcodeItem = Boolean(item.barcode) || item.result_type !== "tally_item";
+        const isBarcodeItem = Boolean(item.barcode && String(item.barcode).trim() !== "");
         
         const values = searchableValues(item);
         const exactNameOrAlias = values.some(value => value === query);
@@ -728,13 +729,11 @@
         }
 
         let rank = 8;
-        if (item.result_type === "tally_item" && exactNameOrAlias) rank = 0;
+        if (exactNameOrAlias) rank = 0;
         else if (exactBarcode) rank = 1;
-        else if (item.result_type === "tally_item" && starts) rank = 2;
-        else if (item.result_type === "tally_item" && contains) rank = 3;
-        else if (exactNameOrAlias) rank = 4;
+        else if (starts) rank = 2;
+        else if (contains) rank = 3;
         else if (barcodeStarts) rank = 5;
-        else if (starts) rank = 6;
         else if (barcodeContains) rank = 7;
         ranked.push({
           item: {
@@ -1778,8 +1777,8 @@
         return;
       }
 
-      searchInput.value = item.barcode;
-      await addBarcode(item.barcode, !!item.missing_price, false);
+      searchInput.value = item.barcode || "";
+      await addBarcode(item.barcode || "", !!item.missing_price, false, false, item.id);
       state.focusTransition = false;
     }
 
@@ -2754,6 +2753,9 @@
     }
 
     async function postCartAction(url, successMessage, {focusAfter = true} = {}) {
+      if (state.isCartActionPending) {
+        return false;
+      }
       if (!await waitForPendingLineSaves()) {
         return false;
       }
@@ -2763,6 +2765,7 @@
         }
         return false;
       }
+      state.isCartActionPending = true;
       try {
         const response = await fetch(url, {method: "POST"});
         const cart = await response.json();
@@ -2783,6 +2786,8 @@
           focusSelectedCartItem(true);
         }
         return false;
+      } finally {
+        state.isCartActionPending = false;
       }
     }
 
@@ -2928,35 +2933,47 @@
         focusItemInput(false);
         return;
       }
-      if (!await waitForPendingLineSaves()) {
-        return;
-      }
-      if (!confirmLoadedSaleEdit()) {
-        focusSelectedCartItem(true);
-        return;
-      }
-      try {
-        const response = await fetch(`/pos/cart/tally-items/${tallyItemId}/add`, {method: "POST"});
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.message || "Could not add Tally item.");
+      const task = async () => {
+        if (!await waitForPendingLineSaves()) {
+          return;
         }
-        state.highlightItemId = data.item && data.item.id;
-        renderCart(data.cart);
-        selectCartItemById(data.item && data.item.id);
-        markLoadedSaleDirty();
-        searchInput.value = "";
-        closeSuggestions(false);
-        setStatus(`Added: ${data.item.billing_item || data.item.item_name || "Tally item"} - enter rate`, "success");
-        focusNextBillingField(data.item && data.item.id, "qty");
-      } catch (error) {
-        setStatus(error.message || "Could not add Tally item.", "error");
-        playBeep(false);
-        focusItemInput(false);
-      }
+        if (!confirmLoadedSaleEdit()) {
+          focusSelectedCartItem(true);
+          return;
+        }
+        try {
+          const response = await fetch(`/pos/cart/tally-items/${tallyItemId}/add`, {method: "POST"});
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.message || "Could not add Tally item.");
+          }
+          state.highlightItemId = data.item && data.item.id;
+          renderCart(data.cart);
+          selectCartItemById(data.item && data.item.id);
+          markLoadedSaleDirty();
+          searchInput.value = "";
+          closeSuggestions(false);
+          setStatus(`Added: ${data.item.billing_item || data.item.item_name || "Tally item"} - enter rate`, "success");
+          focusNextBillingField(data.item && data.item.id, "qty");
+        } catch (error) {
+          setStatus(error.message || "Could not add Tally item.", "error");
+          playBeep(false);
+          focusItemInput(false);
+        }
+      };
+      barcodeQueue = barcodeQueue.then(task).catch(e => console.error("Tally add error:", e));
+      await barcodeQueue;
     }
 
-    async function addBarcode(barcode, allowMissingPrice = false, playAudio = true) {
+    let barcodeQueue = Promise.resolve();
+
+    async function addBarcode(barcode, allowMissingPrice = true, playAudio = true, keepFocus = false, variantId = null) {
+      const task = barcodeQueue.then(() => _addBarcodeCore(barcode, allowMissingPrice, playAudio, keepFocus, variantId));
+      barcodeQueue = task.catch(e => console.error("Barcode queue error:", e));
+      return task;
+    }
+
+    async function _addBarcodeCore(barcode, allowMissingPrice = true, playAudio = true, keepFocus = false, variantId = null) {
       const clean = (barcode || "").trim();
       
       if (clean === "*SAVE-PRINT*" || clean === "SAVE-PRINT") {
@@ -2980,7 +2997,7 @@
         return;
       }
       
-      if (!clean) {
+      if (!clean && !variantId) {
         setStatus("Type or scan an item first.", "error");
         focusItemInput(false);
         return;
@@ -2996,21 +3013,10 @@
         const response = await fetch("/pos/scan", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({barcode: clean, allow_missing_price: allowMissingPrice}),
+          body: JSON.stringify({barcode: clean, id: variantId, allow_missing_price: allowMissingPrice}),
         });
         const data = await response.json();
         if (!response.ok) {
-          if (response.status === 409 && !allowMissingPrice) {
-            const confirmAdd = window.confirm(`${data.message || "Selling price is missing."}\nAdd this item anyway?`);
-            if (confirmAdd) {
-              await addBarcode(clean, true, playAudio);
-            } else {
-              setStatus(data.message || "Selling price is missing.", "error");
-              playBeep(false);
-              focusItemInput(true);
-            }
-            return;
-          }
           if (response.status === 404) {
             await searchItems(clean);
             setStatus("Item not found. Import from Tally or create barcode first.", "error");
@@ -3031,7 +3037,11 @@
         if (playAudio) {
           playBeep(true);
         }
-        focusNextBillingField(data.item && data.item.id);
+        if (keepFocus) {
+          focusItemInput(false);
+        } else {
+          focusNextBillingField(data.item && data.item.id);
+        }
       } catch (error) {
         setStatus(error.message || "Could not add item.", "error");
         playBeep(false);
@@ -3040,11 +3050,14 @@
     }
 
     async function submitItemInput() {
-      const typedValue = searchInput.value.trim();
+      if (state.isSubmittingItem) return;
+      state.isSubmittingItem = true;
+      try {
+        const typedValue = searchInput.value.trim();
       
       if (typedValue.toUpperCase() === "SAVE-PRINT" || typedValue.toUpperCase() === "*SAVE-PRINT*") {
         searchInput.value = "";
-        await addBarcode(typedValue);
+        await addBarcode(typedValue, true, true, true);
         return;
       }
       
@@ -3078,7 +3091,7 @@
         if (state.suggestionIndex === -1) {
           if (exactMatch) {
             if (exactMatch.result_type === "barcode") {
-              await addBarcode(exactMatch.barcode, !!exactMatch.missing_price);
+              await addBarcode(exactMatch.barcode, true, true, true);
             } else {
               await addTallyItem(exactMatch.id || exactMatch.tally_item_id);
             }
@@ -3092,7 +3105,10 @@
         playBeep(false);
         return;
       }
-      await addBarcode(searchInput.value);
+      await addBarcode(searchInput.value, true, true, true);
+      } finally {
+        state.isSubmittingItem = false;
+      }
     }
 
     async function changeSelectedQty(delta) {
@@ -3106,7 +3122,7 @@
         await postCartAction(`/pos/cart/items/${item.id}/increase`, "Quantity increased.");
         return;
       }
-      if (item.qty <= 1) {
+      if (item.qty === 1) {
         const remove = window.confirm("Quantity is 1. Remove this item from the bill?");
         if (remove) {
           await postCartAction(`/pos/cart/items/${item.id}/remove`, "Item removed.");
@@ -3179,6 +3195,9 @@
     }
 
     async function checkoutNow(options = {}) {
+      if (state.checkoutSubmitting) {
+        return false;
+      }
       const silentAfterSave = Boolean(options.silentAfterSave);
       const skipConfirm = Boolean(options.skipConfirm);
       const printAfterSave = Boolean(options.printAfterSave);
@@ -3688,7 +3707,7 @@
       }
       
       const now = Date.now();
-      if (now - globalScannerLastTime > 50) {
+      if (now - globalScannerLastTime > 200) {
         globalScannerBuffer = "";
       }
       globalScannerLastTime = now;
@@ -3724,10 +3743,10 @@
           }
           
           if (isCommand) {
-            await addBarcode("SAVE-PRINT");
+            await addBarcode("SAVE-PRINT", true, true, true);
           } else {
             searchInput.value = "";
-            await addBarcode(checkBuffer);
+            await addBarcode(checkBuffer, true, true, true);
           }
           return;
         }
