@@ -61,7 +61,8 @@
       <div>
         <div class="pos-title-row">
           <h1>ShopBridge POS</h1>
-          <input type="datetime-local" id="billDateInput" title="Bill Date Override" class="input" style="padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 15px; font-weight: bold; width: auto; margin-left: 12px; color: var(--text);">
+          <input type="datetime-local" id="billDateInput" title="Bill Date Override" class="input" style="padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px; font-weight: bold; width: auto; margin-left: 12px; color: var(--text);">
+          <button type="button" class="button outline" onclick="document.getElementById('posAddTallyItemModal').showModal()" style="margin-left: 4px; padding: 4px 10px; font-size: 13px; border-color: var(--border-color); color: var(--text);">Add Tally Item</button>
         </div>
       </div>
       <div class="pos-top-actions" style="display: flex; align-items: center; gap: 8px;">
@@ -225,6 +226,25 @@
         </div>
         <form method="dialog" style="text-align: center; margin-top: 16px;">
           <button class="button small outline" type="submit" value="cancel">Cancel (Esc)</button>
+        </form>
+      </div>
+    </dialog>
+    <dialog id="posAddTallyItemModal" class="pos-modal elegant-modal">
+      <div class="pos-modal-content">
+        <h2 style="margin-top: 0; font-size: 1.25rem;">Add Tally Item</h2>
+        <form id="posAddTallyItemForm">
+          <div style="margin-bottom: 16px;">
+            <label for="posTallyItemName" style="display: block; margin-bottom: 6px; font-weight: 600;">Item Name</label>
+            <input type="text" id="posTallyItemName" name="name" class="input" style="width: 100%; text-transform: uppercase; padding: 8px;" required>
+          </div>
+          <div style="margin-bottom: 24px;">
+            <label for="posTallyItemAlias" style="display: block; margin-bottom: 6px; font-weight: 600;">Alias (Optional)</label>
+            <input type="text" id="posTallyItemAlias" name="aliases" class="input" style="width: 100%; text-transform: uppercase; padding: 8px;" placeholder="Comma separated">
+          </div>
+          <div class="form-actions" style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" class="button" onclick="document.getElementById('posAddTallyItemModal').close()">Cancel</button>
+            <button type="submit" class="button primary">Save Item</button>
+          </div>
         </form>
       </div>
     </dialog>
@@ -3966,6 +3986,27 @@
         state.buyerNameDraft = buyerNameInput.value;
       });
     }
+    
+    document.getElementById("posAddTallyItemForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+      try {
+        const response = await fetch("/sales/add-tally-item", {
+          method: "POST",
+          body: formData,
+        });
+        if (response.url && response.url.includes("error=")) {
+          setStatus("Item already exists or name missing.", "error");
+        } else {
+          document.getElementById('posAddTallyItemModal').close();
+          setStatus("Tally Item added successfully.", "success");
+          form.reset();
+        }
+      } catch (err) {
+        setStatus("Could not add Tally Item.", "error");
+      }
+    });
 
     if (billDateInput) {
       setBillDateDraft();

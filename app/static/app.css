@@ -1359,7 +1359,7 @@ tbody tr:last-child td {
 
 .pos-header h1 {
   font-size: 28px;
-  margin-bottom: 2px;
+  margin: 0;
 }
 
 .pos-header p {
@@ -2689,7 +2689,7 @@ tbody tr:last-child td {
 
 /* Compact Tally-style POS grid overrides. Keep this late so older POS card styles do not win. */
 .pos-grid-shell {
-  gap: 8px;
+  gap: 4px;
   padding-bottom: 0;
   flex: 1;       /* fill the .page flex column */
   min-height: 0; /* allow flex shrink below intrinsic */
@@ -2704,6 +2704,7 @@ tbody tr:last-child td {
 .pos-compact-header h1 {
   font-size: 24px;
   line-height: 1.1;
+  margin: 0;
 }
 
 .pos-compact-header .pos-top-actions .button,
@@ -2785,7 +2786,7 @@ tbody tr:last-child td {
 .pos-billing-grid td {
   border: 0;
   border-bottom: 1px solid #edf1f7;
-  padding: 2px 8px;
+  padding: 0 8px;
   vertical-align: middle;
 }
 
@@ -2795,7 +2796,7 @@ tbody tr:last-child td {
   box-shadow: inset 0 -1px 0 #edf1f7;
   color: #344054;
   font-size: 11px;
-  height: 30px;
+  height: 20px;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -2831,8 +2832,8 @@ tbody tr:last-child td {
 }
 
 .pos-billing-row {
-  height: 38px;
-  scroll-margin-top: 35px;
+  height: 18px;
+  scroll-margin-top: 20px;
 }
 
 .pos-billing-row td {
@@ -2874,7 +2875,7 @@ tbody tr:last-child td {
 .pos-item-cell strong {
   display: block;
   font-size: 14px;
-  line-height: 1.15;
+  line-height: 1;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2885,7 +2886,7 @@ tbody tr:last-child td {
   color: var(--muted);
   display: block;
   font-size: 11px;
-  line-height: 1.1;
+  line-height: 1;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2900,13 +2901,15 @@ tbody tr:last-child td {
 
 .pos-item-input {
   font-size: 13px;
-  height: 24px;
+  height: 18px;
+  padding: 0 4px;
   margin-bottom: 0;
 }
 
 .pos-mrp-input {
   font-size: 13px;
-  height: 24px;
+  height: 18px;
+  padding: 0 4px;
   text-align: right;
 }
 
@@ -2929,8 +2932,8 @@ tbody tr:last-child td {
   color: var(--text);
   font: inherit;
   font-weight: 700;
-  height: 26px;
-  padding: 2px 4px;
+  height: 18px;
+  padding: 0 4px;
   box-sizing: border-box;
   width: 100%;
 }
@@ -3005,7 +3008,7 @@ tbody tr:last-child td {
   background: #fbfcff;
   border-bottom: 0;
   border-top: 2px solid #cdd6e5;
-  height: 42px;
+  height: 34px;
 }
 
 .pos-add-row .pos-line-no {
@@ -3085,8 +3088,8 @@ tbody tr:last-child td {
   box-shadow: 0 7px 18px rgba(15, 23, 42, 0.08);
   font-size: 15px;
   font-weight: 700;
-  min-height: 38px;
-  padding: 8px 12px;
+  min-height: 30px;
+  padding: 4px 12px;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
@@ -3254,7 +3257,7 @@ body.pos-page .page {
   max-width: none;
   height: 100vh;
   overflow: hidden;
-  padding: 16px;
+  padding: 8px 16px 16px 16px;
   display: flex;
   flex-direction: column;
 }
