@@ -121,6 +121,7 @@
           <div class="pos-bill-total-row" aria-live="polite">
             <span>Items <strong id="billFooterLines">0</strong></span>
             <span>Quantity <strong id="billFooterQty">0</strong></span>
+            <span id="billFooterReturnsContainer" style="display: none; color: #dc2626;">Return <strong id="billFooterReturns">0</strong></span>
             <span class="pos-bill-footer-total">TOTAL <strong id="billFooterTotal">Rs. 0.00</strong></span>
           </div>
         </div>
@@ -2072,11 +2073,23 @@
       const items = state.cart.items || [];
       const lineLabel = `${items.length} ${items.length === 1 ? "line" : "lines"}`;
       if (cartLineCount) cartLineCount.textContent = lineLabel;
-      if (summaryLines) summaryLines.textContent = items.length;
+      if (summaryLines) summaryLines.textContent = state.cart.total_items !== undefined ? state.cart.total_items : items.length;
       if (cartCount) cartCount.textContent = state.cart.count || 0;
       if (cartTotal) cartTotal.textContent = money(state.cart.total || "0.00");
-      billFooterLines.textContent = items.length;
+      billFooterLines.textContent = state.cart.total_items !== undefined ? state.cart.total_items : items.length;
       billFooterQty.textContent = state.cart.count || 0;
+      
+      const returnsContainer = document.getElementById("billFooterReturnsContainer");
+      const returnsEl = document.getElementById("billFooterReturns");
+      if (returnsContainer && returnsEl) {
+        if (state.cart.return_qty > 0) {
+          returnsEl.textContent = state.cart.return_qty;
+          returnsContainer.style.display = "inline";
+        } else {
+          returnsContainer.style.display = "none";
+        }
+      }
+
       billFooterTotal.textContent = money(state.cart.total || "0.00");
       if (searchPanelTotal) searchPanelTotal.textContent = money(state.cart.total || "0.00");
       if (summarySubtotal) summarySubtotal.textContent = money(state.cart.total || "0.00");
@@ -2093,12 +2106,19 @@
     function recalculateOptimisticCart() {
       const items = state.cart.items || [];
       let quantity = 0;
+      let return_qty = 0;
+      let total_items = 0;
       let total = 0;
       items.forEach(item => {
         const qty = Number.parseInt(item.qty, 10);
         const rate = Number.parseFloat(item.selling_price);
         if (Number.isFinite(qty)) {
-          quantity += qty;
+          if (qty > 0) {
+            quantity += qty;
+            total_items += 1;
+          } else if (qty < 0) {
+            return_qty += Math.abs(qty);
+          }
         }
         if (Number.isFinite(qty) && Number.isFinite(rate)) {
           item.amount = qty * rate;
@@ -2106,6 +2126,8 @@
         }
       });
       state.cart.count = quantity;
+      state.cart.total_items = total_items;
+      state.cart.return_qty = return_qty;
       state.cart.total = total.toFixed(2);
       updateCartSummaryDom();
     }

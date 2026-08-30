@@ -108,9 +108,14 @@
           </tr>
         </thead>
         <tbody>
-          {% set ns = namespace(total_saved=0, total_qty=0) %}
+          {% set ns = namespace(total_saved=0, total_qty=0, total_items=0, return_qty=0) %}
           {% for item in sale.items %}
-          {% set ns.total_qty = ns.total_qty + item.qty %}
+          {% if item.qty > 0 %}
+            {% set ns.total_qty = ns.total_qty + item.qty %}
+            {% set ns.total_items = ns.total_items + 1 %}
+          {% elif item.qty < 0 %}
+            {% set ns.return_qty = ns.return_qty - item.qty %}
+          {% endif %}
           {% set item_mrp = item.mrp or item.rate %}
           {% if item_mrp > item.rate and item.qty > 0 %}
           {% set ns.total_saved = ns.total_saved + (item_mrp - item.rate) * item.qty %}
@@ -135,7 +140,11 @@
 
       <div
         style="text-align: center; font-size: 11px; font-weight: bold; margin-top: 6px; padding-top: 4px; border-top: 1px dashed #000;">
-        Total Items: {{ sale.items|length }} | Total Qty: {{ ns.total_qty }}
+        {% if ns.return_qty > 0 %}
+        Items: {{ ns.total_items }} | Qty: {{ ns.total_qty }} | Return: {{ ns.return_qty }}
+        {% else %}
+        Total Items: {{ ns.total_items }} | Total Qty: {{ ns.total_qty }}
+        {% endif %}
       </div>
       <div class="receipt-rule" style="margin-top: 4px;"></div>
 

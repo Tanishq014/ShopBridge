@@ -2025,7 +2025,9 @@ tbody tr:last-child td {
   text-align: center;
   padding: 6px;
   margin: 12px 0;
-  font-weight: bold;
+  font-weight: 950;
+  -webkit-text-stroke: 0.5px #fff;
+  letter-spacing: 0.5px;
   border-radius: 4px;
   font-size: 14px;
 }
@@ -3021,18 +3023,19 @@ tbody tr:last-child td {
   background: #0f172a;
   border-top: 2px solid #1f6feb;
   color: #dbeafe;
-  display: grid;
-  flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 800;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: 800;
   min-height: 48px;
   padding: 8px 12px;
 }
 
 .pos-bill-total-row::before {
   content: "";
+  flex: 1;
 }
 
 .pos-bill-total-row > span {
@@ -3047,7 +3050,7 @@ tbody tr:last-child td {
 }
 
 .pos-bill-total-row > span:not(.pos-bill-footer-total) strong {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 950;
 }
 
@@ -3060,7 +3063,7 @@ tbody tr:last-child td {
 }
 
 .pos-bill-footer-total strong {
-  font-size: 30px;
+  font-size: 34px;
   font-weight: 950;
   line-height: 1;
 }

@@ -392,7 +392,9 @@ def _cart_payload(db: Session, cart: PosCart | None = None) -> dict[str, object]
         "bill_date": bill_date,
         "items": rows,
         "total": _money(total),
-        "count": sum(item.qty for item in items),
+        "count": sum(item.qty for item in items if item.qty > 0),
+        "total_items": sum(1 for item in items if item.qty > 0),
+        "return_qty": sum(abs(item.qty) for item in items if item.qty < 0),
     }
 
 
