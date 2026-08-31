@@ -167,7 +167,7 @@ def add_tally_item(
     aliases: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    name = name.strip()
+    name = name.strip().title()
     if not name:
         return RedirectResponse(url="/sales?error=Name+is+required", status_code=303)
     
@@ -179,7 +179,7 @@ def add_tally_item(
     new_item = TallyItem(
         name=name,
         normalized_name=normalized,
-        aliases=aliases.strip(),
+        aliases=", ".join(a.strip().lower() for a in aliases.split(",") if a.strip()),
         source="manual"
     )
     db.add(new_item)

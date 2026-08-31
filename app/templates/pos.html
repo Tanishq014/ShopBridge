@@ -235,11 +235,11 @@
         <form id="posAddTallyItemForm">
           <div style="margin-bottom: 16px;">
             <label for="posTallyItemName" style="display: block; margin-bottom: 6px; font-weight: 600;">Item Name</label>
-            <input type="text" id="posTallyItemName" name="name" class="input" style="width: 100%; text-transform: uppercase; padding: 8px;" required>
+            <input type="text" id="posTallyItemName" name="name" class="input" style="width: 100%; text-transform: capitalize; padding: 8px;" required>
           </div>
           <div style="margin-bottom: 24px;">
             <label for="posTallyItemAlias" style="display: block; margin-bottom: 6px; font-weight: 600;">Alias (Optional)</label>
-            <input type="text" id="posTallyItemAlias" name="aliases" class="input" style="width: 100%; text-transform: uppercase; padding: 8px;" placeholder="Comma separated">
+            <input type="text" id="posTallyItemAlias" name="aliases" class="input" style="width: 100%; text-transform: lowercase; padding: 8px;" placeholder="Comma separated">
           </div>
           <div class="form-actions" style="display: flex; justify-content: flex-end; gap: 8px;">
             <button type="button" class="button" onclick="document.getElementById('posAddTallyItemModal').close()">Cancel</button>
