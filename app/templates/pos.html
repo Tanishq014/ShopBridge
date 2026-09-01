@@ -423,7 +423,7 @@
 
     function setStatus(message, type = "info") {
       cartStatus.textContent = message;
-      cartStatus.className = `pos-status pos-status-${type}`;
+      cartStatus.className = `pos-status pos-status-compact pos-status-${type}`;
     }
 
     function playBeep(ok = true) {
@@ -439,15 +439,37 @@
         if (context.state === "suspended") {
           context.resume();
         }
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.value = ok ? 880 : 220;
-        gain.gain.value = 0.05;
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-        oscillator.start();
-        oscillator.stop(context.currentTime + 0.08);
+        
+        if (ok) {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = 880;
+          gain.gain.value = 0.05;
+          oscillator.connect(gain);
+          gain.connect(context.destination);
+          oscillator.start();
+          oscillator.stop(context.currentTime + 0.08);
+        } else {
+          // Error sound: lower pitched double-buzz
+          const gain = context.createGain();
+          gain.gain.value = 0.1;
+          gain.connect(context.destination);
+          
+          const osc1 = context.createOscillator();
+          osc1.type = "sawtooth";
+          osc1.frequency.value = 150;
+          osc1.connect(gain);
+          osc1.start(context.currentTime);
+          osc1.stop(context.currentTime + 0.15);
+          
+          const osc2 = context.createOscillator();
+          osc2.type = "sawtooth";
+          osc2.frequency.value = 150;
+          osc2.connect(gain);
+          osc2.start(context.currentTime + 0.2);
+          osc2.stop(context.currentTime + 0.35);
+        }
       } catch (error) {
         // Sound is optional.
       }
@@ -1733,7 +1755,7 @@
           const results = localSearchCatalog(term);
           if (state.suggestionMode === "add" && results.length === 0) {
             searchInput.value = state.lastAcceptedSearchInput || "";
-            setStatus("Item not found. Import from Tally or create barcode first.", "error");
+            setStatus("Item not found.", "error");
             playBeep(false);
             if (state.lastAcceptedSearchInput) {
               state.suggestions = localSearchCatalog(state.lastAcceptedSearchInput);
@@ -1769,7 +1791,7 @@
         const editItem = state.cart.items[rowIndex];
         if (!item) {
           state.focusTransition = false;
-          setStatus("Select a saved barcode/Tally item.", "error");
+          setStatus("Select a saved item.", "error");
           if (editItem) {
             focusCartField(rowIndex, fieldName, true, true);
           }
@@ -2354,7 +2376,7 @@
         return false;
       }
       if (fieldName === "item") {
-        setStatus("Select a saved barcode/Tally item.", "error");
+        setStatus("Select a saved item.", "error");
         return false;
       }
       const values = cartLinePayload(rowIndex, fieldName);
@@ -2673,7 +2695,7 @@
               await selectSuggestion(state.suggestions.indexOf(exactMatch));
               return;
             }
-            setStatus("Select a saved barcode/Tally item.", "error");
+            setStatus("Select a saved item.", "error");
             focusCartField(rowIndex, "item", true);
             return;
           }
@@ -2686,7 +2708,7 @@
           const expectedLabel = previewItemLabel(item);
           if (input.value !== expectedLabel) {
             input.value = expectedLabel;
-            setStatus("Select a saved barcode/Tally item.", "error");
+            setStatus("Select a saved item.", "error");
             closeSuggestions();
             focusCartField(rowIndex, "item", true);
             return;
@@ -2921,7 +2943,7 @@
 
     async function saveFocusedLineInput() {
       if (state.suggestionMode === "edit" && !searchPanel.hidden) {
-        setStatus("Select a saved barcode/Tally item or press Esc.", "error");
+        setStatus("Select a saved item or press Esc.", "error");
         const rowIndex = state.suggestionRowIndex;
         if (Number.isFinite(rowIndex)) {
           focusCartField(rowIndex, state.suggestionField || "item", true, true);
@@ -2952,7 +2974,7 @@
         const expectedLabel = previewItemLabel(item);
         const actualInput = input || inputForCartField(rowIndex, "item");
         if (actualInput && actualInput.value !== expectedLabel) {
-           setStatus("Select a saved barcode/Tally item.", "error");
+           setStatus("Select a saved item.", "error");
            return false;
         }
         state.lastLineEdit = null;
@@ -3061,7 +3083,7 @@
         if (!response.ok) {
           if (response.status === 404) {
             await searchItems(clean);
-            setStatus("Item not found. Import from Tally or create barcode first.", "error");
+            setStatus("Item not found.", "error");
             playBeep(false);
             focusItemInput(true);
             return;
@@ -3094,6 +3116,7 @@
     async function submitItemInput() {
       if (state.isSubmittingItem) return;
       state.isSubmittingItem = true;
+      window.clearTimeout(state.searchTimer);
       try {
         const typedValue = searchInput.value.trim();
       
@@ -3113,7 +3136,7 @@
         }
         const liveResults = localSearchCatalog(typedValue);
         if (!liveResults.length) {
-          setStatus("Item not found. Import from Tally or create barcode first.", "error");
+          setStatus("Item not found.", "error");
           playBeep(false);
           focusItemInput(true);
           return;
@@ -3200,7 +3223,7 @@
       const visibleRateInputs = Array.from(document.querySelectorAll(".pos-line-input[data-cart-field='rate']"));
       for (const input of visibleRateInputs) {
         if (!input.value || !input.value.trim()) {
-          setStatus("Enter rate for every bill line before checkout.", "error");
+          setStatus("Enter rate for all lines.", "error");
           playBeep(false);
           setTimeout(() => {
             input.focus();
@@ -3211,7 +3234,7 @@
       }
       
       if (state.hasMissingRate) {
-        setStatus("Enter rate for every bill line before checkout.", "error");
+        setStatus("Enter rate for all lines.", "error");
         playBeep(false);
         const missingIndex = (state.cart.items || []).findIndex(item => item.missing_price);
         setTimeout(() => {
@@ -3224,7 +3247,7 @@
         return false;
       }
       if ((state.cart.items || []).some(item => item.source_type === "manual" || item.is_manual_line)) {
-        setStatus("Manual lines are not allowed. Select a saved barcode/Tally item.", "error");
+        setStatus("Use saved items, manual lines not allowed.", "error");
         playBeep(false);
         focusItemInput(false);
         return false;

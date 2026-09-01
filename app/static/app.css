@@ -1551,6 +1551,10 @@ tbody tr:last-child td {
   min-height: 0;
   padding: 8px 10px;
   margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50vw;
 }
 
 .pos-status-info {
