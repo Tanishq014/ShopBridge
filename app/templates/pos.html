@@ -70,7 +70,6 @@
         <a class="button outline" href="/new-stock">Print Label</a>
         <button class="button" type="button" id="fullscreenPosButton">Fullscreen POS</button>
         <button class="button" type="button" id="helpToggleButton" aria-controls="posHelpBar" aria-expanded="false">Show Help</button>
-        <button class="button" type="button" id="refreshCartButton">Refresh</button>
       </div>
     </header>
 
@@ -282,7 +281,6 @@
     const billDateInput = document.getElementById("billDateInput");
     const paymentMode = document.getElementById("paymentMode");
     const posRoot = document.getElementById("posRoot");
-    const refreshCartButton = document.getElementById("refreshCartButton");
     const searchInput = document.getElementById("posSearchInput");
     const searchPanel = document.getElementById("posSearchPanelRight");
     const searchResultCount = document.getElementById("searchResultCount");
@@ -3495,17 +3493,6 @@
     helpToggleButton.addEventListener("click", () => {
       setHelpVisible(helpBar.hidden);
       focusItemInput(false);
-    });
-
-    refreshCartButton.addEventListener("click", async () => {
-      if (state.previewMode) {
-        if (!state.loadedSaleDirty || window.confirm("Reload the active bill and discard edits to this opened bill?")) {
-          await exitPreview(true);
-        }
-      } else {
-        await loadCart(false);
-      }
-      focusSelectedCartItem(true);
     });
 
     clearCartButton.addEventListener("click", async () => {
