@@ -3418,11 +3418,7 @@
         }
 
         if (!text) {
-          const hasItems = state.cart && state.cart.items && state.cart.items.length > 0;
-          if (hasItems) {
-            await handleCtrlAQuickAction();
-            return;
-          }
+          return;
         }
 
         await submitItemInput();
