@@ -2681,41 +2681,49 @@
       if (event.key === "Enter") {
         event.preventDefault();
         event.stopPropagation();
-        if (fieldName === "item" && state.suggestionMode === "edit" && suggestionOptionCount()) {
-          if (state.suggestionIndex < 0) {
-            const exactMatch = state.suggestions.find(s =>
-              s.exact_barcode ||
-              s.exact_match ||
-              (s.item_name || "").toLowerCase() === input.value.toLowerCase() ||
-              (s.aliases || []).map(a => a.toLowerCase()).includes(input.value.toLowerCase())
-            );
-            if (exactMatch) {
-              await selectSuggestion(state.suggestions.indexOf(exactMatch));
-              return;
-            }
-            setStatus("Select a saved item.", "error");
-            focusCartField(rowIndex, "item", true);
-            return;
-          }
-          await selectSuggestion(state.suggestionIndex);
-          return;
-        }
         const itemId = input.dataset.cartItemId;
         if (fieldName === "item") {
           const item = cartItemAt(rowIndex);
           const expectedLabel = previewItemLabel(item);
-          if (input.value !== expectedLabel) {
-            input.value = expectedLabel;
-            setStatus("Select a saved item.", "error");
-            closeSuggestions();
-            focusCartField(rowIndex, "item", true);
+          const isUnmodified = !state.activeEditDirty || input.value === state.activeEditOriginalValue || input.value === expectedLabel;
+          if (isUnmodified) {
+            closeSuggestions(true);
+            resetActiveEditState();
+            state.focusTransition = true;
+            window.setTimeout(() => {
+              focusNextBillingField(itemId, "qty");
+              state.focusTransition = false;
+            }, 50);
             return;
           }
-          state.focusTransition = true;
-          window.setTimeout(() => {
-            focusNextBillingField(itemId, "qty");
-            state.focusTransition = false;
-          }, 50);
+          if (state.suggestionMode === "edit" && suggestionOptionCount()) {
+            if (state.suggestionIndex < 0) {
+              const exactMatch = state.suggestions.find(s =>
+                s.exact_barcode ||
+                s.exact_match ||
+                (s.item_name || "").toLowerCase() === input.value.toLowerCase() ||
+                (s.aliases || []).map(a => a.toLowerCase()).includes(input.value.toLowerCase())
+              );
+              if (exactMatch) {
+                await selectSuggestion(state.suggestions.indexOf(exactMatch));
+                return;
+              }
+              if (state.suggestions.length > 0) {
+                await selectSuggestion(0);
+                return;
+              }
+              setStatus("Select a saved item.", "error");
+              focusCartField(rowIndex, "item", true);
+              return;
+            }
+            await selectSuggestion(state.suggestionIndex);
+            return;
+          }
+          input.value = expectedLabel;
+          resetActiveEditState();
+          setStatus("Select a saved item.", "error");
+          closeSuggestions(true);
+          focusCartField(rowIndex, "item", true);
           return;
         }
         state.skipNextChangeSaveFor = {itemId: itemId, fieldName};
@@ -2762,6 +2770,15 @@
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
+        if (fieldName === "item") {
+          const item = cartItemAt(rowIndex);
+          const expectedLabel = item ? previewItemLabel(item) : (state.activeEditOriginalValue || "");
+          input.value = expectedLabel;
+          resetActiveEditState();
+          closeSuggestions(true);
+          focusCartField(rowIndex, "item", true);
+          return;
+        }
         resetActiveEditState();
 
         if (input.value !== "") {
@@ -2940,13 +2957,31 @@
     }
 
     async function saveFocusedLineInput() {
-      if (state.suggestionMode === "edit" && !searchPanel.hidden) {
-        setStatus("Select a saved item or press Esc.", "error");
-        const rowIndex = state.suggestionRowIndex;
-        if (Number.isFinite(rowIndex)) {
-          focusCartField(rowIndex, state.suggestionField || "item", true, true);
+      if (state.suggestionMode === "edit") {
+        const input = focusedLineInput();
+        const rowIndex = Number.isFinite(state.suggestionRowIndex) && state.suggestionRowIndex >= 0
+          ? state.suggestionRowIndex
+          : (input ? Number(input.dataset.cartRowIndex) : -1);
+        const item = rowIndex >= 0 ? cartItemAt(rowIndex) : null;
+        const expectedLabel = item ? previewItemLabel(item) : "";
+        const currentValue = input ? input.value : (state.activeEditField ? state.activeEditField.value : "");
+        const isUnmodified = !state.activeEditDirty || (currentValue === state.activeEditOriginalValue) || (Boolean(expectedLabel) && currentValue.trim() === expectedLabel.trim());
+
+        if (isUnmodified) {
+          closeSuggestions(true);
+          resetActiveEditState();
+          state.lastLineEdit = null;
+          setLineEditActive(false);
+          return true;
         }
-        return false;
+
+        if (!searchPanel.hidden) {
+          setStatus("Select a saved item or press Esc.", "error");
+          if (Number.isFinite(rowIndex) && rowIndex >= 0) {
+            focusCartField(rowIndex, state.suggestionField || "item", true, true);
+          }
+          return false;
+        }
       }
       if (!await waitForPendingLineSaves()) {
         return false;
