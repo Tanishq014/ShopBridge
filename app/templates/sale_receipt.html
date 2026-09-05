@@ -199,6 +199,9 @@
 
       <footer class="receipt-footer">
         <p style="font-weight: bold; color: #000;">Thank you for shopping with us!</p>
+        {% if not sale.buyer_name %}
+        <p style="font-weight: bold; color: #000; font-size: 11px; margin-top: 2px;">Mob: 9315222221</p>
+        {% endif %}
       </footer>
     </section>
   </main>

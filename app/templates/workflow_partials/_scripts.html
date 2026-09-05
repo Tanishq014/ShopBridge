@@ -2556,6 +2556,168 @@
       marginInlinePanel.hidden = true;
     });
 
+    const mrpCalcModal = document.getElementById("mrpCalcModal");
+    const mrpCalcInput = document.getElementById("mrpCalcInput");
+    const mrpCalcPreview = document.getElementById("mrpCalcPreview");
+    const mrpCalcApplyBtn = document.getElementById("mrpCalcApplyBtn");
+
+    function computeMrpCalculation(currentMrp, expr) {
+      if (!expr || !Number.isFinite(currentMrp) || currentMrp <= 0) return null;
+
+      let isPercentage = expr.endsWith("%");
+      let cleanExpr = isPercentage ? expr.slice(0, -1).trim() : expr;
+
+      let op = "";
+      if (["+", "-", "*", "/"].includes(cleanExpr[0])) {
+        op = cleanExpr[0];
+        cleanExpr = cleanExpr.slice(1).trim();
+      }
+
+      let val = parseFloat(cleanExpr);
+      if (isNaN(val)) return null;
+
+      if (op === "" && !isPercentage) {
+        isPercentage = true;
+        if (val < 100) {
+          op = "-";
+        } else {
+          op = "/";
+        }
+      }
+
+      let newRate = currentMrp;
+      if (isPercentage) {
+        if (op === "-" || op === "+") {
+          val = (currentMrp * val) / 100;
+        } else if (op === "/" || op === "*") {
+          val = val / 100;
+        }
+      }
+
+      if (op === "-") newRate = currentMrp - val;
+      else if (op === "+") newRate = currentMrp + val;
+      else if (op === "*") newRate = currentMrp * val;
+      else if (op === "/") newRate = currentMrp / val;
+      else newRate = val;
+
+      return newRate;
+    }
+
+    function openMrpCalcModal() {
+      if (!mrpCalcModal) return;
+      const currentMrpStr = fields.mrp ? fields.mrp.value : "";
+      const currentMrp = parseFloat(currentMrpStr) || 0;
+      if (currentMrp <= 0) {
+        showPricingMessage("Enter a valid MRP before calculating code.");
+        if (fields.mrp) {
+          fields.mrp.focus();
+          fields.mrp.select();
+        }
+        return;
+      }
+
+      mrpCalcInput.value = "";
+      if (mrpCalcPreview) mrpCalcPreview.textContent = "";
+
+      const updatePreviewCalc = () => {
+        if (!mrpCalcPreview) return;
+        const expr = mrpCalcInput.value.trim();
+        if (!expr) {
+          mrpCalcPreview.textContent = "";
+          return;
+        }
+        const calcRate = computeMrpCalculation(currentMrp, expr);
+        if (calcRate === null || !Number.isFinite(calcRate) || calcRate <= 0) {
+          mrpCalcPreview.textContent = "Invalid calculation";
+          mrpCalcPreview.style.color = "var(--danger, #ef4444)";
+          return;
+        }
+        const roundedPrice = Math.max(1, Math.round(calcRate));
+        const encoded = encodeSellingPrice(roundedPrice);
+        mrpCalcPreview.style.color = "var(--primary, #0284c7)";
+        if (encoded) {
+          mrpCalcPreview.textContent = `₹${roundedPrice} -> Code: ${encoded}`;
+        } else {
+          mrpCalcPreview.textContent = `₹${roundedPrice}`;
+        }
+      };
+
+      const applyCalculation = () => {
+        const expr = mrpCalcInput.value.trim();
+        if (!expr) return;
+        const calcRate = computeMrpCalculation(currentMrp, expr);
+        if (calcRate === null || !Number.isFinite(calcRate) || calcRate <= 0) {
+          showPricingMessage("Invalid calculation.");
+          return;
+        }
+
+        const roundedPrice = Math.max(1, Math.round(calcRate));
+        const encoded = encodeSellingPrice(roundedPrice);
+        const codeToDisplay = encoded || String(roundedPrice);
+
+        fields.coded.value = codeToDisplay;
+        fields.selling.value = String(roundedPrice);
+
+        fields.coded.dispatchEvent(new Event("input", { bubbles: true }));
+        fields.coded.dispatchEvent(new Event("change", { bubbles: true }));
+
+        mrpCalcModal.close("apply");
+
+        window.setTimeout(() => {
+          fields.coded.focus();
+          fields.coded.select();
+        }, 50);
+      };
+
+      const onCalcKeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          applyCalculation();
+        }
+      };
+
+      const onApplyClick = () => {
+        applyCalculation();
+      };
+
+      mrpCalcInput.addEventListener("input", updatePreviewCalc);
+      mrpCalcInput.addEventListener("keydown", onCalcKeydown);
+      mrpCalcApplyBtn.addEventListener("click", onApplyClick);
+
+      const onClose = () => {
+        mrpCalcInput.removeEventListener("input", updatePreviewCalc);
+        mrpCalcInput.removeEventListener("keydown", onCalcKeydown);
+        mrpCalcApplyBtn.removeEventListener("click", onApplyClick);
+        mrpCalcModal.removeEventListener("close", onClose);
+
+        if (mrpCalcModal.returnValue !== "apply") {
+          if (fields.mrp) {
+            fields.mrp.focus();
+            fields.mrp.select();
+          }
+        }
+      };
+
+      mrpCalcModal.addEventListener("close", onClose);
+      mrpCalcModal.showModal();
+      window.setTimeout(() => {
+        mrpCalcInput.focus();
+        mrpCalcInput.select();
+      }, 50);
+    }
+
+    if (fields.mrp) {
+      fields.mrp.addEventListener("keydown", event => {
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "c") {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          openMrpCalcModal();
+        }
+      });
+    }
+
     Array.from(new Set([
       fields.coded,
       fields.margin,
@@ -2780,6 +2942,9 @@
     }
 
     document.addEventListener("keydown", event => {
+      if (mrpCalcModal && mrpCalcModal.open) {
+        return;
+      }
       if (printDiscountWarningDialog && !printDiscountWarningDialog.hidden) {
         if (event.key === "Escape") {
           event.preventDefault();
