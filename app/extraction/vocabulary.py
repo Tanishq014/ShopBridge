@@ -28,7 +28,8 @@ VOCABULARY_V1 = {
         "serial_number", 
         "manufacturer",
         "design",
-        "model_no"
+        "model_no",
+        "discount"
     ]
 }
 

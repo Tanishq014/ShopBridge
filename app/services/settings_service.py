@@ -97,7 +97,8 @@ DEFAULT_OPTIONAL_TEMPLATE_FIELDS = {
     "expiry",
     "margin_percent",
     "barcode",
-    "tally_item_name"
+    "tally_item_name",
+    "discount"
 }
 
 

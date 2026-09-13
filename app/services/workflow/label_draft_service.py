@@ -169,7 +169,7 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
         # 3. EXTRACTED
         elif sem_field in extracted:
             val = extracted[sem_field]
-            source = "EXTRACTED"
+            source = "AI"
             missing = False
         # 4. PREVIOUS
         elif sem_field in previous and sem_field not in UNSAFE_INHERITANCE_FIELDS:

@@ -243,7 +243,11 @@ class TestReceivingPhase35(unittest.TestCase):
         draft3 = resolve_draft(self.db, item)
         self.assertTrue(draft3.ready)
 
-    def test_changing_template_recomputes_draft(self):
+    import unittest.mock
+    @unittest.mock.patch("app.services.workflow.label_draft_service.get_template_field_settings")
+    def test_changing_template_recomputes_draft(self, mock_settings):
+        from app.services.settings_service import TemplateFieldSettings
+        mock_settings.return_value = TemplateFieldSettings(optional_fields=set())
         # 11. test_changing_template_recomputes_draft
         supplier, template, template_no_size, family, session = self.setup_base_data()
         item = ReceivingItem(session_id=session.id, billing_item="Test Family", template_id=template_no_size.id, mrp=Decimal("100"), confirmed_selling_price=Decimal("80"))
