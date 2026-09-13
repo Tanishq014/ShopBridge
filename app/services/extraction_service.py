@@ -1,7 +1,7 @@
 import json
 import uuid
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks
 
@@ -20,7 +20,7 @@ def start_extraction_job(
         session_id=session_id,
         provider="Gemini",
         status="PENDING",
-        started_at=datetime.utcnow()
+        started_at=datetime.now(timezone.utc).replace(tzinfo=None)
     )
     db.add(job)
     db.commit()
@@ -37,7 +37,7 @@ def start_extraction_job(
     
     return job
 
-async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[str], mime_type: str):
+def _run_extraction_task(job_id: int, session_id: int, file_paths: list[str], mime_type: str):
     # This needs its own DB session since it runs in the background
     from app.db import SessionLocal
     db = SessionLocal()
@@ -98,7 +98,7 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
         job.status = "PROCESSING"
         db.commit()
         
-        result = await provider.extract_invoice(
+        result = provider.extract_invoice(
             file_paths=file_paths,
             mime_type=mime_type,
             templates=templates_payload,
@@ -109,13 +109,13 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
         
         # Update Job
         job.status = "COMPLETED"
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         job.tokens_used = result.tokens_used
         job.cost = result.cost
         job.input_pages = result.input_pages
         job.raw_provider_response = result.raw_provider_response
         
-        duration = (job.completed_at - job.started_at).total_seconds()
+        duration = (job.completed_at - job.started_at).total_seconds() if job.started_at else 0.0
         row_count = 0
         if result.document:
             for page in result.document.pages:
@@ -136,14 +136,22 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
                 pass
         
         # Insert ReceivingItems
-        bill_row_idx = 1
+        from sqlalchemy import func
+        max_row = db.query(func.max(ReceivingItem.bill_row_number)).filter(ReceivingItem.session_id == session_id).scalar() or 0
+        max_page = db.query(func.max(ReceivingItem.source_page_number)).filter(ReceivingItem.session_id == session_id).scalar() or 0
+        
+        bill_row_idx = max_row + 1
         if result.document:
             for page in result.document.pages:
+                current_page_number = max_page + page.page_number
                 for row in page.rows:
                     
                     def safe_val(field):
-                        if not field: return None
-                        return field.value
+                        if field is None: return None
+                        v = field.value if hasattr(field, 'value') else field
+                        if isinstance(v, float) and v.is_integer():
+                            return int(v)
+                        return v
                         
                     def safe_float(val):
                         if val is None: return None
@@ -154,6 +162,12 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
                             except ValueError:
                                 pass
                         return None
+                        
+                    custom_attrs = {}
+                    for key in ["brand", "size", "color", "article_number", "batch_number", "expiry", "serial_number", "manufacturer", "design", "model_no", "discount"]:
+                        val = getattr(row, key, None)
+                        if val is not None and safe_val(val) is not None:
+                            custom_attrs[key] = safe_val(val)
 
                     r_item = ReceivingItem(
                         session_id=session_id,
@@ -161,18 +175,18 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
                         bill_row_number=bill_row_idx,
                         source_row_number=str(safe_val(row.source_row_number)) if safe_val(row.source_row_number) is not None else None,
                         source_row_inferred=False, 
-                        source_page_number=page.page_number,
+                        source_page_number=current_page_number,
                         raw_description=str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None,
-                        normalized_description=str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None,
-                        billing_item=str(row.suggested_billing_item) if row.suggested_billing_item is not None else None,
-                        supplier_product_code=None, # Can map later
+                        normalized_description=str(safe_val(row.normalized_description)) if safe_val(row.normalized_description) is not None else (str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None),
+                        billing_item=str(safe_val(row.suggested_billing_item)) if safe_val(row.suggested_billing_item) is not None else None,
+                        supplier_product_code=str(safe_val(row.supplier_product_code)) if safe_val(row.supplier_product_code) is not None else None,
                         hsn_code=str(safe_val(row.hsn_code)) if safe_val(row.hsn_code) is not None else None,
                         expected_qty=safe_float(safe_val(row.quantity)),
                         unit=str(safe_val(row.unit)) if safe_val(row.unit) is not None else None,
                         purchase_rate=safe_float(safe_val(row.purchase_rate)),
-                        mrp=None,
+                        mrp=safe_float(safe_val(row.mrp)),
                         line_amount=safe_float(safe_val(row.line_amount)),
-                        extracted_attributes=json.dumps([a.model_dump() for a in row.attributes]),
+                        extracted_attributes=json.dumps(custom_attrs),
                         extracted_payload=row.model_dump_json(), # Full Document AI row JSON
                         extraction_confidence=0.0 
                     )
@@ -183,9 +197,17 @@ async def _run_extraction_task(job_id: int, session_id: int, file_paths: list[st
         
     except Exception as e:
         if job:
+            db.rollback()
             job.status = "FAILED"
             job.error = str(e)
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
     finally:
         db.close()
+        for p in file_paths:
+            try:
+                import os
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass

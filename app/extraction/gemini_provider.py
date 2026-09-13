@@ -18,8 +18,7 @@ from app.extraction.provider import (
     ExtractedDocument,
     ExtractedPage,
     ExtractedRow,
-    ExtractedField,
-    ExtractedAttribute
+    GroundedField
 )
 from app.extraction.vocabulary import VOCABULARY_V1
 
@@ -40,7 +39,7 @@ class GeminiProvider(ExtractionProvider):
     def provider_version(self) -> str:
         return "gemini-3.5-flash"
 
-    async def extract_invoice(
+    def extract_invoice(
         self,
         file_paths: list[str],
         mime_type: str,
@@ -56,14 +55,15 @@ class GeminiProvider(ExtractionProvider):
             "You are an expert Document AI data extractor. Your job is to extract rich structured data from the provided invoice pages. "
             f"The core extraction vocabulary is: {json.dumps(VOCABULARY_V1['core_fields'])}. "
             f"The known semantic attributes are: {json.dumps(VOCABULARY_V1['known_attributes'])}.\n\n"
-            "Return the full hierarchical `ExtractedDocument` payload. For EVERY extracted field, you MUST provide:\n"
-            "1. The interpreted `value` (if numeric, convert it. If string, clean it up / normalize it. E.g. 'HANUMAN .P' -> 'Hanuman P').\n"
-            "   - Exception: `suggested_billing_item` is just a simple string, not an object. Infer a clean, standardized product name (e.g. 'Alarm Clock Red' instead of 'ALRM CLK R') and output it as a plain string. This will be printed on customer POS receipts.\n"
-            "2. The `source_column` name under which this value was found (e.g., 'Description', 'List Price', 'Amount(Rs.)').\n"
-            "3. A `bbox` as [ymin, xmin, ymax, xmax] normalized to a 0-1000 scale.\n\n"
+            "Return the full hierarchical `ExtractedDocument` payload. For EVERY extracted field (except `suggested_billing_item`), you MUST provide a bounding box (`bbox`) BEFORE you transcribe the value.\n"
+            "- Extract the `bbox` as [ymin, xmin, ymax, xmax] normalized to a 0-1000 scale.\n"
+            "- After the bbox, extract the interpreted `value`. (If numeric, convert it. If string, clean it up / normalize it. E.g. 'HANUMAN .P' -> 'Hanuman P').\n"
+            "- For `purchase_rate`, MUST extract the FINAL NET unit rate after all discounts. (e.g. if Rate is 180 and Discount is 15%, extract 153). You can calculate this by `line_amount / quantity`. IMPORTANT: Always verify the mathematics (`purchase_rate * quantity == line_amount`). If the math does not line up perfectly (e.g. due to OCR errors where an 8 looks like a 0), do NOT output the `purchase_rate` or `line_amount` for that line. Leave them blank if you are not absolutely sure.\n"
+            "- For `suggested_billing_item`, infer a clean, ULTRA-SHORT product name (e.g., 'Bowl Set' or 'Coffee Mug'). This is printed on tiny POS receipts, so STRIP OUT all brands, article numbers, codes, colors, and sizes. STRICTLY limit it to 10-15 characters maximum.\n"
+            "- If the row has data matching any of the optional fields (like `brand`, `mrp`, `size`, `color`, `expiry`, etc.), extract them directly into their respective JSON keys.\n\n"
             "For row metadata:\n"
             "- Extract the printed row number into `source_row_number` exactly as printed.\n"
-            "Do not invent values. If a field is missing, omit it."
+            "Do not invent values (except for `suggested_billing_item` which MUST be inferred for every row). If a printed field is missing, omit it."
         )
         
         prompt_parts = []
@@ -79,7 +79,7 @@ class GeminiProvider(ExtractionProvider):
         if few_shot_examples and len(few_shot_examples) > 0:
             prompt_parts.append(f"\n\nHere are some previously verified successful extractions from this supplier to use as examples:\n{json.dumps(few_shot_examples, indent=2)}")
 
-        prompt_parts.append("\n\nPlease extract all line items from the attached invoice. Provide provenance for each extracted field (column name and bbox).")
+        prompt_parts.append("\n\nPlease extract all line items from the attached invoice.")
 
         prompt = "\n".join(prompt_parts)
 
@@ -107,8 +107,8 @@ class GeminiProvider(ExtractionProvider):
             pages=[]
         )
         
-        from datetime import datetime
-        doc.extracted_at = datetime.utcnow().isoformat()
+        from datetime import datetime, timezone
+        doc.extracted_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         import uuid
         
         tokens_used = 0
@@ -151,7 +151,7 @@ class GeminiProvider(ExtractionProvider):
                         err_str = str(e).lower()
                         if "503" in err_str or "429" in err_str or "unavailable" in err_str or "quota" in err_str:
                             print(f"[Gemini] ⚠️ Rate limit or unavailable error on page {page_num}, retrying in {base_delay * (2 ** attempt)}s...")
-                            await asyncio.sleep(base_delay * (2 ** attempt))
+                            time.sleep(base_delay * (2 ** attempt))
                         else:
                             print(f"[Gemini] ❌ Error extracting page {page_num}: {e}")
                             raise e

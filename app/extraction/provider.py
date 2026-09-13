@@ -2,26 +2,33 @@ from abc import ABC, abstractmethod
 from typing import Any
 from pydantic import BaseModel, Field
 
-class ExtractedField(BaseModel):
-    value: str | float | None = None
-    source_column: str | None = None
+class GroundedField(BaseModel):
     bbox: list[int] | None = Field(default=None, description="[ymin, xmin, ymax, xmax]")
-
-class ExtractedAttribute(BaseModel):
-    semantic_key: str
-    template_names: list[str] = Field(default_factory=list)
-    field: ExtractedField
+    value: str | float | None = None
 
 class ExtractedRow(BaseModel):
-    source_row_number: ExtractedField | None = None
-    raw_description: ExtractedField | None = None
+    source_row_number: GroundedField | None = None
+    raw_description: GroundedField | None = None
+    normalized_description: GroundedField | None = None
     suggested_billing_item: str | None = None
-    hsn_code: ExtractedField | None = None
-    quantity: ExtractedField | None = None
-    unit: ExtractedField | None = None
-    purchase_rate: ExtractedField | None = None
-    line_amount: ExtractedField | None = None
-    attributes: list[ExtractedAttribute] = Field(default_factory=list)
+    hsn_code: GroundedField | None = None
+    quantity: GroundedField | None = None
+    unit: GroundedField | None = None
+    purchase_rate: GroundedField | None = None
+    mrp: GroundedField | None = None
+    supplier_product_code: GroundedField | None = None
+    line_amount: GroundedField | None = None
+    brand: GroundedField | None = None
+    size: GroundedField | None = None
+    color: GroundedField | None = None
+    article_number: GroundedField | None = None
+    batch_number: GroundedField | None = None
+    expiry: GroundedField | None = None
+    serial_number: GroundedField | None = None
+    manufacturer: GroundedField | None = None
+    design: GroundedField | None = None
+    model_no: GroundedField | None = None
+    discount: GroundedField | None = None
     
 class ExtractedPage(BaseModel):
     page_number: int
@@ -62,9 +69,9 @@ class ExtractionProvider(ABC):
         pass
 
     @abstractmethod
-    async def extract_invoice(
+    def extract_invoice(
         self,
-        file_path: str,
+        file_paths: list[str],
         mime_type: str,
         templates: list[dict[str, Any]],
         structured_aliases: dict[str, str] | None,

@@ -426,6 +426,24 @@ document.addEventListener('DOMContentLoaded', () => {
       sheet.style.visibility = 'visible';
       sheet.style.transform = 'translateY(0)';
       backdrop.style.opacity = '1';
+      
+      // Auto-focus first empty field
+      setTimeout(() => {
+          const active = document.activeElement;
+          if (active && sheet.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'SELECT')) {
+              return; // User already clicked into a field manually, don't steal focus
+          }
+          const inputs = Array.from(sheet.querySelectorAll('input:not([disabled]):not([readonly])'))
+              .filter(el => el.offsetParent !== null && el.type !== 'hidden');
+          const firstEmpty = inputs.find(el => !el.value);
+          if (firstEmpty) {
+              firstEmpty.focus();
+              if (typeof firstEmpty.select === 'function') firstEmpty.select();
+          } else if (inputs.length > 0) {
+              inputs[0].focus();
+              if (typeof inputs[0].select === 'function') inputs[0].select();
+          }
+      }, 200); // Wait for transition and layout
     }, 10);
   }
 
@@ -841,14 +859,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (select) {
             select.value = draft.template_id || '';
             if (previewBtn) previewBtn.style.display = select.value ? 'inline-block' : 'none';
-            if (!draft.template_id) {
-                const savedTemplate = localStorage.getItem('saved_template_id');
-                if (savedTemplate) {
-                    select.value = savedTemplate;
-                    if (previewBtn) previewBtn.style.display = 'inline-block';
-                    updateDraft({ template_id: parseInt(savedTemplate) });
-                    return; // updateDraft calls loadDraftStatus again
-                }
+            const savedTemplate = localStorage.getItem('saved_template_id');
+            if (savedTemplate && parseInt(savedTemplate) !== draft.template_id) {
+                select.value = savedTemplate;
+                if (previewBtn) previewBtn.style.display = 'inline-block';
+                updateDraft({ template_id: parseInt(savedTemplate) });
+                return; // updateDraft calls loadDraftStatus again
             }
         }
         
@@ -889,8 +905,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (field.semantic_field === 'coded_price' && field.default_value) {
                 window.codeTargetLength = field.default_value.length;
             }
-            if (['mrp', 'selling_price', 'coded_price'].includes(field.semantic_field)) {
-                return; // Hide these from dynamic fields, they belong in Pricing Section
+            if (['mrp', 'selling_price', 'coded_price', 'family_name'].includes(field.semantic_field)) {
+                return; // Hide these from dynamic fields, they belong in dedicated UI inputs (Pricing or Billing Item)
             }
             
             const div = document.createElement('div');
@@ -1043,6 +1059,35 @@ document.addEventListener('DOMContentLoaded', () => {
               setTimeout(() => {
                   e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }, 300); // Wait for keyboard animation
+          }
+      });
+  }
+
+  // Keyboard navigation for Tally Sheet (like stock print page)
+  const tallySheet = document.getElementById('tally-sheet');
+  if (tallySheet) {
+      tallySheet.addEventListener('keydown', (e) => {
+          if (['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) {
+              const active = document.activeElement;
+              if (active && active.tagName === 'INPUT' && !active.readOnly && !active.disabled) {
+                  const inputs = Array.from(tallySheet.querySelectorAll('input:not([disabled]):not([readonly])'))
+                      .filter(el => el.offsetParent !== null);
+                  const index = inputs.indexOf(active);
+                  if (index > -1) {
+                      e.preventDefault();
+                      const dir = e.key === 'ArrowUp' ? -1 : 1;
+                      const next = inputs[index + dir];
+                      if (next) {
+                          next.focus();
+                          if (typeof next.select === 'function') next.select();
+                      } else if (e.key === 'Enter') {
+                          // If at the end (e.g. qty or print btn), try to submit or print
+                          if (active.id === 'input-print-copies') {
+                              document.getElementById('btn-confirm-print')?.click();
+                          }
+                      }
+                  }
+              }
           }
       });
   }

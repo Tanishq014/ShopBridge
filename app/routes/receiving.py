@@ -94,14 +94,23 @@ def extract_invoice_endpoint(
         temp_file.close()
         file_paths.append(temp_file.name)
     
-    job = start_extraction_job(
-        db=db,
-        session_id=session_id,
-        file_paths=file_paths,
-        mime_type=files[0].content_type,
-        background_tasks=background_tasks
-    )
-    return {"job_id": job.id, "status": job.status}
+    try:
+        job = start_extraction_job(
+            db=db,
+            session_id=session_id,
+            file_paths=file_paths,
+            mime_type=files[0].content_type,
+            background_tasks=background_tasks
+        )
+        return {"job_id": job.id, "status": job.status}
+    except Exception as e:
+        for p in file_paths:
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{session_id}/extraction_status")
 def get_extraction_status_endpoint(session_id: int, db: Session = Depends(get_db)):
@@ -153,12 +162,16 @@ def receiving_home(request: Request, db: Session = Depends(get_db)):
         .limit(10)
     ).scalars().all()
     
+    from app.models import Supplier
+    suppliers = db.execute(select(Supplier).order_by(Supplier.name)).scalars().all()
+    
     return templates.TemplateResponse(
         request=request,
         name="receiving_home.html",
         context={
             "active_sessions": active_sessions,
-            "recent_sessions": recent_sessions
+            "recent_sessions": recent_sessions,
+            "suppliers": suppliers
         }
     )
 
@@ -218,18 +231,49 @@ def receiving_workspace(session_id: int, request: Request, db: Session = Depends
     )
 from fastapi import Form
 from fastapi.responses import RedirectResponse, Response
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 @router.post("/new", response_class=HTMLResponse)
-def create_new_session_ui(request: Request, supplier_name: str = Form(...), invoice_number: str = Form(None), invoice_date: str = Form(None), db: Session = Depends(get_db)):
+def create_new_session_ui(
+    request: Request, 
+    supplier_name: str = Form(...), 
+    invoice_number: str = Form(None), 
+    invoice_date: str = Form(None), 
+    extraction_notes: str = Form(None),
+    structured_aliases: str = Form(None),
+    db: Session = Depends(get_db)
+):
     try:
-        supplier = get_or_create_supplier(db, supplier_name)
-        
+        # 1. Validate inputs before touching the DB
         inv_date = None
         if invoice_date:
             inv_date = datetime.strptime(invoice_date, "%Y-%m-%d").date()
+            
+        parsed_aliases = None
+        if structured_aliases is not None:
+            val = structured_aliases.strip()
+            if val:
+                import json
+                try:
+                    obj = json.loads(val)
+                    if not isinstance(obj, dict):
+                        raise ValueError("Structured Aliases must be a JSON dictionary (object).")
+                    parsed_aliases = val
+                except json.JSONDecodeError:
+                    raise ValueError("Structured Aliases must be valid JSON format.")
+                    
+        # 2. Apply DB state
+        supplier = get_or_create_supplier(db, supplier_name)
         
+        # Save Supplier AI instructions
+        if extraction_notes is not None:
+            supplier.extraction_notes = extraction_notes.strip() if extraction_notes.strip() else None
+            
+        if structured_aliases is not None:
+            supplier.structured_aliases = parsed_aliases
+            
+        # 3. Create session (this calls db.commit() internally)
         session_data = ReceivingSessionCreate(
             supplier_id=supplier.id,
             invoice_number=invoice_number,
@@ -254,8 +298,13 @@ def add_item_ui(
     db: Session = Depends(get_db)
 ):
     try:
+        from sqlalchemy import func
+        from app.models import ReceivingItem
+        max_row = db.query(func.max(ReceivingItem.bill_row_number)).filter(ReceivingItem.session_id == session_id).scalar() or 0
+        
         item_data = ReceivingItemCreate(
             session_id=session_id,
+            bill_row_number=max_row + 1,
             raw_description=raw_description,
             supplier_product_code=supplier_product_code,
             expected_qty=expected_qty,
@@ -310,7 +359,7 @@ def update_draft_endpoint(item_id: int, data: UpdateDraftRequest, db: Session = 
                 except:
                     pass
             profile["preferred_template_id"] = data.template_id
-            profile["last_used_at"] = str(datetime.utcnow())
+            profile["last_used_at"] = str(datetime.now(timezone.utc).replace(tzinfo=None))
             supplier.invoice_profile = json.dumps(profile)
             db.add(supplier)
     if data.billing_item is not None:
@@ -331,7 +380,9 @@ def get_draft_status_endpoint(item_id: int, db: Session = Depends(get_db)):
         
     draft = resolve_draft(db, item)
     import dataclasses
-    return dataclasses.asdict(draft)
+    res = dataclasses.asdict(draft)
+    res["billing_item"] = item.billing_item or ""
+    return res
 
 @router.post("/items/{item_id}/price", response_model=ReceivingItemRead)
 def confirm_pricing_endpoint(item_id: int, data: ConfirmPricingRequest, db: Session = Depends(get_db)):
