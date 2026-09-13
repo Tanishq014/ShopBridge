@@ -251,7 +251,7 @@ def draft_to_persistence_adapter(draft: LabelDraft, billing_item: str) -> tuple[
             core_fields["selling_price"] = decimal_or_none(val)
         elif sem == "coded_price":
             core_fields["coded_price"] = val
-        elif sem in ("item_display_name", "design", "itemname"):
+        elif sem in ("item_display_name", "design", "itemname", "item"):
             item_display_name = val
         elif sem in ("billing_item", "family_name"):
             pass # handled explicitly
