@@ -25,8 +25,8 @@ class PricingRule(Base):
     cost_rule_type = Column(String(40), nullable=True) # "MARKUP", "GROSS_MARGIN"
     cost_rule_percent = Column(Numeric(10, 2), nullable=True)
     mrp_discount_percent = Column(Numeric(10, 2), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class TemplateMaster(Base):
@@ -46,8 +46,8 @@ class TemplateMaster(Base):
     fields_extracted_file_mtime = Column(String(80), nullable=True)
     semantic_mappings = Column(Text, nullable=True)
     active_status = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class TallyItem(Base):
@@ -62,8 +62,8 @@ class TallyItem(Base):
     unit_name = Column(String(80), nullable=True)
     aliases = Column(Text, nullable=True)
     source = Column(String(40), default="odbc", nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
 
 class ProductFamily(Base):
     __tablename__ = "product_families"
@@ -81,8 +81,8 @@ class ProductFamily(Base):
     mrp_discount_percent = Column(Numeric(10, 2), nullable=True)
 
     active_status = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     default_template = relationship("TemplateMaster", foreign_keys=[default_template_id])
     variants = relationship("LabelVariant", back_populates="family")
@@ -109,8 +109,8 @@ class LabelVariant(Base):
     extra_field_values = Column(Text, nullable=True)
     template_id = Column(Integer, ForeignKey("template_masters.id"), nullable=True)
     status = Column(String(40), nullable=False, default="active", index=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     family = relationship("ProductFamily", back_populates="variants")
     template = relationship("TemplateMaster", foreign_keys=[template_id])
@@ -127,9 +127,9 @@ class PrintJob(Base):
     status = Column(String(40), nullable=False, default="pending", index=True)
     csv_file_path = Column(String(500), nullable=True)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     printed_at = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     variant = relationship("LabelVariant", back_populates="print_jobs")
     template = relationship("TemplateMaster", foreign_keys=[template_id])
@@ -142,8 +142,8 @@ class PosCart(Base):
     status = Column(String(40), nullable=False, default="active", index=True)
     cart_mode = Column(String(40), nullable=False, default="normal", server_default="normal", index=True)
     source_sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     items = relationship("PosCartItem", back_populates="cart", cascade="all, delete-orphan")
 
@@ -163,8 +163,8 @@ class PosCartItem(Base):
     rate_snapshot = Column(Numeric(10, 2), nullable=True)
     source_type = Column(String(40), nullable=True)
     is_manual_line = Column(Boolean, nullable=False, default=False, server_default=text("0"))
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     cart = relationship("PosCart", back_populates="items")
     variant = relationship("LabelVariant", foreign_keys=[variant_id])
@@ -189,8 +189,8 @@ class Sale(Base):
     tally_voucher_guid = Column(String(120), nullable=True)
     tally_last_error = Column(Text, nullable=True)
     upi_vpa = Column(String(200), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
 
@@ -222,7 +222,7 @@ class Supplier(Base):
     structured_aliases = Column(Text, nullable=True)
     extraction_notes = Column(Text, nullable=True)
     invoice_profile = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class SupplierProductMapping(Base):
@@ -234,7 +234,7 @@ class SupplierProductMapping(Base):
     supplier_product_code = Column(String(120), nullable=True, index=True)
     supplier_description = Column(String(250), nullable=True)
     family_id = Column(Integer, ForeignKey("product_families.id"), nullable=False, index=True)
-    last_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    last_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     confidence = Column(Numeric(5, 2), nullable=True)
 
     supplier = relationship("Supplier")
@@ -250,8 +250,8 @@ class ReceivingSession(Base):
     invoice_date = Column(DateTime, nullable=True)
     source_document_path = Column(String(500), nullable=True)
     status = Column(String(40), nullable=False, default="DRAFT", index=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     supplier = relationship("Supplier")
     items = relationship("ReceivingItem", back_populates="session", cascade="all, delete-orphan")
@@ -301,8 +301,8 @@ class ReceivingItem(Base):
     tally_status = Column(String(40), nullable=False, default="UNVERIFIED", index=True)
     pricing_status = Column(String(40), nullable=False, default="PENDING", index=True)
     label_status = Column(String(40), nullable=False, default="UNRESOLVED", index=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     session = relationship("ReceivingSession", back_populates="items")
     family = relationship("ProductFamily")
@@ -339,6 +339,6 @@ class SupplierExtractionExample(Base):
     billing_item = Column(Text, nullable=True)
     attributes = Column(Text, nullable=True)
     approved_by_user = Column(Boolean, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     supplier = relationship("Supplier")

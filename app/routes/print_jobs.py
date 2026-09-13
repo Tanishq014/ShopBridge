@@ -115,7 +115,7 @@ def mark_printed(job_id: int, db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if job:
         job.status = "printed"
-        job.printed_at = datetime.now(timezone.utc)
+        job.printed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.add(job)
         db.commit()
     return RedirectResponse("/print-jobs", status_code=303)

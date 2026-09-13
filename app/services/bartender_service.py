@@ -76,7 +76,7 @@ def create_csv_print_job(db: Session, job: PrintJob) -> Path:
     variant = job.variant
     template = job.template
     family = variant.family
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d_%H%M%S")
     path = PRINT_JOBS_DIR / f"print_job_{job.id}_{timestamp}.csv"
     required_fields = parse_required_fields(template.required_fields)
 
@@ -207,7 +207,7 @@ def process_print_job(
         )
 
     job.status = "printed"
-    job.printed_at = datetime.now(timezone.utc)
+    job.printed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     job.error_message = None
     db.add(job)
     db.commit()
