@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -119,7 +119,7 @@ def map_supplier_product(
         if existing:
             if existing.family_id != family_id:
                 raise ValueError("Conflicting mapping: supplier product code is already mapped to a different family.")
-            existing.last_seen_at = datetime.utcnow()
+            existing.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
             existing.supplier_description = supplier_description
             if confidence is not None:
                 existing.confidence = confidence
@@ -214,7 +214,7 @@ def create_receiving_item(db: Session, data: ReceivingItemCreate) -> ReceivingIt
     return item
 
 
-def tally_item(db: Session, item_id: int, received_qty: Decimal) -> ReceivingItem:
+def tally_item(db: Session, item_id: int, received_qty: Optional[Decimal]) -> ReceivingItem:
     item = db.get(ReceivingItem, item_id)
     if not item:
         raise ValueError("Receiving item not found")
@@ -222,12 +222,12 @@ def tally_item(db: Session, item_id: int, received_qty: Decimal) -> ReceivingIte
     if item.session.status != "RECEIVING":
         raise ValueError("Cannot tally item unless session is RECEIVING")
         
-    if received_qty < 0:
+    if received_qty is not None and received_qty < 0:
         raise ValueError("Received quantity cannot be negative")
         
     item.received_qty = received_qty
     
-    if received_qty == 0:
+    if received_qty is None:
         item.tally_status = "UNVERIFIED"
     elif item.expected_qty is not None and item.received_qty == item.expected_qty:
         item.tally_status = "VERIFIED"
@@ -299,7 +299,7 @@ def confirm_item_pricing(
     item.mrp = mrp
     item.confirmed_selling_price = selling_price
     item.pricing_status = "CONFIRMED"
-    item.pricing_confirmed_at = datetime.utcnow()
+    item.pricing_confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
     # Default label status if we haven't printed
     if item.label_status in ("UNRESOLVED", "NOT_REQUIRED", "FAILED"):

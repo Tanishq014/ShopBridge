@@ -167,7 +167,7 @@ class ReceivingItemRead(ReceivingItemCreate):
 
 
 class TallyItemRequest(BaseModel):
-    received_qty: Decimal
+    received_qty: Optional[Decimal] = None
 
 
 class ConfirmPricingRequest(BaseModel):
