@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -115,7 +115,7 @@ def mark_printed(job_id: int, db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if job:
         job.status = "printed"
-        job.printed_at = datetime.utcnow()
+        job.printed_at = datetime.now(timezone.utc)
         db.add(job)
         db.commit()
     return RedirectResponse("/print-jobs", status_code=303)

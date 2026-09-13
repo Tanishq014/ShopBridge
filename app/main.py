@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -54,7 +54,7 @@ def startup() -> None:
     # Auto-delete bills older than 20 days
     db = SessionLocal()
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=20)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=20)
         # We must use ORM delete to trigger 'delete-orphan' cascade on SaleItem
         from sqlalchemy import select, update
         from app.models import PosCart
