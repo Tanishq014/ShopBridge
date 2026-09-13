@@ -14,10 +14,29 @@
   <div id="new-session-form" class="session-card" hidden style="background: #f1f8ff; border-color: #c8e1ff; margin-bottom: 2rem;">
     <form action="/receiving/new" method="POST">
       <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-        <div><label>Supplier Name</label><br><input type="text" name="supplier_name" required style="padding: 0.5rem;"></div>
+        <div>
+          <label>Supplier Name</label><br>
+          <input type="text" name="supplier_name" id="supplier_input" list="supplier_list" required style="padding: 0.5rem;" autocomplete="off">
+          <datalist id="supplier_list">
+            {% for s in suppliers %}
+            <option value="{{ s.name }}" data-notes="{{ s.extraction_notes or '' }}" data-aliases="{{ s.structured_aliases or '' }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
         <div><label>Invoice Number</label><br><input type="text" name="invoice_number" style="padding: 0.5rem;"></div>
         <div><label>Invoice Date</label><br><input type="date" name="invoice_date" style="padding: 0.5rem;"></div>
       </div>
+      
+      <div style="margin-top: 1rem;">
+        <label>AI Extraction Instructions (Optional)</label><br>
+        <textarea name="extraction_notes" id="extraction_notes" style="width: 100%; height: 60px; padding: 0.5rem;" placeholder="E.g. Ignore the 'Rate' column, use 'Net Rate' instead."></textarea>
+      </div>
+      
+      <div style="margin-top: 1rem;">
+        <label>AI Column Aliases JSON (Optional)</label><br>
+        <textarea name="structured_aliases" id="structured_aliases" style="width: 100%; height: 60px; padding: 0.5rem; font-family: monospace;" placeholder='{"purchase_rate": "Net Rate", "brand": "Mfg"}'></textarea>
+      </div>
+
       <button type="submit" class="button primary" style="margin-top: 1rem;">CREATE SESSION</button>
       <button type="button" class="button outline" style="margin-top: 1rem; margin-left: 0.5rem;" onclick="document.getElementById('new-session-form').hidden = true;">CANCEL</button>
     </form>
@@ -59,4 +78,50 @@
     {% endfor %}
   </div>
 </div>
+
+<script>
+  const supplierInput = document.getElementById('supplier_input');
+  const extractionNotes = document.getElementById('extraction_notes');
+  const structuredAliases = document.getElementById('structured_aliases');
+  const supplierList = document.getElementById('supplier_list');
+
+  function updateSupplierSettings() {
+    const val = supplierInput.value;
+    const options = supplierList.options;
+    let found = false;
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].value === val) {
+        extractionNotes.value = options[i].getAttribute('data-notes') || "";
+        structuredAliases.value = options[i].getAttribute('data-aliases') || "";
+        found = true;
+        break;
+      }
+    }
+    // If exact match not found (i.e. typing a new supplier), clear boxes
+    if (!found && val.trim() !== "") {
+        // Wait, if they are currently typing, we shouldn't wipe out what they might have started typing in the notes box.
+        // Actually, it's safer to only clear if we are reacting to a change away from a known supplier.
+        // The instructions said "if i add a new one keep the box blank".
+    }
+  }
+
+  // Handle selection from dropdown
+  supplierInput.addEventListener('input', (e) => {
+    // If it's not a direct keystroke (like selecting from datalist), or if it matches exactly
+    const val = e.target.value;
+    const options = supplierList.options;
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].value === val) {
+        extractionNotes.value = options[i].getAttribute('data-notes') || "";
+        structuredAliases.value = options[i].getAttribute('data-aliases') || "";
+        return;
+      }
+    }
+  });
+
+  // We only populate on exact match from datalist.
+  // We intentionally do not clear the fields on 'change' or 'blur' if a match is not found,
+  // because the user might have manually typed notes for a new supplier and is just fixing a typo
+  // in the supplier name field.
+</script>
 {% endblock %}

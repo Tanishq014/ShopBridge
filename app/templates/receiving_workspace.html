@@ -43,7 +43,7 @@
       <button class="button outline" id="btn-review-mismatches" style="margin-top: 0.5rem; padding: 0.5rem; font-size: 0.9rem;">Review Mismatches</button>
     </div>
     
-    {% if session.status == 'DRAFT' %}
+    {% if session.status in ['DRAFT', 'RECEIVING'] %}
     <div class="workspace-summary draft-mode">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
         <div style="text-align: left;">
@@ -101,9 +101,11 @@
         </form>
       </div>
       
+      {% if session.status == 'DRAFT' %}
       <form action="/receiving/{{ session.id }}/start" method="post" style="margin-top: 1rem;">
         <button type="submit" class="button success" id="btn-start-receiving">Start Receiving</button>
       </form>
+      {% endif %}
     </div>
     {% elif session.status in ['COMPLETED', 'CANCELLED'] %}
     <div class="workspace-summary">

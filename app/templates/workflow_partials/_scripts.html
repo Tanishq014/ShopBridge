@@ -934,6 +934,11 @@
     }
 
     function firstFieldAfterBillingItem() {
+      const isReversed = reverseMrpToggle && reverseMrpToggle.checked;
+      const pricingFields = isReversed
+        ? [fields.mrp, fields.margin, fields.coded]
+        : [fields.coded, fields.margin, fields.mrp];
+        
       return [
         fields.item,
         fields.article,
@@ -942,9 +947,7 @@
         fields.batch,
         fields.expiry,
         ...Object.values(customInputByField),
-        fields.coded,
-        fields.margin,
-        fields.mrp,
+        ...pricingFields,
         printQuantityInput,
       ].find(isFocusableEntryField) || templateSelect;
     }
