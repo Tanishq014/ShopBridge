@@ -154,46 +154,43 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
         
         val = None
         source = "MISSING"
-        missing = True
         
         # 1. MANUAL
         if sem_field in manual:
             val = manual[sem_field]
             source = "MANUAL"
-            missing = False
         # 2. PRICING / BILLING ITEM
         elif sem_field in pricing_context:
             val = pricing_context[sem_field]
             source = "PRICING"
-            missing = False
         # 3. EXTRACTED
         elif sem_field in extracted:
             val = extracted[sem_field]
             source = "AI"
-            missing = False
         # 4. PREVIOUS
         elif sem_field in previous and sem_field not in UNSAFE_INHERITANCE_FIELDS:
             val = previous[sem_field]
             source = "PREVIOUS"
-            missing = False
         # 5. DEFAULT
         elif t_field in defaults:
             val = defaults[t_field]
             source = "DEFAULT"
-            missing = False
             
         is_strictly_required = not template_field_settings.is_optional(sem_field) and sem_field not in ["barcode", "coded_price"]
         
-        if missing and is_strictly_required:
+        # A field is considered missing if its final resolved value is empty
+        is_empty = not val or not str(val).strip()
+        
+        if is_empty and is_strictly_required:
             ready = False
             
         fields.append(DraftField(
             template_field=t_field,
             semantic_field=sem_field,
-            value=val,
-            source=source,
+            value=val if not is_empty else "",
+            source=source if not is_empty or source == "MANUAL" else "MISSING",
             required=is_strictly_required,
-            missing=missing if is_strictly_required else False,
+            missing=is_empty if is_strictly_required else False,
             default_value=defaults.get(t_field)
         ))
         

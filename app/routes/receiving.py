@@ -362,10 +362,27 @@ def update_draft_endpoint(item_id: int, data: UpdateDraftRequest, db: Session = 
             profile["last_used_at"] = str(datetime.now(timezone.utc).replace(tzinfo=None))
             supplier.invoice_profile = json.dumps(profile)
             db.add(supplier)
-    if data.billing_item is not None:
-        item.billing_item = data.billing_item
-    if data.manual_overrides is not None:
-        item.manual_overrides = data.manual_overrides
+    update_data = data.model_dump(exclude_unset=True)
+    if "billing_item" in update_data:
+        item.billing_item = update_data["billing_item"]
+        
+    if "manual_overrides" in update_data:
+        from app.services.workflow.form_state_service import parse_extra_field_values
+        import json
+        try:
+            current = parse_extra_field_values(item.manual_overrides)
+            new_overrides = parse_extra_field_values(data.manual_overrides)
+            current.update(new_overrides)
+            item.manual_overrides = json.dumps(current)
+        except Exception:
+            item.manual_overrides = data.manual_overrides
+            
+    if "mrp" in update_data:
+        item.mrp = update_data["mrp"]
+    if "selling_price" in update_data:
+        item.confirmed_selling_price = update_data["selling_price"]
+    if "purchase_rate" in update_data:
+        item.landing_price = update_data["purchase_rate"]
         
     db.add(item)
     db.commit()
@@ -396,7 +413,10 @@ def confirm_pricing_endpoint(item_id: int, data: ConfirmPricingRequest, db: Sess
 @router.post("/items/{item_id}/print", response_model=ReceivingItemRead)
 def print_label_endpoint(item_id: int, data: PrintLabelRequest, db: Session = Depends(get_db)):
     try:
-        return queue_print_item(db, item_id, data.copies, force_reprint=data.force_reprint)
+        item = queue_print_item(db, item_id, data.copies, force_reprint=data.force_reprint)
+        if item.label_status == "FAILED":
+            raise HTTPException(status_code=500, detail="Print job failed. Check printer connection and logs.")
+        return item
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

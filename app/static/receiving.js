@@ -371,6 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Populate pricing fields from data attrs
+    document.getElementById('draft-billing-item').value = row.getAttribute('data-billing-item') || '';
     document.getElementById('input-landing-price').value = row.getAttribute('data-landing-price') || row.getAttribute('data-purchase-rate') || '';
     let mrp = parseFloat(row.getAttribute('data-mrp'));
     let selling = parseFloat(row.getAttribute('data-confirmed-selling-price') || row.getAttribute('data-mrp'));
@@ -416,9 +417,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateDiffIndicator();
     
-    // Automatically load draft and pricing context
+    // Automatically load draft
     loadDraftStatus();
-    loadPricingContext(row);
     clearTimeout(sheetTimeout);
     sheet.hidden = false;
     backdrop.hidden = false;
@@ -433,15 +433,22 @@ document.addEventListener('DOMContentLoaded', () => {
           if (active && sheet.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'SELECT')) {
               return; // User already clicked into a field manually, don't steal focus
           }
-          const inputs = Array.from(sheet.querySelectorAll('input:not([disabled]):not([readonly])'))
-              .filter(el => el.offsetParent !== null && el.type !== 'hidden');
-          const firstEmpty = inputs.find(el => !el.value);
-          if (firstEmpty) {
-              firstEmpty.focus();
-              if (typeof firstEmpty.select === 'function') firstEmpty.select();
-          } else if (inputs.length > 0) {
-              inputs[0].focus();
-              if (typeof inputs[0].select === 'function') inputs[0].select();
+          const billingInput = document.getElementById('draft-billing-item');
+          const landingInput = document.getElementById('input-landing-price');
+          
+          let targetInput = null;
+          if (billingInput && !billingInput.value) {
+              targetInput = billingInput;
+          } else if (landingInput && !landingInput.value) {
+              targetInput = landingInput;
+          } else {
+              const isMode2 = document.getElementById('toggle-pricing-mode')?.checked;
+              targetInput = isMode2 ? document.getElementById('input-mrp') : document.getElementById('input-calc-margin');
+          }
+          
+          if (targetInput && targetInput.offsetParent !== null) {
+              targetInput.focus();
+              if (typeof targetInput.select === 'function') targetInput.select();
           }
       }, 200); // Wait for transition and layout
     }, 10);
@@ -556,68 +563,6 @@ document.addEventListener('DOMContentLoaded', () => {
       submitTally(currentExpectedQtyString, true);
   });
 
-  async function loadPricingContext(row, familyId) {
-    const landing = document.getElementById('input-landing-price').value;
-    const mrp = document.getElementById('input-mrp').value;
-    
-    const suggestionsDiv = document.getElementById('pricing-suggestions');
-    if (suggestionsDiv) suggestionsDiv.innerHTML = '';
-    const contextDiv = document.getElementById('pricing-context');
-    if (contextDiv) contextDiv.innerHTML = 'Loading context...';
-    
-    try {
-      const [sugRes, prevRes] = await Promise.all([
-        fetch(`/receiving/items/${currentItemId}/pricing_suggestions?landing_price=${landing || ''}&mrp=${mrp || ''}`),
-        fetch(`/receiving/items/${currentItemId}/previous_price`)
-      ]);
-      
-      const suggestions = await sugRes.json();
-      const prev = await prevRes.json();
-      
-      let ctxHtml = '';
-      if (prev.mrp !== null || prev.selling_price !== null) {
-        ctxHtml += `<strong>Previous:</strong> MRP ₹${prev.mrp || '-'} / Sell ₹${prev.selling_price || '-'} `;
-      } else {
-        ctxHtml += `<strong>Previous:</strong> None `;
-      }
-      
-      if (suggestions.cost_rule_type) {
-        ctxHtml += `| <strong>Rule:</strong> ${suggestions.cost_rule_type} ${suggestions.cost_rule_percent}% `;
-      }
-      if (suggestions.mrp_discount_percent) {
-        ctxHtml += `| <strong>Disc Rule:</strong> ${suggestions.mrp_discount_percent}% `;
-      }
-      contextDiv.innerHTML = ctxHtml || 'No pricing rules found.';
-      
-      if (suggestions.cost_based_suggestion) {
-        const btn = document.createElement('button');
-        btn.className = 'button outline';
-        btn.style.padding = '4px 8px';
-        btn.textContent = `Cost Based: ₹${Math.round(parseFloat(suggestions.cost_based_suggestion)).toString()}`;
-        btn.onclick = () => { document.getElementById('input-selling-price').value = Math.round(parseFloat(suggestions.cost_based_suggestion)).toString(); updatePricingIndicators(); };
-        suggestionsDiv.appendChild(btn);
-      }
-      
-      if (suggestions.mrp_based_suggestion) {
-        const btn = document.createElement('button');
-        btn.className = 'button outline';
-        btn.style.padding = '4px 8px';
-        btn.textContent = `MRP Based: ₹${Math.round(parseFloat(suggestions.mrp_based_suggestion)).toString()}`;
-        btn.onclick = () => { document.getElementById('input-selling-price').value = Math.round(parseFloat(suggestions.mrp_based_suggestion)).toString(); updatePricingIndicators(); };
-        suggestionsDiv.appendChild(btn);
-      }
-      
-      if (!document.getElementById('input-selling-price').value && suggestions.unified_suggestion && !suggestions.is_conflict) {
-        document.getElementById('input-selling-price').value = Math.round(parseFloat(suggestions.unified_suggestion)).toString();
-      }
-      
-      updatePricingIndicators();
-    } catch (e) {
-      contextDiv.innerHTML = 'Error loading context.';
-      console.error(e);
-    }
-  }
-
   function updatePricingIndicators(source = 'prices') {
     const landing = parseFloat(document.getElementById('input-landing-price').value);
     const mrp = parseFloat(document.getElementById('input-mrp').value);
@@ -641,6 +586,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    const liveSellingPreview = document.getElementById('live-selling-price-preview');
+    if (liveSellingPreview) {
+        if (!isNaN(selling)) {
+            liveSellingPreview.textContent = Math.round(selling);
+            liveSellingPreview.style.display = 'inline';
+        } else {
+            liveSellingPreview.style.display = 'none';
+        }
+    }
+    
     // Keep track of coded price in the dedicated UI field
     const codeInput = document.getElementById('input-coded-price');
     if (codeInput && document.activeElement !== codeInput) {
@@ -656,6 +611,94 @@ document.addEventListener('DOMContentLoaded', () => {
           updateCodedPriceBox('');
       }
     }
+  }
+  
+  // --- Multi-Mode Layout Logic ---
+  
+  function applyPricingMode(isMode2) {
+      const fieldMargin = document.getElementById('field-margin');
+      const fieldDisc = document.getElementById('field-disc');
+      const fieldMrp = document.getElementById('field-mrp');
+      const fieldCalcBox = document.getElementById('field-calc-box');
+      
+      const fieldCode = document.getElementById('field-code');
+      const pricingSection = document.getElementById('pricing-section');
+      if (!fieldMargin || !fieldDisc || !fieldMrp || !fieldCalcBox || !fieldCode || !pricingSection) return;
+      
+      if (isMode2) {
+          // Top-Down Pricing (Mode 2)
+          fieldMargin.style.display = 'none';
+          fieldDisc.style.display = 'none';
+          fieldCalcBox.style.display = 'block';
+          
+          // Physically reorder DOM nodes for native Tab flow
+          pricingSection.appendChild(fieldMrp);
+          pricingSection.appendChild(fieldCalcBox);
+          pricingSection.appendChild(fieldCode);
+          
+          fieldMrp.style.order = '1';
+          fieldCalcBox.style.order = '2';
+          fieldCode.style.order = '3';
+      } else {
+          // Bottom-Up Pricing (Mode 1)
+          fieldMargin.style.display = 'block';
+          fieldDisc.style.display = 'block';
+          fieldCalcBox.style.display = 'none';
+          
+          // Physically reorder DOM nodes for native Tab flow
+          pricingSection.appendChild(fieldMargin);
+          pricingSection.appendChild(fieldCode);
+          pricingSection.appendChild(fieldDisc);
+          pricingSection.appendChild(fieldMrp);
+          
+          fieldMargin.style.order = '1';
+          fieldCode.style.order = '2';
+          fieldDisc.style.order = '3';
+          fieldMrp.style.order = '4';
+      }
+      localStorage.setItem('pricing_strategy_mode', isMode2 ? 'top_down' : 'bottom_up');
+  }
+  
+  function computeMrpCalculation(currentMrp, expr) {
+      if (!expr || !Number.isFinite(currentMrp) || currentMrp <= 0) return null;
+
+      let isPercentage = expr.endsWith("%");
+      let cleanExpr = isPercentage ? expr.slice(0, -1).trim() : expr;
+
+      let op = "";
+      if (["+", "-", "*", "/"].includes(cleanExpr[0])) {
+        op = cleanExpr[0];
+        cleanExpr = cleanExpr.slice(1).trim();
+      }
+
+      let val = parseFloat(cleanExpr);
+      if (isNaN(val)) return null;
+
+      if (op === "" && !isPercentage) {
+        isPercentage = true;
+        if (val < 100) {
+          op = "-";
+        } else {
+          op = "/";
+        }
+      }
+
+      let newRate = currentMrp;
+      if (isPercentage) {
+        if (op === "-" || op === "+") {
+          val = (currentMrp * val) / 100;
+        } else if (op === "/" || op === "*") {
+          val = val / 100;
+        }
+      }
+
+      if (op === "-") newRate = currentMrp - val;
+      else if (op === "+") newRate = currentMrp + val;
+      else if (op === "*") newRate = currentMrp * val;
+      else if (op === "/") newRate = currentMrp / val;
+      else newRate = val;
+
+      return newRate;
   }
   
   function generateCodedPrice(price) {
@@ -730,9 +773,61 @@ document.addEventListener('DOMContentLoaded', () => {
       }
   }
   
-  document.getElementById('input-landing-price')?.addEventListener('input', () => { updatePricingIndicators(); if(document.getElementById('pricing-section').hidden === false) loadPricingContext(document.getElementById('item-row-' + currentItemId)); });
-  document.getElementById('input-mrp')?.addEventListener('input', () => { updatePricingIndicators(); if(document.getElementById('pricing-section').hidden === false) loadPricingContext(document.getElementById('item-row-' + currentItemId)); });
+  const modeToggle = document.getElementById('toggle-pricing-mode');
+  if (modeToggle) {
+      modeToggle.checked = localStorage.getItem('pricing_strategy_mode') === 'top_down';
+      applyPricingMode(modeToggle.checked);
+      modeToggle.addEventListener('change', (e) => {
+          applyPricingMode(e.target.checked);
+      });
+  }
+  
+  const calcBox = document.getElementById('input-calc-box');
+  if (calcBox) {
+      calcBox.addEventListener('input', (e) => {
+          const expr = e.target.value.trim();
+          if (!expr) return;
+          const currentMrp = parseFloat(document.getElementById('input-mrp').value) || 0;
+          if (currentMrp <= 0) return;
+          
+          const calcRate = computeMrpCalculation(currentMrp, expr);
+          if (calcRate !== null && Number.isFinite(calcRate) && calcRate > 0) {
+              const roundedPrice = Math.max(1, Math.round(calcRate));
+              document.getElementById('input-selling-price').value = String(roundedPrice);
+              
+              const encoded = generateCodedPrice(roundedPrice);
+              const codeToDisplay = encoded || String(roundedPrice);
+              const codeInput = document.getElementById('input-coded-price');
+              if (codeInput.value !== codeToDisplay) {
+                  codeInput.value = codeToDisplay;
+                  codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+          }
+      });
+  }
+  
+  document.getElementById('input-landing-price')?.addEventListener('input', () => { updatePricingIndicators(); });
+  document.getElementById('input-mrp')?.addEventListener('input', () => { updatePricingIndicators(); });
   document.getElementById('input-selling-price')?.addEventListener('input', updatePricingIndicators);
+  
+  // Auto-save core pricing fields to draft
+  document.getElementById('draft-billing-item')?.addEventListener('change', (e) => {
+      updateDraft({ billing_item: e.target.value });
+  });
+  
+  document.getElementById('pricing-section')?.addEventListener('change', (e) => {
+      if (e.target.tagName === 'INPUT') {
+          const landing = parseFloat(document.getElementById('input-landing-price').value);
+          const mrp = parseFloat(document.getElementById('input-mrp').value);
+          const selling = parseFloat(document.getElementById('input-selling-price').value);
+          
+          updateDraft({
+              purchase_rate: isNaN(landing) ? null : landing,
+              mrp: isNaN(mrp) ? null : mrp,
+              selling_price: isNaN(selling) ? null : selling
+          });
+      }
+  });
   
   document.getElementById('input-coded-price')?.addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase(); // Force uppercase
@@ -870,7 +965,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const billInput = document.getElementById('draft-billing-item');
         if (billInput) {
-            billInput.value = draft.billing_item || window.currentSuggestedBilling || '';
+            if (document.activeElement !== billInput) {
+                billInput.value = draft.billing_item || window.currentSuggestedBilling || '';
+            }
             if (!draft.billing_item && window.currentSuggestedBilling) {
                 updateDraft({ billing_item: window.currentSuggestedBilling });
             }
@@ -878,7 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const container = document.getElementById('dynamic-fields-container');
         if (!container) return;
-        container.innerHTML = '';
+        const newFields = draft.fields.filter(f => !['mrp', 'selling_price', 'coded_price', 'family_name'].includes(f.semantic_field));
         
         const fieldPriority = {
             brand: 1,
@@ -888,13 +985,10 @@ document.addEventListener('DOMContentLoaded', () => {
             article_no: 3,
             size: 4,
             batch_no: 5,
-            expiry: 6,
-            coded_price: 90,
-            mrp: 91,
-            selling_price: 92
+            expiry: 6
         };
 
-        draft.fields.sort((a, b) => {
+        newFields.sort((a, b) => {
             const pA = fieldPriority[a.semantic_field] || 50;
             const pB = fieldPriority[b.semantic_field] || 50;
             return pA - pB;
@@ -905,34 +999,62 @@ document.addEventListener('DOMContentLoaded', () => {
             if (field.semantic_field === 'coded_price' && field.default_value) {
                 window.codeTargetLength = field.default_value.length;
             }
-            if (['mrp', 'selling_price', 'coded_price', 'family_name'].includes(field.semantic_field)) {
-                return; // Hide these from dynamic fields, they belong in dedicated UI inputs (Pricing or Billing Item)
-            }
-            
-            const div = document.createElement('div');
-            div.style.flex = "1 1 calc(50% - 0.5rem)";
-            div.style.minWidth = "120px";
-            const isMissing = field.missing;
-            div.innerHTML = `<label style="font-size: 11px; font-weight: 600;">${field.template_field}${isMissing ? ' <span style="color:var(--danger)">*</span>' : ''}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px; ${isMissing ? 'border-color:var(--danger)' : ''}" value="${field.value || ''}"></label>`;
-            container.appendChild(div);
         });
         
-        document.querySelectorAll('.draft-field-input').forEach(input => {
-            input.addEventListener('input', (e) => {
-                // Capitalize Billing Item or Code fields if they are dynamically rendered
-                const fieldName = e.target.getAttribute('data-field');
-                if (fieldName === 'billing_item' || fieldName === 'supplier_product_code') {
-                    e.target.value = e.target.value.toUpperCase();
+        const existingInputs = Array.from(container.querySelectorAll('.draft-field-input'));
+        const existingSemanticFields = existingInputs.map(input => input.getAttribute('data-field'));
+        const newSemanticFields = newFields.map(f => f.semantic_field);
+        
+        const schemaChanged = JSON.stringify(existingSemanticFields) !== JSON.stringify(newSemanticFields);
+        
+        if (schemaChanged) {
+            container.innerHTML = '';
+            newFields.forEach(field => {
+                const div = document.createElement('div');
+                div.style.flex = "1 1 calc(50% - 0.5rem)";
+                div.style.minWidth = "120px";
+                const isMissing = field.missing;
+                div.innerHTML = `<label style="font-size: 11px; font-weight: 600;">${field.template_field}${isMissing ? ' <span class="missing-star" style="color:var(--danger)">*</span>' : ''}<br><input type="text" data-field="${field.semantic_field}" class="form-input draft-field-input" style="width:100%; margin-top:2px; padding:4px; ${isMissing ? 'border-color:var(--danger)' : ''}" value="${field.value || ''}"></label>`;
+                container.appendChild(div);
+            });
+        } else {
+            newFields.forEach(field => {
+                const input = container.querySelector(`.draft-field-input[data-field="${field.semantic_field}"]`);
+                if (input) {
+                    if (document.activeElement !== input) {
+                        input.value = field.value || '';
+                    }
+                    if (field.missing) {
+                        input.style.borderColor = 'var(--danger)';
+                        const star = input.parentElement.querySelector('.missing-star');
+                        if (!star) input.parentElement.innerHTML = input.parentElement.innerHTML.replace('<br>', ' <span class="missing-star" style="color:var(--danger)">*</span><br>');
+                    } else {
+                        input.style.borderColor = '';
+                        const star = input.parentElement.querySelector('.missing-star');
+                        if (star) star.remove();
+                    }
                 }
             });
-            input.addEventListener('change', (e) => {
-                const fieldName = e.target.getAttribute('data-field');
-                const val = e.target.value;
-                const manualOverrides = draft.manual_overrides || {};
-                manualOverrides[fieldName] = val;
-                updateDraft({ manual_overrides: JSON.stringify(manualOverrides) });
+        }
+        
+        if (schemaChanged) {
+            document.querySelectorAll('.draft-field-input').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    // Capitalize Billing Item or Code fields if they are dynamically rendered
+                    const fieldName = e.target.getAttribute('data-field');
+                    if (fieldName === 'billing_item' || fieldName === 'supplier_product_code') {
+                        e.target.value = e.target.value.toUpperCase();
+                    }
+                });
+                input.addEventListener('change', (e) => {
+                    const fieldName = e.target.getAttribute('data-field');
+                    const val = e.target.value;
+                    const manualOverrides = draft.manual_overrides || {};
+                    manualOverrides[fieldName] = val;
+                    updateDraft({ manual_overrides: JSON.stringify(manualOverrides) });
+                });
             });
-        });
+        }
         
         if (!draft.ready) {
             document.getElementById('btn-confirm-print').disabled = true;
@@ -952,15 +1074,54 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Draft error", err);
     }
   }
+  
+  let isPrinting = false;
 
   async function confirmAndPrint(isReprint=false) {
+    if (isPrinting) return;
+    
     const landing = document.getElementById('input-landing-price').value;
     const mrp = document.getElementById('input-mrp').value;
     const selling = document.getElementById('input-selling-price').value;
     const copies = document.getElementById('input-label-copies').value;
+    const code = document.getElementById('input-coded-price').value;
+    
+    if (!copies || isNaN(copies) || parseInt(copies) < 1) {
+        showToast("Must be at least 1 copy to print.", "error");
+        return;
+    }
+    if (parseInt(copies) > 24) {
+        showToast("Maximum print quantity is 24.", "error");
+        return;
+    }
+    
+    if (!isReprint) {
+        const cleanCode = String(code || "").trim();
+        if (!cleanCode) {
+            showToast("Price code is required.", "error");
+            return;
+        }
+        if (/^\d+$/.test(cleanCode)) {
+            showToast("Code cannot be only numbers. Use coded letters too.", "error");
+            return;
+        }
+    }
     
     if (!selling) return showToast('Selling Price is required', 'error');
-    if (copies === '') return showToast('Copies is required (0 for none)', 'error');
+    
+    if (mrp && selling && parseFloat(selling) < (parseFloat(mrp) * 0.5)) {
+        if (!window.confirm(`WARNING: Selling price (₹${selling}) is suspiciously low (less than 50% of MRP ₹${mrp}).\n\nPress OK/Enter to proceed with printing, or Cancel/Escape to abort.`)) {
+            return;
+        }
+    }
+    
+    isPrinting = true;
+    const btnPrint = document.getElementById('btn-confirm-print');
+    const originalText = btnPrint ? btnPrint.textContent : 'CONFIRM & PRINT';
+    if (btnPrint) {
+        btnPrint.disabled = true;
+        btnPrint.textContent = 'PRINTING...';
+    }
     
     try {
       // 1. Force save the exact padded Code into the draft so the backend doesn't overwrite it
@@ -1009,6 +1170,12 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast(isReprint ? 'Reprint requested!' : 'Saved and print requested!');
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      isPrinting = false;
+      if (btnPrint) {
+          btnPrint.disabled = false;
+          btnPrint.textContent = originalText;
+      }
     }
   }
 
@@ -1052,16 +1219,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   // Ensure focused inputs remain visible when mobile keyboard appears
-  const scrollContent = document.querySelector('.sheet-scroll-content');
-  if (scrollContent) {
-      scrollContent.addEventListener('focusin', (e) => {
-          if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
-              setTimeout(() => {
-                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }, 300); // Wait for keyboard animation
-          }
-      });
-  }
+  // (Removed custom scrollIntoView logic as it conflicts with modern browser native keyboard scroll)
 
   // Keyboard navigation for Tally Sheet (like stock print page)
   const tallySheet = document.getElementById('tally-sheet');
@@ -1069,14 +1227,34 @@ document.addEventListener('DOMContentLoaded', () => {
       tallySheet.addEventListener('keydown', (e) => {
           if (['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) {
               const active = document.activeElement;
-              if (active && active.tagName === 'INPUT' && !active.readOnly && !active.disabled) {
-                  const inputs = Array.from(tallySheet.querySelectorAll('input:not([disabled]):not([readonly])'))
-                      .filter(el => el.offsetParent !== null);
-                  const index = inputs.indexOf(active);
+              if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT') && !active.readOnly && !active.disabled) {
+                  if (e.key === 'Enter' && active.id === 'input-label-copies') {
+                      e.preventDefault();
+                      confirmAndPrint(false);
+                      return;
+                  }
+                  
+                  let elements = Array.from(tallySheet.querySelectorAll('input:not([disabled]):not([readonly]), select:not([disabled])'))
+                      .filter(el => el.offsetParent !== null && el.type !== 'hidden')
+                      .map((el, i) => ({ el, i }));
+                  
+                  elements.sort((a, b) => {
+                      const parentA = a.el.closest('.form-field')?.parentElement;
+                      const parentB = b.el.closest('.form-field')?.parentElement;
+                      if (parentA && parentB && parentA === parentB && window.getComputedStyle(parentA).display.includes('flex')) {
+                          const orderA = parseInt(window.getComputedStyle(a.el.closest('.form-field')).order) || 0;
+                          const orderB = parseInt(window.getComputedStyle(b.el.closest('.form-field')).order) || 0;
+                          if (orderA !== orderB) return orderA - orderB;
+                      }
+                      return a.i - b.i;
+                  });
+                  
+                  elements = elements.map(x => x.el);
+                  const index = elements.indexOf(active);
                   if (index > -1) {
                       e.preventDefault();
                       const dir = e.key === 'ArrowUp' ? -1 : 1;
-                      const next = inputs[index + dir];
+                      const next = elements[index + dir];
                       if (next) {
                           next.focus();
                           if (typeof next.select === 'function') next.select();

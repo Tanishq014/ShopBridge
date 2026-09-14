@@ -148,7 +148,8 @@
              data-family-id="{{ item.family_id or '' }}"
              data-landing-price="{{ item.landing_price if item.landing_price is not none else '' }}"
              data-received-qty="{{ item.received_qty if item.received_qty is not none else '' }}"
-             data-confirmed-selling-price="{{ item.confirmed_selling_price if item.confirmed_selling_price is not none else '' }}">
+             data-confirmed-selling-price="{{ item.confirmed_selling_price if item.confirmed_selling_price is not none else '' }}"
+             data-billing-item="{{ item.billing_item if item.billing_item else '' }}">
              
           <div class="item-details" style="padding-left: 0.25rem; flex-direction: row; align-items: center; justify-content: space-between;">
             <h4 style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 0.5rem;">
@@ -176,12 +177,12 @@
           </div>
         </div>
         
-        <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; flex-shrink: 0; padding-right: 0.25rem;">
+        <div style="display: flex; flex-direction: row; align-items: center; justify-content: flex-end; flex-shrink: 0; padding-right: 0.25rem; gap: 0.5rem;">
           {% if item.mrp is not none %}
             <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">MRP ₹{{ '%g' % item.mrp }}</span>
           {% endif %}
           {% if item.purchase_rate is not none %}
-            <span style="font-size: 0.9rem; color: var(--text-main); font-weight: 700;">₹{{ '%g' % item.purchase_rate }}</span>
+            <span style="font-size: 0.95rem; color: var(--text-main); font-weight: 700;">₹{{ '%g' % item.purchase_rate }}</span>
           {% endif %}
         </div>
       </div>
@@ -194,108 +195,114 @@
 <div id="tally-sheet-backdrop" class="sheet-backdrop" hidden></div>
 <div id="tally-sheet" class="bottom-sheet" hidden>
   
-  <div class="sheet-sticky-header">
-    <div class="sheet-drag-handle"></div>
-    <div class="sheet-header-content">
-      <div class="sheet-title-area">
-        <h3 id="sheet-title" style="display: flex; align-items: center; gap: 0.25rem;">
-          Item Name
-        </h3>
-        <p id="sheet-code">
-          Code • <span id="sheet-expected"></span> <span id="sheet-unit"></span> expected
-          <span class="ai-mark" data-ai-key="quantity" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span>
-        </p>
+  <div class="sheet-sticky-header" style="padding: 0 0.5rem;">
+    <div class="sheet-header-content" style="align-items: center;">
+      <div class="sheet-title-area" style="padding: 0;">
+        <div style="display: flex; align-items: center; gap: 0.25rem;">
+          <label style="display: flex; align-items: center; cursor: pointer; margin: 0;" title="Top-Down Pricing Mode">
+            <input type="checkbox" id="toggle-pricing-mode" style="transform: scale(0.9); margin: 0;">
+          </label>
+          <h3 id="sheet-title" style="display: flex; align-items: center; gap: 0.25rem; margin: 0; font-size: 0.9rem; line-height: 1; letter-spacing: -0.02em;">
+            Item Name
+          </h3>
+          <span id="sheet-code" style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">
+            Code • <span id="sheet-expected"></span> <span id="sheet-unit"></span> expected
+            <span class="ai-mark" data-ai-key="quantity" style="color: var(--accent-purple); font-size: 0.75rem; display: none;" title="Extracted by AI">✨</span>
+          </span>
+        </div>
       </div>
-      <button class="sheet-close-btn" id="btn-close-sheet">✕</button>
+      <button class="sheet-close-btn" id="btn-close-sheet" style="width: 20px; height: 20px; font-size: 0.8rem; line-height: 1; padding: 0;">✕</button>
     </div>
   </div>
 
   <div class="sheet-scroll-content">
     
-    <!-- CARD 1: Quantity -->
-    <div class="sheet-card" style="padding: 0.25rem 0.5rem;">
-      <div class="quantity-control-row">
-        <button class="button subtle" id="btn-receive-all" style="flex: 1; padding: 0; font-size: 0.9rem;">
-          ✓ Received (<span id="sheet-expected-btn" style="font-weight: 700;"></span>)
-        </button>
-        <div style="flex: 1; display: flex; justify-content: flex-end;">
-          <div class="quantity-input-group" style="padding: 2px; gap: 0.5rem;">
-            <button id="btn-qty-dec">−</button>
-            <input type="number" id="input-receive-qty" step="0.001" min="0">
-            <button id="btn-qty-inc">+</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- CARD 2: Pricing -->
-    <div class="sheet-card" id="pricing-section">
-      <div id="pricing-context" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; display: none;"></div>
-      <div id="pricing-suggestions"></div>
+    <div class="sheet-card" style="padding: 0.25rem 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; margin-top: -0.25rem;">
       
-      <div style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
-        <div class="form-field" style="flex: 2;">
-          <label>Landing Price <span class="ai-mark" data-ai-key="purchase_rate" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span></label>
-          <input type="number" id="input-landing-price" step="0.01" class="form-input">
-        </div>
-        <div class="form-field" style="flex: 1;">
-          <label>Margin %</label>
-          <input type="number" id="input-calc-margin" step="1" class="form-input" placeholder="%">
-        </div>
-        <div class="form-field" style="flex: 1;">
-          <label>MRP Disc %</label>
-          <input type="number" id="input-calc-markup" step="1" class="form-input" placeholder="%">
-        </div>
-      </div>
-      
-      <div style="display: flex; gap: 0.5rem;">
-        <div class="form-field" style="flex: 1;">
-          <label>Selling Price</label>
-          <input type="number" id="input-selling-price" step="0.01" class="form-input">
-        </div>
-        <div class="form-field" style="flex: 1;">
-          <label>MRP <span class="ai-mark" data-ai-key="mrp" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span></label>
-          <input type="number" id="input-mrp" step="0.01" class="form-input">
-        </div>
-        <div class="form-field" style="flex: 1; min-width: 120px;">
-          <label style="display: flex; justify-content: space-between;">
-            Code
-            <span id="clean-code-preview" style="color: var(--accent-green); font-size: 0.8em; display: none;"></span>
-          </label>
-          <input type="text" id="input-coded-price" class="form-input" style="font-family: monospace;">
-        </div>
-      </div>
-    </div>
-
-    <!-- CARD 3: Template & Advanced -->
-    <div class="sheet-card" id="template-section">
-      <div class="form-grid">
-        <div class="form-field">
-          <label style="display: flex; align-items: center; gap: 0.25rem;">
-            Template Style 
-            <span id="btn-preview-template" style="color: var(--accent-blue); font-size: 1rem; cursor: pointer; padding: 0 4px; display: none;" title="Preview Template">ⓘ</span>
-          </label>
-          <select id="select-template" class="form-input" tabindex="-1">
+      <!-- Top Unified Row: Template, Total, Qty Controls -->
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <div style="flex: 1.5; margin: 0;">
+          <select id="select-template" class="form-input" tabindex="-1" style="width: 100%; height: 36px; border: 1px solid var(--border); border-radius: 4px; padding: 0 8px; font-weight: 500;">
             <option value="">-- Auto --</option>
             {% for template in templates %}
             <option value="{{ template.id }}">{{ template.template_name }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-field">
-          <label>Billing Item <span class="ai-mark" data-ai-key="suggested_billing_item" style="color: var(--accent-purple); font-size: 0.85rem; display: none;" title="Extracted by AI">✨</span></label>
-          <input type="text" id="draft-billing-item" class="form-input" placeholder="Name for Tally...">
+        <div style="flex: 1; text-align: center;">
+          <button class="button subtle" id="btn-receive-all" style="padding: 4px; font-size: 0.9rem; margin: 0; width: 100%; height: 36px; border: 1px solid var(--border); border-radius: 4px;">
+            ✓ (<span id="sheet-expected-btn" style="font-weight: 700;"></span>)
+          </button>
+        </div>
+        <div style="flex: 1.2; display: flex; justify-content: flex-end;">
+          <div class="quantity-input-group" style="padding: 0; gap: 0.25rem; height: 36px; border: none;">
+            <button id="btn-qty-dec" style="width: 36px; height: 36px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface);">−</button>
+            <input type="number" id="input-receive-qty" step="0.001" min="0" style="height: 36px; width: 60px; text-align: center; font-weight: bold; border-radius: 4px; border: 1px solid var(--border);">
+            <button id="btn-qty-inc" style="width: 36px; height: 36px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface);">+</button>
+          </div>
         </div>
       </div>
+
+      <!-- Row 1: Billing & Landing -->
+      <div style="display: flex; gap: 0.25rem;">
+        <div class="form-field" style="flex: 1.5; margin: 0; min-width: 0;">
+          <label style="font-size: 0.75rem; white-space: nowrap;">Billing Item <span class="ai-mark" data-ai-key="suggested_billing_item" style="color: var(--accent-purple); font-size: 0.75rem; display: none;" title="Extracted by AI">✨</span></label>
+          <input type="text" id="draft-billing-item" class="form-input" placeholder="Name for Tally...">
+        </div>
+        <div class="form-field" style="flex: 1; margin: 0; min-width: 0;">
+          <label style="font-size: 0.75rem; white-space: nowrap;">Landing Rate <span class="ai-mark" data-ai-key="purchase_rate" style="color: var(--accent-purple); font-size: 0.75rem; display: none;" title="Extracted by AI">✨</span></label>
+          <input type="number" id="input-landing-price" step="0.01" class="form-input">
+        </div>
+      </div>
+
+      <!-- Row 2: Pricing Logic -->
+      <div id="pricing-section" style="display: flex; flex-wrap: nowrap; gap: 0.25rem;">
+        
+        <!-- Mode 1 / 2 Flow -->
+        <div class="form-field" id="field-margin" style="flex: 1; margin: 0; order: 1; min-width: 0;">
+          <label style="display: flex; justify-content: space-between;">
+            <span style="font-size: 0.75rem; white-space: nowrap;">Margin</span>
+            <span id="live-selling-price-preview" style="color: var(--accent-green); font-size: 0.75rem; font-weight: bold; display: none;"></span>
+          </label>
+          <input type="number" id="input-calc-margin" step="1" class="form-input" placeholder="%">
+        </div>
+        
+        <div class="form-field" id="field-code" style="flex: 1; margin: 0; order: 2; min-width: 0;">
+          <label style="display: flex; justify-content: space-between;">
+            <span style="font-size: 0.75rem; white-space: nowrap;">Code</span>
+            <span id="clean-code-preview" style="color: var(--accent-green); font-size: 0.75rem; display: none;"></span>
+          </label>
+          <input type="text" id="input-coded-price" class="form-input" style="font-family: monospace;">
+        </div>
+
+        <div class="form-field" id="field-disc" style="flex: 1; margin: 0; order: 3; min-width: 0;">
+          <label style="font-size: 0.75rem; white-space: nowrap;">MRP Disc %</label>
+          <input type="number" id="input-calc-markup" step="1" class="form-input" placeholder="%">
+        </div>
+        
+        <div class="form-field" id="field-mrp" style="flex: 1; margin: 0; order: 4; min-width: 0;">
+          <label style="font-size: 0.75rem; white-space: nowrap;">MRP <span class="ai-mark" data-ai-key="mrp" style="color: var(--accent-purple); font-size: 0.75rem; display: none;" title="Extracted by AI">✨</span></label>
+          <input type="number" id="input-mrp" step="0.01" class="form-input">
+        </div>
+
+        <div class="form-field" id="field-calc-box" style="flex: 1; margin: 0; order: 2; display: none; min-width: 0;">
+          <label style="font-size: 0.75rem; white-space: nowrap; color: var(--primary);">Calc Code</label>
+          <input type="number" id="input-calc-box" step="0.01" class="form-input" placeholder="15" style="font-weight: bold; color: var(--primary); border-color: var(--primary);">
+        </div>
+
+        <input type="hidden" id="input-selling-price">
+      </div>
       
-      <div id="dynamic-fields-container" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;">
+      <!-- Dynamic Fields -->
+      <div id="dynamic-fields-container" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0;">
         <!-- Loaded dynamically via JS -->
       </div>
       
-      <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem; align-items: stretch; height: 3rem;">
-        <input type="number" id="input-label-copies" class="form-input" value="1" min="0" step="1" style="flex: 0 0 60px; text-align: center; font-weight: bold; font-size: 1.2rem; padding: 0;" title="Copies" placeholder="Qty">
-        <button class="button primary" id="btn-confirm-print" style="flex: 1; margin: 0; font-size: 1rem;">[ CONFIRM & PRINT ]</button>
-        <button class="button" id="btn-reprint" style="display: none; flex: 1; margin: 0; font-size: 1rem;">[ REPRINT ]</button>
+      <!-- Print Actions -->
+      <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem; align-items: stretch; height: 3.5rem;">
+        <input type="number" id="input-label-copies" class="form-input" value="1" min="0" step="1" style="flex: 0 0 70px; text-align: center; font-weight: bold; font-size: 1.25rem; padding: 0;" title="Copies" placeholder="Qty">
+        <button class="button primary" id="btn-confirm-print" style="flex: 1; margin: 0; font-size: 1.05rem; letter-spacing: 0.5px; font-weight: bold;">CONFIRM & PRINT</button>
+        <button class="button" id="btn-reprint" style="display: none; flex: 1; margin: 0; font-size: 1.05rem; letter-spacing: 0.5px; font-weight: bold;">REPRINT</button>
       </div>
     </div>
     

@@ -2879,6 +2879,7 @@
       }
       if (event.key === "Enter") {
         event.preventDefault();
+        event.stopPropagation();
         printFromInlineQuantity();
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -2901,6 +2902,7 @@
         }
         if (event.key === "Enter") {
           event.preventDefault();
+          event.stopPropagation();
           printFromDialogQuantity();
         } else if (event.key === "Escape") {
           event.preventDefault();

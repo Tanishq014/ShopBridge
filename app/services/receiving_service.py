@@ -275,8 +275,6 @@ def confirm_item_pricing(
     item = db.get(ReceivingItem, item_id)
     if not item:
         raise ValueError("Receiving item not found")
-    if item.tally_status == "UNVERIFIED":
-        raise ValueError("Cannot price an unverified item")
         
     from app.services.workflow.variant_resolution_service import resolve_variant_for_receiving
     from app.services.workflow.label_draft_service import resolve_draft

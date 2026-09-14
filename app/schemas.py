@@ -187,3 +187,6 @@ class UpdateDraftRequest(BaseModel):
     template_id: Optional[int] = None
     billing_item: Optional[str] = None
     manual_overrides: Optional[str] = None
+    mrp: Optional[Decimal] = None
+    selling_price: Optional[Decimal] = None
+    purchase_rate: Optional[Decimal] = None
