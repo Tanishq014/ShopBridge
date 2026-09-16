@@ -382,5 +382,186 @@ class TestReceivingPhase35(unittest.TestCase):
         self.assertEqual(resolved.item_display_name, "Fallback Name")
         self.assertEqual(resolved.family.family_name, "Fallback Name")
 
+    def test_confirm_pricing_with_template_id(self):
+        # 19. test_confirm_pricing_with_template_id
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        item = ReceivingItem(
+            session_id=session.id,
+            billing_item="Grid Test Item",
+            extracted_attributes=json.dumps({"size": "XL", "brand": "SuperBrand"}),
+            template_id=None # Initially no template
+        )
+        self.db.add(item)
+        self.db.commit()
+
+        # Confirm pricing passing template.id
+        res = self.client.post(f"/receiving/items/{item.id}/price", json={
+            "selling_price": 500,
+            "mrp": 1000,
+            "template_id": template.id
+        })
+        self.assertEqual(res.status_code, 200)
+        self.db.refresh(item)
+        self.assertEqual(item.template_id, template.id)
+        self.assertEqual(item.pricing_status, "CONFIRMED")
+        self.assertIsNotNone(item.matched_variant_id)
+        variant = item.matched_variant
+        self.assertEqual(variant.template_id, template.id)
+        self.assertEqual(variant.size, "XL")
+
+    def test_update_draft_received_qty_in_draft_status(self):
+        # 20. test_update_draft_received_qty_in_draft_status
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        session.status = "DRAFT"
+        self.db.add(session)
+        self.db.commit()
+
+        item = ReceivingItem(
+            session_id=session.id,
+            expected_qty=10,
+            billing_item="Draft Item"
+        )
+        self.db.add(item)
+        self.db.commit()
+
+        res = self.client.put(f"/receiving/items/{item.id}/draft", json={
+            "received_qty": 10,
+            "mrp": 299
+        })
+        self.assertEqual(res.status_code, 200)
+        self.db.refresh(item)
+        self.assertEqual(item.received_qty, 10)
+        self.assertEqual(item.tally_status, "VERIFIED")
+        self.assertEqual(item.mrp, 299)
+
+    def test_grid_data_sorting_and_template_override(self):
+        # 21. test_grid_data_sorting_and_template_override
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        item2 = ReceivingItem(session_id=session.id, bill_row_number=2, source_page_number=1, raw_description="Item 2")
+        item1 = ReceivingItem(session_id=session.id, bill_row_number=1, source_page_number=1, raw_description="Item 1")
+        self.db.add_all([item2, item1])
+        self.db.commit()
+
+        res = self.client.get(f"/receiving/{session.id}/grid_data?template_id={template.id}")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        items = data["items"]
+        self.assertEqual(len(items), 2)
+        # Check sorted order: item1 should be first
+        self.assertEqual(items[0]["id"], item1.id)
+        self.assertEqual(items[1]["id"], item2.id)
+        # Check template_id override applied
+        self.assertEqual(items[0]["template_id"], template.id)
+
+    def test_print_large_quantity_copies(self):
+        # 22. test_print_large_quantity_copies
+        from app.services.workflow.validation_service import validate_print_copies
+        self.assertEqual(validate_print_copies(70), 70)
+        with self.assertRaises(ValueError):
+            validate_print_copies(1001)
+
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        variant = LabelVariant(
+            barcode="VAR70", family_id=family.id, item_display_name="Test Product",
+            mrp=Decimal("200"), selling_price=Decimal("150"), template_id=template_no_size.id
+        )
+        self.db.add(variant)
+        self.db.commit()
+
+        item = ReceivingItem(
+            session_id=session.id,
+            matched_variant_id=variant.id,
+            pricing_status="CONFIRMED",
+            template_id=template_no_size.id,
+            expected_qty=70,
+            received_qty=70
+        )
+        self.db.add(item)
+        self.db.commit()
+
+        res = self.client.post(f"/receiving/items/{item.id}/print", json={
+            "copies": 70,
+            "template_id": template_no_size.id
+        })
+        self.assertEqual(res.status_code, 200)
+        self.db.refresh(item)
+        self.assertIn(item.label_status, ["PRINTED", "QUEUED"])
+
+    def test_print_validation_error_returns_400(self):
+        # 23. test_print_validation_error_returns_400
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        variant = LabelVariant(
+            barcode="VAR_ERR", family_id=family.id, item_display_name="Test Product",
+            mrp=Decimal("200"), selling_price=Decimal("150"), template_id=template_no_size.id
+        )
+        self.db.add(variant)
+        self.db.commit()
+
+        item = ReceivingItem(
+            session_id=session.id,
+            matched_variant_id=variant.id,
+            pricing_status="CONFIRMED",
+            template_id=template_no_size.id,
+            expected_qty=10,
+            received_qty=10
+        )
+        self.db.add(item)
+        self.db.commit()
+
+        # Send copies > 1000 -> must return HTTP 400 with validation message
+        res = self.client.post(f"/receiving/items/{item.id}/print", json={
+            "copies": 5000,
+            "template_id": template_no_size.id
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Maximum print quantity is 1000", res.json()["detail"])
+
+    def test_update_draft_negative_received_qty_returns_400(self):
+        # 24. test_update_draft_negative_received_qty_returns_400
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        item = ReceivingItem(session_id=session.id, billing_item="Negative Test")
+        self.db.add(item)
+        self.db.commit()
+
+        res = self.client.put(f"/receiving/items/{item.id}/draft", json={
+            "received_qty": -3
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cannot be negative", res.json()["detail"].lower())
+
+    def test_extra_field_values_normalization(self):
+        # 25. test_extra_field_values_normalization
+        from app.services.bartender_service import _extra_field_values
+        raw = json.dumps({"Color": "Red", "Fit Type": "Slim"})
+        parsed = _extra_field_values(raw)
+        self.assertEqual(parsed.get("Color"), "Red")
+        self.assertEqual(parsed.get("color"), "Red")
+        self.assertEqual(parsed.get("Fit Type"), "Slim")
+        self.assertEqual(parsed.get("fit type"), "Slim")
+
+    def test_com_lock_exists(self):
+        # 26. test_com_lock_exists
+        from app.services.bartender_activex_service import _com_lock
+        import threading
+        self.assertIsInstance(_com_lock, type(threading.RLock()))
+
+    def test_print_quantity_warning_markup(self):
+        # 27. test_print_quantity_warning_markup
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        print_section = (root / "app" / "templates" / "workflow_partials" / "_print_section.html").read_text(encoding="utf-8")
+        scripts = (root / "app" / "templates" / "workflow_partials" / "_scripts.html").read_text(encoding="utf-8")
+        phone_print = (root / "app" / "templates" / "phone_print.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="printQuantityWarningDialog"', print_section)
+        self.assertIn('max="1000"', print_section)
+        self.assertIn('openPrintQuantityWarningDialog', scripts)
+        self.assertIn('cleanCopies > 1000', scripts)
+        self.assertIn('max="1000"', phone_print)
+        self.assertIn('phoneCopyCountError', phone_print)
+        self.assertIn('cleanCopies > 1000', phone_print)
+
 if __name__ == "__main__":
     unittest.main()
+
+

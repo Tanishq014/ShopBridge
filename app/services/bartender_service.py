@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import BARTEND_EXE_PATH, PRINT_JOBS_DIR
 from app.models import PrintJob
 from app.services.bartender_activex_service import print_with_activex
-from app.services.field_config import parse_required_fields
+from app.services.field_config import normalize_field_name, parse_required_fields
 
 
 CSV_FIELDS = [
@@ -66,7 +66,14 @@ def _extra_field_values(value: str | None) -> dict[str, str]:
         return {}
     if not isinstance(raw_values, dict):
         return {}
-    return {str(field_name): "" if field_value is None else str(field_value) for field_name, field_value in raw_values.items()}
+    result: dict[str, str] = {}
+    for field_name, field_value in raw_values.items():
+        val_str = "" if field_value is None else str(field_value)
+        result[str(field_name)] = val_str
+        norm = normalize_field_name(str(field_name))
+        if norm and norm not in result:
+            result[norm] = val_str
+    return result
 
 
 def create_csv_print_job(db: Session, job: PrintJob) -> Path:
@@ -200,14 +207,18 @@ def process_print_job(
         active_x_error = str(exc)
         try:
             fallback_path = create_csv_print_job(db, job)
-            fallback_message = f"CSV fallback created: {fallback_path}"
+            job.error_message = f"ActiveX failed: {active_x_error}. CSV fallback created: {fallback_path}"[:1800]
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            return job
         except Exception as csv_exc:
             fallback_message = f"CSV fallback also failed: {csv_exc}"
-        return _mark_failed(
-            db,
-            job,
-            f"ActiveX print failed: {active_x_error}. {fallback_message}",
-        )
+            return _mark_failed(
+                db,
+                job,
+                f"ActiveX print failed: {active_x_error}. {fallback_message}",
+            )
 
     job.status = "printed"
     job.printed_at = datetime.now(timezone.utc).replace(tzinfo=None)

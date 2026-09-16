@@ -80,6 +80,13 @@
     const cancelPrintDiscountButton = document.getElementById("cancelPrintDiscountButton");
     const confirmPrintDiscountButton = document.getElementById("confirmPrintDiscountButton");
     const printDiscountWarningDialogMessage = document.getElementById("printDiscountWarningDialogMessage");
+    const printQuantityWarningDialog = document.getElementById("printQuantityWarningDialog");
+    const printQuantityWarningDialogBackdrop = document.getElementById("printQuantityWarningDialogBackdrop");
+    const cancelPrintQuantityWarningButton = document.getElementById("cancelPrintQuantityWarningButton");
+    const confirmPrintQuantityWarningButton = document.getElementById("confirmPrintQuantityWarningButton");
+    const printQuantityWarningDialogMessage = document.getElementById("printQuantityWarningDialogMessage");
+    let pendingDiscountPrintQuantity = 1;
+    let pendingQuantityPrintQuantity = 1;
     const actualPreviewButton = document.getElementById("actualPreviewButton");
     const actualPreviewBlock = document.getElementById("actualPreviewBlock");
     const actualPreviewImage = document.getElementById("actualPreviewImage");
@@ -668,7 +675,7 @@
 
     function copyCountError(copyCount) {
       const cleanCopies = cleanCopyCount(copyCount);
-      return cleanCopies > 24 ? "Maximum print quantity is 24. Change Print Quantity to 24 or less." : "";
+      return cleanCopies > 1000 ? "Maximum print quantity is 1000. Change Print Quantity to 1000 or less." : "";
     }
 
     function codeIsNumbersOnly() {
@@ -752,18 +759,29 @@
       }
       closePrintQuantityDialog();
       
+      const cleanCopies = cleanCopyCount(copyCount);
+      if (cleanCopies > 1000) {
+        showPricingMessage("Maximum print quantity is 1000. Change Print Quantity to 1000 or less.");
+        printQuantityInput.focus();
+        printQuantityInput.select();
+        return;
+      }
+
       const mrpVal = Number(fields.mrp.value || 0);
       const sellVal = Number(fields.selling.value || 0);
       if (mrpVal > 0 && sellVal > 0 && sellVal < (mrpVal * 0.50)) {
-        openPrintDiscountWarningDialog(copyCount, sellVal, mrpVal);
+        openPrintDiscountWarningDialog(cleanCopies, sellVal, mrpVal);
+        return;
+      }
+
+      if (cleanCopies > 24) {
+        openPrintQuantityWarningDialog(cleanCopies);
         return;
       }
       
-      submitPrint(copyCount);
+      submitPrint(cleanCopies);
     }
     
-    let pendingDiscountPrintQuantity = 1;
-
     function closePrintDiscountWarningDialog() {
       if (printDiscountWarningDialog) {
         printDiscountWarningDialog.hidden = true;
@@ -778,6 +796,23 @@
       }
       printDiscountWarningDialog.hidden = false;
       window.setTimeout(() => confirmPrintDiscountButton.focus(), 0);
+    }
+
+    function closePrintQuantityWarningDialog() {
+      if (printQuantityWarningDialog) {
+        printQuantityWarningDialog.hidden = true;
+      }
+    }
+
+    function openPrintQuantityWarningDialog(copyCount) {
+      if (printSubmissionPending || !printQuantityWarningDialog) return;
+      pendingQuantityPrintQuantity = copyCount;
+      if (printQuantityWarningDialogMessage) {
+        const itemName = String(fields.item?.value || "").trim();
+        printQuantityWarningDialogMessage.textContent = `You are about to print ${copyCount} labels${itemName ? ` for "${itemName}"` : ""}. Are you sure?`;
+      }
+      printQuantityWarningDialog.hidden = false;
+      window.setTimeout(() => confirmPrintQuantityWarningButton?.focus(), 0);
     }
 
     function printFromInlineQuantity() {
@@ -2930,6 +2965,10 @@
     if (confirmPrintDiscountButton) {
       confirmPrintDiscountButton.addEventListener("click", () => {
         closePrintDiscountWarningDialog();
+        if (pendingDiscountPrintQuantity > 24) {
+          openPrintQuantityWarningDialog(pendingDiscountPrintQuantity);
+          return;
+        }
         submitPrint(pendingDiscountPrintQuantity);
       });
     }
@@ -2937,12 +2976,35 @@
       cancelPrintDiscountButton.addEventListener("click", () => {
         closePrintDiscountWarningDialog();
         printQuantityInput.focus();
+        printQuantityInput.select();
       });
     }
     if (printDiscountWarningDialogBackdrop) {
       printDiscountWarningDialogBackdrop.addEventListener("click", () => {
         closePrintDiscountWarningDialog();
         printQuantityInput.focus();
+        printQuantityInput.select();
+      });
+    }
+
+    if (confirmPrintQuantityWarningButton) {
+      confirmPrintQuantityWarningButton.addEventListener("click", () => {
+        closePrintQuantityWarningDialog();
+        submitPrint(pendingQuantityPrintQuantity);
+      });
+    }
+    if (cancelPrintQuantityWarningButton) {
+      cancelPrintQuantityWarningButton.addEventListener("click", () => {
+        closePrintQuantityWarningDialog();
+        printQuantityInput.focus();
+        printQuantityInput.select();
+      });
+    }
+    if (printQuantityWarningDialogBackdrop) {
+      printQuantityWarningDialogBackdrop.addEventListener("click", () => {
+        closePrintQuantityWarningDialog();
+        printQuantityInput.focus();
+        printQuantityInput.select();
       });
     }
 
@@ -2955,10 +3017,28 @@
           event.preventDefault();
           closePrintDiscountWarningDialog();
           printQuantityInput.focus();
+          printQuantityInput.select();
         } else if (event.key === "Enter") {
           event.preventDefault();
           closePrintDiscountWarningDialog();
+          if (pendingDiscountPrintQuantity > 24) {
+            openPrintQuantityWarningDialog(pendingDiscountPrintQuantity);
+            return;
+          }
           submitPrint(pendingDiscountPrintQuantity);
+        }
+        return;
+      }
+      if (printQuantityWarningDialog && !printQuantityWarningDialog.hidden) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePrintQuantityWarningDialog();
+          printQuantityInput.focus();
+          printQuantityInput.select();
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          closePrintQuantityWarningDialog();
+          submitPrint(pendingQuantityPrintQuantity);
         }
         return;
       }

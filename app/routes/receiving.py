@@ -1,14 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile, BackgroundTasks
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from app.services.template_filters import register_template_filters
 from app.config import TEMPLATES_DIR
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import List
+import json
+import shutil
+import tempfile
+import os
 
 router = APIRouter(prefix="/receiving", tags=["receiving"])
 templates = register_template_filters(Jinja2Templates(directory=str(TEMPLATES_DIR)))
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from typing import List
 
 from app.db import get_db
 from app.schemas import (
@@ -31,8 +37,6 @@ from app.services.receiving_service import (
     map_supplier_product,
 )
 from app.models import ReceivingSession, ReceivingItem
-
-router = APIRouter(prefix="/receiving", tags=["receiving"])
 
 @router.post("/suppliers", response_model=SupplierRead)
 def create_supplier(data: SupplierBase, db: Session = Depends(get_db)):
@@ -63,11 +67,7 @@ def add_item(data: ReceivingItemCreate, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-from fastapi import File, UploadFile, BackgroundTasks
 from app.services.extraction_service import start_extraction_job
-import shutil
-import tempfile
-import os
 
 from typing import List
 
@@ -193,6 +193,79 @@ def get_extracted_json(session_id: int, db: Session = Depends(get_db)):
     except:
         return {"raw_payload": job.raw_provider_response}
 
+@router.get("/{session_id}/grid_data")
+def get_grid_data(session_id: int, template_id: int | None = None, db: Session = Depends(get_db)):
+    session = db.get(ReceivingSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    from app.services.workflow.label_draft_service import resolve_draft
+    
+    grid_rows = []
+    sorted_items = sorted(session.items, key=lambda x: (x.source_page_number or 0, x.bill_row_number or 0, x.id))
+    for item in sorted_items:
+        draft = resolve_draft(db, item, template_id_override=template_id)
+        
+        # Flatten draft fields into a dict
+        dynamic_fields = {}
+        for f in draft.fields:
+            dynamic_fields[f.semantic_field] = {
+                "value": f.value,
+                "source": f.source,
+                "missing": f.missing
+            }
+            
+        row = {
+            "id": item.id,
+            "raw_description": item.raw_description,
+            "billing_item": item.billing_item,
+            "supplier_product_code": item.supplier_product_code,
+            "family_id": item.family_id,
+            "expected_qty": item.expected_qty,
+            "received_qty": item.received_qty,
+            "purchase_rate": item.purchase_rate,
+            "landing_price": item.landing_price,
+            "mrp": item.mrp,
+            "selling_price": item.confirmed_selling_price,
+            "label_status": item.label_status,
+            "tally_status": item.tally_status,
+            "pricing_status": item.pricing_status,
+            "unit": item.unit,
+            "source_row_number": item.source_row_number,
+            "dynamic_fields": dynamic_fields,
+            "template_id": template_id or item.template_id
+        }
+        grid_rows.append(row)
+    from app.models import ExtractionJob
+    job = db.execute(
+        select(ExtractionJob)
+        .where(ExtractionJob.session_id == session_id)
+        .order_by(ExtractionJob.started_at.desc())
+    ).scalars().first()
+    
+    global_discounts = []
+    global_taxes = []
+    
+    if job and job.raw_provider_response:
+        import json
+        try:
+            pages = json.loads(job.raw_provider_response)
+            if isinstance(pages, list) and len(pages) > 0:
+                first_page = pages[0]
+                global_discounts = first_page.get("global_discounts") or []
+                global_taxes = first_page.get("global_taxes") or []
+            elif isinstance(pages, dict):
+                global_discounts = pages.get("global_discounts") or []
+                global_taxes = pages.get("global_taxes") or []
+        except Exception:
+            pass
+            
+    return {
+        "items": grid_rows, 
+        "global_discounts": global_discounts, 
+        "global_taxes": global_taxes
+    }
+
 @router.get("/{session_id}", response_class=HTMLResponse)
 def receiving_workspace(session_id: int, request: Request, db: Session = Depends(get_db)):
     session = db.get(ReceivingSession, session_id)
@@ -229,10 +302,6 @@ def receiving_workspace(session_id: int, request: Request, db: Session = Depends
             }
         }
     )
-from fastapi import Form
-from fastapi.responses import RedirectResponse, Response
-from datetime import datetime, timezone
-from decimal import Decimal
 
 @router.post("/new", response_class=HTMLResponse)
 def create_new_session_ui(
@@ -379,14 +448,40 @@ def update_draft_endpoint(item_id: int, data: UpdateDraftRequest, db: Session = 
             
     if "mrp" in update_data:
         item.mrp = update_data["mrp"]
+        
+    if "purchase_rate" in update_data:
+        item.purchase_rate = update_data["purchase_rate"]
+        
+    if "landing_price" in update_data:
+        item.landing_price = update_data["landing_price"]
+        
     if "selling_price" in update_data:
         item.confirmed_selling_price = update_data["selling_price"]
-    if "purchase_rate" in update_data:
-        item.landing_price = update_data["purchase_rate"]
+        
+    if "supplier_product_code" in update_data:
+        item.supplier_product_code = update_data["supplier_product_code"]
+        
+    if "received_qty" in update_data:
+        if update_data["received_qty"] is not None and update_data["received_qty"] < 0:
+            raise HTTPException(status_code=400, detail="Received quantity cannot be negative")
+        item.received_qty = update_data["received_qty"]
+        if item.received_qty is None:
+            item.tally_status = "UNVERIFIED"
+        elif item.expected_qty is not None:
+            item.tally_status = "VERIFIED" if item.received_qty == item.expected_qty else "MISMATCH"
         
     db.add(item)
     db.commit()
     db.refresh(item)
+    
+    if "received_qty" in update_data and update_data["received_qty"] is not None:
+        if item.session and item.session.status == "RECEIVING":
+            from app.services.receiving_service import tally_item
+            try:
+                item = tally_item(db, item.id, update_data["received_qty"])
+            except Exception:
+                pass # Ignore tally errors in draft save
+            
     return item
 
 @router.get("/items/{item_id}/draft_status")
@@ -405,7 +500,13 @@ def get_draft_status_endpoint(item_id: int, db: Session = Depends(get_db)):
 def confirm_pricing_endpoint(item_id: int, data: ConfirmPricingRequest, db: Session = Depends(get_db)):
     try:
         return confirm_item_pricing(
-            db, item_id, data.landing_price, data.mrp, data.selling_price, data.manual_barcode or ""
+            db, 
+            item_id, 
+            data.landing_price, 
+            data.mrp, 
+            data.selling_price, 
+            data.manual_barcode or "",
+            template_id=data.template_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -413,7 +514,13 @@ def confirm_pricing_endpoint(item_id: int, data: ConfirmPricingRequest, db: Sess
 @router.post("/items/{item_id}/print", response_model=ReceivingItemRead)
 def print_label_endpoint(item_id: int, data: PrintLabelRequest, db: Session = Depends(get_db)):
     try:
-        item = queue_print_item(db, item_id, data.copies, force_reprint=data.force_reprint)
+        item = queue_print_item(
+            db, 
+            item_id, 
+            data.copies, 
+            force_reprint=data.force_reprint, 
+            template_id=data.template_id
+        )
         if item.label_status == "FAILED":
             raise HTTPException(status_code=500, detail="Print job failed. Check printer connection and logs.")
         return item

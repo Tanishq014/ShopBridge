@@ -117,8 +117,9 @@ def _variant_to_dict(variant: LabelVariant) -> dict[str, str]:
     return {normalize_field_name(k): str(v).strip() for k, v in d.items() if str(v).strip()}
 
 
-def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
-    template = db.get(TemplateMaster, item.template_id) if item.template_id else None
+def resolve_draft(db: Session, item: ReceivingItem, template_id_override: int | None = None) -> LabelDraft:
+    tid = template_id_override or item.template_id
+    template = db.get(TemplateMaster, tid) if tid else None
     
     if not template:
         return LabelDraft(template_id=None, ready=False, fields=[], manual_overrides={})
@@ -187,7 +188,7 @@ def resolve_draft(db: Session, item: ReceivingItem) -> LabelDraft:
         fields.append(DraftField(
             template_field=t_field,
             semantic_field=sem_field,
-            value=val if not is_empty else "",
+            value=val if not is_empty else None,
             source=source if not is_empty or source == "MANUAL" else "MISSING",
             required=is_strictly_required,
             missing=is_empty if is_strictly_required else False,

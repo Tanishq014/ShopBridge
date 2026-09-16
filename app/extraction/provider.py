@@ -34,6 +34,8 @@ class ExtractedPage(BaseModel):
     page_number: int
     image_width: int | None = None
     image_height: int | None = None
+    global_discounts: list[float] | None = Field(default_factory=list, description="Any global or bottom-of-page discount percentages (e.g. [37.00, 5.00, 4.76])")
+    global_taxes: list[float] | None = Field(default_factory=list, description="Any global or bottom-of-page tax percentages (e.g. [2.5, 2.5])")
     rows: list[ExtractedRow] = Field(default_factory=list)
 
 class ExtractedDocument(BaseModel):

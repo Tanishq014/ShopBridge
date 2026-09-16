@@ -193,7 +193,7 @@
         </div>
         <label>
           Copies
-          <input name="copies" id="phoneCopies" value="{{ submitted.get('copies', 1) }}" inputmode="numeric" min="1" max="24" required>
+          <input name="copies" id="phoneCopies" value="{{ submitted.get('copies', 1) }}" inputmode="numeric" min="1" max="1000" required>
         </label>
         <div class="copy-chip-row" aria-label="Quick copy count">
           <button class="chip-button" type="button" data-copy-count="1">1</button>
@@ -841,7 +841,7 @@
 
     function phoneCopyCountError(copyCount) {
       const cleanCopies = Math.max(1, Number.parseInt(copyCount || "1", 10) || 1);
-      return cleanCopies > 24 ? "Maximum print quantity is 24. Change Copies to 24 or less." : "";
+      return cleanCopies > 1000 ? "Maximum print quantity is 1000. Change Copies to 1000 or less." : "";
     }
 
     function phoneCodeIsNumbersOnly() {
@@ -877,6 +877,16 @@
       if (phoneFields.copies.validationMessage) {
         phoneFields.copies.reportValidity();
         return;
+      }
+      const cleanCopies = Math.max(1, Number.parseInt(phoneFields.copies.value || "1", 10) || 1);
+      if (cleanCopies > 24) {
+        const itemName = String(phoneFields.item?.value || "").trim();
+        const confirmed = window.confirm(`Warning: You are about to print ${cleanCopies} labels${itemName ? ` for "${itemName}"` : ""}.\n\nAre you sure you want to print more than 24 copies?`);
+        if (!confirmed) {
+          phoneFields.copies.focus();
+          phoneFields.copies.select();
+          return;
+        }
       }
       phonePrintCopiesConfirmed = true;
       if (phoneForm.requestSubmit) {
@@ -2733,8 +2743,8 @@
         const c = parseInt(rowData.copies, 10);
         if (!c || isNaN(c) || c <= 0) {
           blockers.push("Copies / Qty must be a valid positive number to print.");
-        } else if (c > 24) {
-          blockers.push("Maximum print quantity is 24. Change Copies / Qty to 24 or less.");
+        } else if (c > 1000) {
+          blockers.push("Maximum print quantity is 1000. Change Copies / Qty to 1000 or less.");
         }
         if (/^\d+$/.test(String(fields.coded_price || "").trim())) {
           blockers.push("Code cannot be only numbers. Use coded letters too.");

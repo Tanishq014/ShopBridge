@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, event, inspect, select, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import (
@@ -11,8 +11,17 @@ from app.config import (
 )
 
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False, "timeout": 30} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args, future=True)
+
+if DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
@@ -257,6 +266,10 @@ def _migrate_existing_sqlite() -> None:
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN source_row_number VARCHAR(50)"))
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN source_row_inferred BOOLEAN NOT NULL DEFAULT 0"))
                 connection.execute(text("ALTER TABLE receiving_items ADD COLUMN source_page_number INTEGER"))
+
+        if "extracted_payload" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE receiving_items ADD COLUMN extracted_payload TEXT"))
 
     if "extraction_jobs" not in table_names:
         with engine.begin() as connection:

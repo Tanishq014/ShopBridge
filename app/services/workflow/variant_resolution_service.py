@@ -50,7 +50,7 @@ def resolve_variant_for_receiving(
         core_fields["selling_price"] = selling_price
         
     from app.services.price_code_service import generate_coded_price
-    if core_fields["selling_price"]:
+    if not core_fields.get("coded_price") and core_fields.get("selling_price"):
         core_fields["coded_price"] = generate_coded_price(core_fields["selling_price"]) or ""
     
     # 2. Search for exact matches across ALL families that share this name

@@ -209,13 +209,17 @@ def _co_uninitialize(initialized: bool) -> None:
         pass
 
 
+_com_lock = threading.RLock()
+
+
 @contextmanager
 def _com_session():
-    initialized = _co_initialize()
-    try:
-        yield _win32com_client()
-    finally:
-        _co_uninitialize(initialized)
+    with _com_lock:
+        initialized = _co_initialize()
+        try:
+            yield _win32com_client()
+        finally:
+            _co_uninitialize(initialized)
 
 
 def _message_variant_detail(messages: Any) -> str:

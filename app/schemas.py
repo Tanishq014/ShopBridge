@@ -124,6 +124,8 @@ class ReceivingItemCreate(BaseModel):
     
     raw_description: Optional[str] = None
     normalized_description: Optional[str] = None
+    billing_item: Optional[str] = None
+    template_id: Optional[int] = None
     supplier_product_code: Optional[str] = None
     extraction_confidence: Optional[Decimal] = None
     source_provenance: Optional[str] = None
@@ -175,10 +177,12 @@ class ConfirmPricingRequest(BaseModel):
     mrp: Optional[Decimal] = None
     selling_price: Decimal
     manual_barcode: Optional[str] = None
+    template_id: Optional[int] = None
 
 class PrintLabelRequest(BaseModel):
     copies: int
     force_reprint: bool = False
+    template_id: Optional[int] = None
 
 class MatchFamilyRequest(BaseModel):
     family_id: int
@@ -190,3 +194,6 @@ class UpdateDraftRequest(BaseModel):
     mrp: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
     purchase_rate: Optional[Decimal] = None
+    landing_price: Optional[Decimal] = None
+    supplier_product_code: Optional[str] = None
+    received_qty: Optional[Decimal] = None

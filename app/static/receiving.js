@@ -1,5 +1,81 @@
 let extractionPollInterval;
 
+window.confirmLargeQuantityPrint = function(copies, itemName) {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById("printQuantityWarningDialog");
+    const msg = document.getElementById("printQuantityWarningDialogMessage");
+    const confirmBtn = document.getElementById("confirmPrintQuantityWarningButton");
+    const cancelBtn = document.getElementById("cancelPrintQuantityWarningButton");
+    const backdrop = document.getElementById("printQuantityWarningDialogBackdrop");
+
+    if (!dialog) {
+      resolve(window.confirm(`Warning: You are about to print ${copies} labels${itemName ? ` for "${itemName}"` : ''}.\n\nPress OK to confirm, or Cancel to abort.`));
+      return;
+    }
+
+    if (msg) {
+      msg.textContent = `You are about to print ${copies} labels${itemName ? ` for "${itemName}"` : ''}. Are you sure?`;
+    }
+
+    dialog.hidden = false;
+    setTimeout(() => {
+      confirmBtn?.focus();
+    }, 50);
+
+    let isDone = false;
+
+    function cleanup() {
+      if (isDone) return;
+      isDone = true;
+      dialog.hidden = true;
+      document.removeEventListener("keydown", onKeyDown, true);
+      confirmBtn?.removeEventListener("click", onConfirm);
+      cancelBtn?.removeEventListener("click", onCancel);
+      backdrop?.removeEventListener("click", onCancel);
+    }
+
+    function onConfirm(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      cleanup();
+      resolve(true);
+    }
+
+    function onCancel(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      cleanup();
+      resolve(false);
+    }
+
+    function onKeyDown(e) {
+      if (dialog.hidden) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel(e);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        onConfirm(e);
+      }
+    }
+
+    confirmBtn?.addEventListener("click", onConfirm);
+    cancelBtn?.addEventListener("click", onCancel);
+    backdrop?.addEventListener("click", onCancel);
+    setTimeout(() => {
+      if (!isDone) {
+        document.addEventListener("keydown", onKeyDown, true);
+      }
+    }, 10);
+  });
+};
+
 let stagedFiles = [];
 let dragSourceIndex = null;
 
@@ -135,6 +211,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const filterTabs = document.querySelectorAll('.filter-tab');
   const itemRows = document.querySelectorAll('.item-row');
   
+  // Ctrl+F override
+  document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+          if (searchInput) {
+              e.preventDefault();
+              if (document.activeElement !== searchInput) {
+                  searchInput.focus();
+                  searchInput.select();
+              }
+          }
+      }
+  });
+
   const progressVerified = document.getElementById('progress-verified');
   const progressTotal = document.getElementById('progress-total');
   const progressFill = document.getElementById('progress-fill');
@@ -165,16 +254,92 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentExpectedQty = 0;
   let currentExpectedQtyString = '';
   let sheetTimeout = null;
+  let highlightedIndex = -1;
 
   // Search logic
   function normalizeSearchText(text) {
     return text.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+  
+  function updateSearchHighlight() {
+      const itemListVisible = document.getElementById('item-list')?.style.display !== 'none';
+      if (!itemListVisible) return;
+
+      const visibleRows = Array.from(itemRows).filter(r => !r.classList.contains('hidden'));
+      itemRows.forEach(r => r.classList.remove('search-highlighted'));
+      
+      if (highlightedIndex >= 0 && highlightedIndex < visibleRows.length) {
+          const target = visibleRows[highlightedIndex];
+          target.classList.add('search-highlighted');
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+  }
+
+  function selectRow(row, index) {
+      if (!row) return;
+      if (row.classList.contains('grid-row')) {
+          // If in grid mode, don't open the bottom sheet, just focus the row natively.
+          window.gridHighlightedIndex = window.visibleItems ? window.visibleItems.indexOf(row) : 0;
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          const billingInput = row.querySelector('input[data-field="billing_item"]');
+          if (billingInput) {
+              billingInput.focus();
+              billingInput.select();
+          } else {
+              const firstInput = row.querySelector('.grid-cell');
+              if (firstInput) {
+                  firstInput.focus();
+                  firstInput.select();
+              }
+          }
+          return;
+      }
+      openSheet(row);
+      highlightedIndex = index;
+      updateSearchHighlight();
   }
 
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       searchTerm = normalizeSearchText(e.target.value);
       renderItems();
+      
+      const itemListVisible = document.getElementById('item-list')?.style.display !== 'none';
+      if (itemListVisible) {
+          const visibleRows = Array.from(itemRows).filter(r => !r.classList.contains('hidden'));
+          highlightedIndex = visibleRows.length > 0 ? 0 : -1;
+          updateSearchHighlight();
+      } else {
+          // If in grid mode, we should probably dispatch an event or handle grid filtering here
+          // For now, just trigger a custom event that spreadsheet_mode.js can listen to
+          document.dispatchEvent(new CustomEvent('grid-search', { detail: searchTerm }));
+      }
+    });
+    
+    searchInput.addEventListener('keydown', (e) => {
+        const itemListVisible = document.getElementById('item-list')?.style.display !== 'none';
+        if (!itemListVisible) return; // Grid mode handles its own keyboard navigation
+
+        const visibleRows = Array.from(itemRows).filter(r => !r.classList.contains('hidden'));
+        if (visibleRows.length === 0) return;
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            highlightedIndex = (highlightedIndex + 1) % visibleRows.length;
+            updateSearchHighlight();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            highlightedIndex = (highlightedIndex - 1 + visibleRows.length) % visibleRows.length;
+            updateSearchHighlight();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const targetIndex = highlightedIndex >= 0 ? highlightedIndex : 0;
+            if (visibleRows[targetIndex]) {
+                visibleRows[targetIndex].click();
+                searchInput.blur();
+            }
+        }
     });
   }
 
@@ -189,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function renderItems() {
+    document.dispatchEvent(new CustomEvent('grid-tab-filter', { detail: activeFilter }));
     let total = 0, pending = 0, pricing = 0, issues = 0, visibleCount = 0, verifiedCount = 0;
 
     itemRows.forEach(row => {
@@ -221,16 +387,29 @@ document.addEventListener('DOMContentLoaded', () => {
       // Search logic
       let visibleSearch = true;
       if (searchTerm) {
-        const desc = normalizeSearchText(row.getAttribute('data-description') || '');
-        const normDesc = normalizeSearchText(row.getAttribute('data-norm-description') || '');
-        const cd = normalizeSearchText(row.getAttribute('data-code') || '');
-        const mrp = normalizeSearchText(row.getAttribute('data-mrp') || '');
-        const sp = normalizeSearchText(row.getAttribute('data-confirmed-selling-price') || '');
-        const lp = normalizeSearchText(row.getAttribute('data-landing-price') || '');
-        const pr = normalizeSearchText(row.getAttribute('data-purchase-rate') || '');
+        let desc = '', normDesc = '', cd = '', mrp = '', sp = '', lp = '', pr = '';
+        
+        if (row.classList.contains('grid-row')) {
+            desc = normalizeSearchText(row.querySelector('span[title]')?.getAttribute('title') || '');
+            cd = normalizeSearchText(row.querySelector('.code-field')?.value || '');
+            mrp = normalizeSearchText(row.querySelector('input[data-field="mrp"]')?.value || '');
+            sp = normalizeSearchText(row.querySelector('input[data-field="selling_price"]')?.value || '');
+            lp = normalizeSearchText(row.querySelector('input[data-field="purchase_rate"]')?.value || '');
+        } else {
+            desc = normalizeSearchText(row.getAttribute('data-description') || '');
+            normDesc = normalizeSearchText(row.getAttribute('data-norm-description') || '');
+            cd = normalizeSearchText(row.getAttribute('data-code') || '');
+            mrp = normalizeSearchText(row.getAttribute('data-mrp') || '');
+            sp = normalizeSearchText(row.getAttribute('data-confirmed-selling-price') || '');
+            lp = normalizeSearchText(row.getAttribute('data-landing-price') || '');
+            pr = normalizeSearchText(row.getAttribute('data-purchase-rate') || '');
+        }
+        
+        const rowText = normalizeSearchText(row.textContent || '');
         
         if (!desc.includes(searchTerm) && !normDesc.includes(searchTerm) && !cd.includes(searchTerm) &&
-            !mrp.includes(searchTerm) && !sp.includes(searchTerm) && !lp.includes(searchTerm) && !pr.includes(searchTerm)) {
+            !mrp.includes(searchTerm) && !sp.includes(searchTerm) && !lp.includes(searchTerm) && !pr.includes(searchTerm) &&
+            !rowText.includes(searchTerm)) {
           visibleSearch = false;
         }
       }
@@ -303,7 +482,8 @@ document.addEventListener('DOMContentLoaded', () => {
     currentItemId = row.getAttribute('data-item-id');
     window.codeTargetLength = 0; // Reset to avoid flickering padding from previous item
     
-    title.textContent = row.querySelector('h4') ? row.querySelector('h4').textContent : 'Unknown';
+    const titleSpan = row.querySelector('.item-title-text') || row.querySelector('h4');
+    title.textContent = titleSpan ? (titleSpan.textContent || '').trim() : (row.getAttribute('data-description') || 'Unknown');
     code.textContent = row.querySelector('.code') ? row.querySelector('.code').textContent : '';
     
     // Reset AI marks
@@ -600,8 +780,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const codeInput = document.getElementById('input-coded-price');
     if (codeInput && document.activeElement !== codeInput) {
       if (!isNaN(selling)) {
-          const generated = generateCodedPrice(selling);
-          const decodedTyped = decodePriceCode(codeInput.value);
+          const generated = window.generateCodedPrice(selling);
+          const decodedTyped = window.decodePriceCode(codeInput.value);
           
           // Only overwrite if the manually typed code doesn't mathematically equal the current selling price
           if (decodedTyped !== selling) {
@@ -659,7 +839,7 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('pricing_strategy_mode', isMode2 ? 'top_down' : 'bottom_up');
   }
   
-  function computeMrpCalculation(currentMrp, expr) {
+  window.computeMrpCalculation = function(currentMrp, expr) {
       if (!expr || !Number.isFinite(currentMrp) || currentMrp <= 0) return null;
 
       let isPercentage = expr.endsWith("%");
@@ -699,11 +879,9 @@ document.addEventListener('DOMContentLoaded', () => {
       else newRate = val;
 
       return newRate;
-  }
+  };
   
-  function generateCodedPrice(price) {
-
-
+  window.generateCodedPrice = function(price) {
     if (isNaN(price) || price < 0 || price === null || price === '') return '';
     const rounded = Math.round(price).toString();
     const map = window.priceCodeSettings?.digit_to_code || {};
@@ -714,9 +892,9 @@ document.addEventListener('DOMContentLoaded', () => {
       code += alias.split(',')[0].trim().toUpperCase();
     }
     return code;
-  }
+  };
   
-  function decodePriceCode(code) {
+  window.decodePriceCode = function(code) {
       if (!code) return null;
       const map = window.priceCodeSettings?.code_to_digit || {};
       let priceStr = '';
@@ -728,9 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }
       }
       return priceStr ? parseFloat(priceStr) : null;
-  }
+  };
   
-  function getJunkPadding(deficit) {
+  window.getJunkPadding = function(deficit) {
       if (deficit <= 0) return '';
       const cipherMap = window.priceCodeSettings?.code_to_digit || {};
       const cipherLetters = Object.keys(cipherMap).map(k => k.toUpperCase());
@@ -742,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
           junk += safeLetters[Math.floor(Math.random() * safeLetters.length)] || 'X';
       }
       return junk;
-  }
+  };
   
   function updateCodedPriceBox(cleanCode) {
       const codeInput = document.getElementById('input-coded-price');
@@ -779,6 +957,13 @@ document.addEventListener('DOMContentLoaded', () => {
       applyPricingMode(modeToggle.checked);
       modeToggle.addEventListener('change', (e) => {
           applyPricingMode(e.target.checked);
+          
+          // Sync with Grid Mode toggle
+          const gridToggle = document.getElementById('grid-toggle-pricing-mode');
+          if (gridToggle && gridToggle.checked !== e.target.checked) {
+              gridToggle.checked = e.target.checked;
+              gridToggle.dispatchEvent(new Event('change'));
+          }
       });
   }
   
@@ -790,12 +975,12 @@ document.addEventListener('DOMContentLoaded', () => {
           const currentMrp = parseFloat(document.getElementById('input-mrp').value) || 0;
           if (currentMrp <= 0) return;
           
-          const calcRate = computeMrpCalculation(currentMrp, expr);
+          const calcRate = window.computeMrpCalculation(currentMrp, expr);
           if (calcRate !== null && Number.isFinite(calcRate) && calcRate > 0) {
               const roundedPrice = Math.max(1, Math.round(calcRate));
               document.getElementById('input-selling-price').value = String(roundedPrice);
               
-              const encoded = generateCodedPrice(roundedPrice);
+              const encoded = window.generateCodedPrice(roundedPrice);
               const codeToDisplay = encoded || String(roundedPrice);
               const codeInput = document.getElementById('input-coded-price');
               if (codeInput.value !== codeToDisplay) {
@@ -832,7 +1017,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('input-coded-price')?.addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase(); // Force uppercase
       const raw = e.target.value;
-      const decoded = decodePriceCode(raw);
+      const decoded = window.decodePriceCode(raw);
       
       const previewSpan = document.getElementById('clean-code-preview');
       
@@ -1086,13 +1271,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const copies = document.getElementById('input-label-copies').value;
     const code = document.getElementById('input-coded-price').value;
     
-    if (!copies || isNaN(copies) || parseInt(copies) < 1) {
+    if (!copies || isNaN(copies) || parseInt(copies, 10) < 1) {
         showToast("Must be at least 1 copy to print.", "error");
         return;
     }
-    if (parseInt(copies) > 24) {
-        showToast("Maximum print quantity is 24.", "error");
+    const copyCount = parseInt(copies, 10);
+    if (copyCount > 1000) {
+        showToast("Maximum print quantity is 1000.", "error");
         return;
+    }
+    if (copyCount > 24) {
+        const currentItem = items.find(i => i.id === currentItemId);
+        const itemName = currentItem ? (currentItem.product_family_name || currentItem.billing_item_name || currentItem.raw_billing_name) : '';
+        const confirmed = await window.confirmLargeQuantityPrint(copyCount, itemName);
+        if (!confirmed) {
+            return;
+        }
     }
     
     if (!isReprint) {
@@ -1270,5 +1464,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   }
 
+  window.renderItems = renderItems;
   renderItems(); // initial
 });
+// Spreadsheet Grid Logic

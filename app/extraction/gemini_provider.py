@@ -37,7 +37,7 @@ class GeminiProvider(ExtractionProvider):
 
     @property
     def provider_version(self) -> str:
-        return "gemini-3.5-flash"
+        return "gemini-3.6-flash"
 
     def extract_invoice(
         self,
@@ -51,19 +51,42 @@ class GeminiProvider(ExtractionProvider):
         start_time = time.time()
         
         # 1. Build the prompt
+        ROW_SCHEMA = """
+{
+  "page_number": 1,
+  "image_width": 1080,
+  "image_height": 1440,
+  "global_discounts": [37.0, 5.0],
+  "global_taxes": [2.5, 2.5],
+  "rows": [
+    {
+      "source_row_number": {"bbox": [338, 47, 349, 58], "value": "1"},
+      "raw_description":   {"bbox": [338, 70, 350, 191], "value": "GIRLS CO-ORD SET"},
+      "suggested_billing_item": "Co-Ord Set",
+      "article_number":  {"bbox": [347, 393, 358, 423], "value": "6108"},
+      "design":          {"bbox": [347, 431, 358, 468], "value": "25401"},
+      "quantity":        {"bbox": [351, 546, 360, 580], "value": 18},
+      "mrp":             {"bbox": [354, 672, 363, 719], "value": 795},
+      "line_amount":     {"bbox": [352, 871, 363, 928], "value": 14310}
+    }
+  ]
+}"""
         system_instruction = (
             "You are an expert Document AI data extractor. Your job is to extract rich structured data from the provided invoice pages. "
             f"The core extraction vocabulary is: {json.dumps(VOCABULARY_V1['core_fields'])}. "
             f"The known semantic attributes are: {json.dumps(VOCABULARY_V1['known_attributes'])}.\n\n"
-            "Return the full hierarchical `ExtractedDocument` payload. For EVERY extracted field (except `suggested_billing_item`), you MUST provide a bounding box (`bbox`) BEFORE you transcribe the value.\n"
-            "- Extract the `bbox` as [ymin, xmin, ymax, xmax] normalized to a 0-1000 scale.\n"
-            "- After the bbox, extract the interpreted `value`. (If numeric, convert it. If string, clean it up / normalize it. E.g. 'HANUMAN .P' -> 'Hanuman P').\n"
-            "- For `purchase_rate`, MUST extract the FINAL NET unit rate after all discounts. (e.g. if Rate is 180 and Discount is 15%, extract 153). You can calculate this by `line_amount / quantity`. IMPORTANT: Always verify the mathematics (`purchase_rate * quantity == line_amount`). If the math does not line up perfectly (e.g. due to OCR errors where an 8 looks like a 0), do NOT output the `purchase_rate` or `line_amount` for that line. Leave them blank if you are not absolutely sure.\n"
-            "- For `suggested_billing_item`, infer a clean, ULTRA-SHORT product name (e.g., 'Bowl Set' or 'Coffee Mug'). This is printed on tiny POS receipts, so STRIP OUT all brands, article numbers, codes, colors, and sizes. STRICTLY limit it to 10-15 characters maximum.\n"
-            "- If the row has data matching any of the optional fields (like `brand`, `mrp`, `size`, `color`, `expiry`, etc.), extract them directly into their respective JSON keys.\n\n"
-            "For row metadata:\n"
-            "- Extract the printed row number into `source_row_number` exactly as printed.\n"
-            "Do not invent values (except for `suggested_billing_item` which MUST be inferred for every row). If a printed field is missing, omit it."
+            "Return EXACTLY ONE JSON object matching the schema shown in the example below. "
+            "Do NOT wrap it in markdown code fences or add any extra text outside the JSON.\n\n"
+            f"REQUIRED JSON SCHEMA EXAMPLE:\n{ROW_SCHEMA}\n\n"
+            "Rules:\n"
+            "- For EVERY extracted field (except `suggested_billing_item`), provide BOTH a `bbox` [ymin, xmin, ymax, xmax] normalised to 0-1000 AND a `value`. A bbox without a value is invalid — you MUST read and transcribe the actual number or text printed at that location.\n"
+            "- ALL fields for a single printed row MUST be in exactly ONE object in `rows`. Never split a row across multiple objects.\n"
+            "- Extract EVERY visible column for each row including quantity, mrp/price, purchase_rate, and line_amount. Never omit numeric columns.\n"
+            "- For `purchase_rate` and `line_amount`, extract them EXACTLY as printed. Do NOT apply discounts.\n"
+            "- For `global_discounts` / `global_taxes`, extract bottom-of-page percentage numbers into those lists.\n"
+            "- `suggested_billing_item`: ultra-short generic name (10-15 chars max), strip brands/sizes/genders.\n"
+            "- OBEY any 'Supplier Specific Instructions' and 'Column Aliases' below absolutely, even if they contradict your understanding.\n"
+            "- Omit fields that are genuinely absent; do not invent values (except `suggested_billing_item`).\n"
         )
         
         prompt_parts = []
@@ -96,7 +119,7 @@ class GeminiProvider(ExtractionProvider):
                     page_dimensions[idx + 1] = (img.width, img.height)
                     print(f"[Gemini] Loaded PIL dimensions for page {idx + 1}: {img.width}x{img.height}")
             except Exception as e:
-                print(f"[Gemini] ⚠️ Failed to load PIL dimensions for {fp}: {e}")
+                print(f"[Gemini] [WARN] Failed to load PIL dimensions for {fp}: {e}")
                 page_dimensions[idx + 1] = (None, None)
             
         doc = ExtractedDocument(
@@ -124,37 +147,48 @@ class GeminiProvider(ExtractionProvider):
                 print(f"[Gemini] Generating structured output for Page {page_num}/{len(file_objs)}...")
                 
                 # 3. Call the model with Structured Outputs for a SINGLE PAGE
-                max_retries = 3
-                base_delay = 2
+                models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash"]
                 
                 response = None
-                for attempt in range(max_retries):
-                    if attempt > 0:
-                        print(f"[Gemini] 🔄 Retry attempt {attempt + 1}/{max_retries} for page {page_num}...")
-                        
-                    try:
-                        response = self.client.models.generate_content(
-                            model=self.provider_version,
-                            contents=contents,
-                            config=types.GenerateContentConfig(
-                                system_instruction=system_instruction,
-                                response_mime_type="application/json",
-                                response_schema=ExtractedPage,
-                                temperature=0.1,
-                            ),
-                        )
+                for model_name in models_to_try:
+                    print(f"[Gemini] Attempting extraction with model: {model_name}")
+                    max_retries = 3
+                    base_delay = 2
+                    
+                    model_success = False
+                    for attempt in range(max_retries):
+                        if attempt > 0:
+                            print(f"[Gemini] [RETRY] Retry attempt {attempt + 1}/{max_retries} for page {page_num} on {model_name}...")
+                            
+                        try:
+                            response = self.client.models.generate_content(
+                                model=model_name,
+                                contents=contents,
+                                config=types.GenerateContentConfig(
+                                    system_instruction=system_instruction,
+                                    response_mime_type="application/json",
+                                    temperature=0.1,
+                                ),
+                            )
+                            model_success = True
+                            break
+                        except Exception as e:
+                            err_str = str(e).lower()
+                            if "503" in err_str or "429" in err_str or "unavailable" in err_str or "quota" in err_str or "not found" in err_str:
+                                if attempt == max_retries - 1:
+                                    print(f"[Gemini] [WARN] Model {model_name} failed all {max_retries} attempts. Last error: {e}")
+                                else:
+                                    print(f"[Gemini] [WARN] Error on page {page_num} with {model_name} ({e}), retrying in {base_delay * (2 ** attempt)}s...")
+                                    time.sleep(base_delay * (2 ** attempt))
+                            else:
+                                print(f"[Gemini] [ERROR] Unrecoverable error on {model_name} page {page_num}: {e}")
+                                break
+                    
+                    if model_success:
                         break
-                    except Exception as e:
-                        if attempt == max_retries - 1:
-                            print(f"[Gemini] ❌ Error extracting page {page_num} on final attempt: {e}")
-                            raise e
-                        err_str = str(e).lower()
-                        if "503" in err_str or "429" in err_str or "unavailable" in err_str or "quota" in err_str:
-                            print(f"[Gemini] ⚠️ Rate limit or unavailable error on page {page_num}, retrying in {base_delay * (2 ** attempt)}s...")
-                            time.sleep(base_delay * (2 ** attempt))
-                        else:
-                            print(f"[Gemini] ❌ Error extracting page {page_num}: {e}")
-                            raise e
+                        
+                if not response or not getattr(response, 'text', None):
+                    raise RuntimeError(f"All fallback models failed for page {page_num}. Please try again later.")
                 
                 raw_response = response.text
                 raw_responses.append(raw_response)
@@ -166,19 +200,24 @@ class GeminiProvider(ExtractionProvider):
                     prompt_tokens += response.usage_metadata.prompt_token_count
                     candidate_tokens += response.usage_metadata.candidates_token_count
 
-                print(f"[Gemini] ✅ Page {page_num} inference complete! Parsing JSON ({t_used} tokens)...")
+                print(f"[Gemini] [SUCCESS] Page {page_num} inference complete! Parsing JSON ({t_used} tokens)...")
 
-                # Parse response directly into our Document AI model for this page
+                # Parse response into our Document AI model for this page
                 try:
-                    page = ExtractedPage.model_validate_json(raw_response)
-                    print(f"[Gemini] ✅ Page {page_num} successfully parsed! Extracted {len(page.rows)} rows.")
+                    raw_text = raw_response.strip()
+                    # Strip markdown code fences if present
+                    if raw_text.startswith("```"):
+                        raw_text = raw_text.split("\n", 1)[-1]
+                        raw_text = raw_text.rsplit("```", 1)[0].strip()
+                    page = ExtractedPage.model_validate_json(raw_text)
+                    print(f"[Gemini] [SUCCESS] Page {page_num} successfully parsed! Extracted {len(page.rows)} rows.")
                 except Exception as e:
                     # Save the partial payload for inspection
                     import os
                     debug_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', f'failed_payload_debug_page_{page_num}.json')
                     with open(debug_path, 'w', encoding='utf-8') as f:
                         f.write(raw_response)
-                    print(f"[Gemini] ❌ JSON Parse Error on page {page_num}. Saved to {debug_path}.")
+                    print(f"[Gemini] [ERROR] JSON Parse Error on page {page_num}. Saved to {debug_path}.")
                     raise RuntimeError(f"Failed to parse JSON payload for page {page_num}. Saved raw payload to {debug_path}. Error: {e}")
                 
                 # Ensure page number is correct
@@ -192,7 +231,7 @@ class GeminiProvider(ExtractionProvider):
                 doc.pages.append(page)
             
             processing_time = time.time() - start_time
-            print(f"[Gemini] 🎉 All pages processed successfully in {processing_time:.2f}s!")
+            print(f"[Gemini] [SUCCESS] All pages processed successfully in {processing_time:.2f}s!")
             
             return ExtractionJobResult(
                 document=doc,

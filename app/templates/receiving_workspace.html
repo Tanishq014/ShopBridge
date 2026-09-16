@@ -12,29 +12,90 @@
 
 <div class="receiving-workspace">
   <header class="workspace-header">
-    <div class="workspace-title">
-      <a href="/receiving" class="back-link">←</a>
-      <div>
-        <h2 style="font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-          {{ session.supplier.name }}
-          <span id="btn-session-info" style="color: var(--accent-blue); font-size: 1.1rem; cursor: pointer; padding: 0 4px;" title="Session Info">ⓘ</span>
-          <span id="btn-copy-json" style="color: var(--text-muted); font-size: 1rem; cursor: pointer; padding: 0 4px;" title="Copy AI JSON Payload" onclick="copySessionJson({{ session.id }})">📋</span>
-        </h2>
+    <div class="workspace-title" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.75rem; margin-bottom: 0.5rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <a href="/receiving" class="back-link">←</a>
+          <h2 style="font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+            {{ session.supplier.name }}
+            <span id="btn-session-info" style="color: var(--accent-blue); font-size: 1.1rem; cursor: pointer; padding: 0 4px;" title="Session Info">ⓘ</span>
+            <span id="btn-copy-json" style="color: var(--text-muted); font-size: 1rem; cursor: pointer; padding: 0 4px;" title="Copy AI JSON Payload" onclick="copySessionJson({{ session.id }})">📋</span>
+          </h2>
+          <div class="workspace-progress-text" id="progress-text" style="margin-left: 0.5rem;">
+            <span id="progress-verified">0</span> / <span id="progress-total">0</span>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+          {% if session.status in ['DRAFT', 'RECEIVING'] %}
+          <button class="button primary" id="btn-ai-extract" style="width: max-content; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px;" onclick="document.getElementById('file-upload').click()">
+            📷 Scan Invoice
+          </button>
+          
+          <button class="button outline" id="btn-toggle-global-adjustments" style="width: max-content; margin: 0; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px;" onclick="const p = document.getElementById('global-adjustments-panel'); p.style.display = (p.style.display === 'none' ? 'block' : 'none');">
+            % Global Pricing
+          </button>
+
+          <button class="button outline" id="btn-toggle-draft-form" style="width: max-content; margin: 0; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px;">
+            + Add Row
+          </button>
+          {% endif %}
+          
+          {% if session.status == 'DRAFT' %}
+          <form action="/receiving/{{ session.id }}/start" method="post" style="margin: 0;">
+            <button type="submit" class="button success" id="btn-start-receiving" style="width: max-content; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px; margin: 0;">Start Receiving</button>
+          </form>
+          {% endif %}
+          
+          <!-- Desktop Grid Toggle -->
+          <div class="grid-mode-toggle" style="display: none; align-items: center; gap: 0.5rem;">
+            <label style="display: flex; align-items: center; cursor: pointer; margin: 0; padding-right: 0.5rem; border-right: 1px solid var(--border-color);" title="Top-Down Pricing Mode">
+              <input type="checkbox" id="grid-toggle-pricing-mode" style="transform: scale(0.9); margin: 0; margin-right: 4px;"> <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">Top-Down</span>
+            </label>
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); white-space: nowrap;">Grid Mode</span>
+            <select id="grid-template-select" class="form-input" style="height: 28px; font-size: 0.8rem; padding: 0 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--card-bg); font-weight: 600;">
+              <option value="">-- Off --</option>
+              {% for template in templates %}
+              <option value="{{ template.id }}">{{ template.template_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="workspace-progress-text" id="progress-text">
-        <span id="progress-verified">0</span> / <span id="progress-total">0</span>
+    </div>
+
+    <!-- Global Pricing Adjustments Panel -->
+    <div id="global-adjustments-panel" class="workspace-summary" style="display: none; background: #fdfdfd; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 1rem; padding: 1rem;">
+      <h3 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1rem;">Global Pricing Adjustments</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">These percentages were extracted from the bottom of the invoice. Apply them to calculate landing prices for all rows.</p>
+      
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;" id="global-adjustments-inputs">
+        <div style="flex: 1; min-width: 200px;">
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem;">Global Discounts (%)</label>
+          <input type="text" id="global-discounts-input" class="form-input" placeholder="e.g. 37, 5, 4.76" style="width: 100%;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Comma separated</span>
+        </div>
+        <div style="flex: 1; min-width: 200px;">
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem;">Global Taxes (GST %)</label>
+          <input type="text" id="global-taxes-input" class="form-input" placeholder="e.g. 2.5, 2.5" style="width: 100%;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Comma separated</span>
+        </div>
       </div>
+      
+      <button class="button primary" onclick="applyGlobalAdjustments()" style="padding: 0.5rem 1rem;">Apply to All Rows</button>
     </div>
 
     <div class="workspace-search">
       <input type="text" id="receiving-search" placeholder="Search name, code, price..." autofocus>
     </div>
 
-    <div class="workspace-filters">
-      <button class="filter-tab active" data-filter="PENDING">Pending <span id="count-pending">0</span></button>
-      <button class="filter-tab" data-filter="NEEDS_PRICING">Needs Pricing <span id="count-pricing">0</span></button>
-      <button class="filter-tab" data-filter="PRINT_ISSUES">Print Issues <span id="count-issues">0</span></button>
-      <button class="filter-tab" data-filter="ALL">All <span id="count-all">0</span></button>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div class="workspace-filters">
+        <button class="filter-tab active" data-filter="PENDING">Pending <span id="count-pending">0</span></button>
+        <button class="filter-tab" data-filter="NEEDS_PRICING">Needs Pricing <span id="count-pricing">0</span></button>
+        <button class="filter-tab" data-filter="PRINT_ISSUES">Print Issues <span id="count-issues">0</span></button>
+        <button class="filter-tab" data-filter="ALL">All <span id="count-all">0</span></button>
+      </div>
     </div>
     
     <div class="workspace-summary success-mode" id="completion-summary" hidden>
@@ -44,21 +105,11 @@
     </div>
     
     {% if session.status in ['DRAFT', 'RECEIVING'] %}
-    <div class="workspace-summary draft-mode">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-        <div style="text-align: left;">
-          <h3>Draft Session</h3>
-          <p>Extract rows from invoice, or set up manually.</p>
-        </div>
-      </div>
+    <div class="workspace-summary draft-mode" style="padding: 0; background: transparent; border: none; box-shadow: none;">
       
-      <div class="workspace-actions" style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-        <button class="button primary" id="btn-ai-extract" style="flex: 1; padding: 0.5rem; font-size: 0.85rem; border-radius: 20px;" onclick="document.getElementById('file-upload').click()">
-          📷 Scan Invoice
-        </button>
-        <button class="button outline" id="btn-toggle-draft-form" style="flex: 1; margin: 0; padding: 0.5rem; font-size: 0.85rem; border-radius: 20px;">
-          + Add Row
-        </button>
+      
+      <div class="workspace-actions" style="display: none;">
+        <!-- Moved to top bar -->
       </div>
 
       <input type="file" id="file-upload" accept="image/*,application/pdf" multiple style="display: none;" onchange="stageFiles(event)">
@@ -74,7 +125,8 @@
       </div>
 
       <div class="draft-collapsible" id="draft-form-container">
-        <form action="/receiving/{{ session.id }}/items" method="post" style="text-align: left;">
+        <form action="/receiving/{{ session.id }}/items" method="post" style="text-align: left; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px;">
+          <h4 style="margin-top: 0; margin-bottom: 1rem;">Add Manual Row</h4>
           <div class="form-grid">
             <div class="form-field full">
               <input type="text" name="raw_description" placeholder="Description (Required)" class="form-input" required>
@@ -95,17 +147,11 @@
               <input type="number" name="mrp" placeholder="MRP" class="form-input" min="0" step="0.01">
             </div>
             <div class="form-field full" style="margin-top: 0.5rem;">
-              <button type="submit" class="button primary">Add Manual Row</button>
+              <button type="submit" class="button primary">Add Row</button>
             </div>
           </div>
         </form>
       </div>
-      
-      {% if session.status == 'DRAFT' %}
-      <form action="/receiving/{{ session.id }}/start" method="post" style="margin-top: 1rem;">
-        <button type="submit" class="button success" id="btn-start-receiving">Start Receiving</button>
-      </form>
-      {% endif %}
     </div>
     {% elif session.status in ['COMPLETED', 'CANCELLED'] %}
     <div class="workspace-summary">
@@ -123,11 +169,11 @@
     {% set items_by_page = items|groupby('source_page_number') %}
     {% for page_num, page_items in items_by_page %}
       {% if page_num is not none %}
-        <div class="page-group-header" style="background: #eef2f6; padding: 0.5rem; font-weight: bold; margin-bottom: 0.5rem; border-radius: 4px; color: var(--text-dark);">
+        <div class="page-group-header" style="background: #eef2f6; padding: 0.25rem 0.5rem; font-weight: bold; margin-bottom: 0.25rem; border-radius: 4px; color: var(--text-dark); font-size: 0.8rem;">
           Page {{ page_num }}
         </div>
       {% elif page_num is none and items_by_page|length > 1 %}
-        <div class="page-group-header" style="background: #eef2f6; padding: 0.5rem; font-weight: bold; margin-bottom: 0.5rem; border-radius: 4px; color: var(--text-dark);">
+        <div class="page-group-header" style="background: #eef2f6; padding: 0.25rem 0.5rem; font-weight: bold; margin-bottom: 0.25rem; border-radius: 4px; color: var(--text-dark); font-size: 0.8rem;">
           Other Rows
         </div>
       {% endif %}
@@ -152,14 +198,14 @@
              data-billing-item="{{ item.billing_item if item.billing_item else '' }}">
              
           <div class="item-details" style="padding-left: 0.25rem; flex-direction: row; align-items: center; justify-content: space-between;">
-            <h4 style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 0.5rem;">
+            <div style="flex: 1; display: flex; align-items: baseline; gap: 0.5rem; overflow: hidden; text-overflow: ellipsis;">
               {% if item.source_row_number %}
-                <span style="color: var(--accent-blue); font-weight: normal; margin-right: 0.25rem;" title="{% if item.source_row_inferred %}Inferred from sequence{% else %}Printed on document{% endif %}">
+                <span style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 600; margin-right: 0.25rem;" title="{% if item.source_row_inferred %}Inferred from sequence{% else %}Printed on document{% endif %}">
                   #{{ item.source_row_number }}{% if item.source_row_inferred %}<span style="opacity: 0.6">*</span>{% endif %}
                 </span>
               {% endif %}
-              {{ item.raw_description }}
-            </h4>
+              <span class="item-title-text" style="font-size: 0.85rem; font-weight: 600; text-overflow: ellipsis; overflow: hidden;" title="{{ item.raw_description }}">{{ item.raw_description }}</span>
+            </div>
             
           <div class="badges" style="margin-top: 0; flex-shrink: 0;">
             <span class="badge" id="badge-expected-{{ item.id }}"><span id="expected-qty-{{ item.id }}">{{ ('%g' % item.expected_qty) if item.expected_qty is not none else '—' }}</span> <span id="item-unit-{{ item.id }}">{{ item.unit or 'PCS' }}</span></span>
@@ -188,6 +234,10 @@
       </div>
     {% endfor %}
     {% endfor %}
+  </main>
+  
+  <main class="spreadsheet-container" id="spreadsheet-container" style="display: none; flex: 1; overflow: auto; padding: 0.5rem; padding-bottom: 5rem;">
+    <!-- Grid will be rendered here by JS -->
   </main>
 </div>
 
@@ -300,7 +350,7 @@
       
       <!-- Print Actions -->
       <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem; align-items: stretch; height: 3.5rem;">
-        <input type="number" id="input-label-copies" class="form-input" value="1" min="0" step="1" style="flex: 0 0 70px; text-align: center; font-weight: bold; font-size: 1.25rem; padding: 0;" title="Copies" placeholder="Qty">
+        <input type="number" id="input-label-copies" class="form-input" value="1" min="0" max="1000" step="1" style="flex: 0 0 70px; text-align: center; font-weight: bold; font-size: 1.25rem; padding: 0;" title="Copies" placeholder="Qty">
         <button class="button primary" id="btn-confirm-print" style="flex: 1; margin: 0; font-size: 1.05rem; letter-spacing: 0.5px; font-weight: bold;">CONFIRM & PRINT</button>
         <button class="button" id="btn-reprint" style="display: none; flex: 1; margin: 0; font-size: 1.05rem; letter-spacing: 0.5px; font-weight: bold;">REPRINT</button>
       </div>
@@ -308,6 +358,18 @@
     
   </div>
   
+</div>
+
+<div class="print-sheet" id="printQuantityWarningDialog" role="dialog" aria-modal="true" aria-labelledby="printQuantityWarningDialogTitle" hidden style="z-index: 10000;">
+  <div class="print-sheet-backdrop" id="printQuantityWarningDialogBackdrop"></div>
+  <div class="print-sheet-panel" style="z-index: 10001;">
+    <h3 id="printQuantityWarningDialogTitle" style="color: var(--danger); margin: 0;">Large Print Quantity Warning</h3>
+    <p id="printQuantityWarningDialogMessage" style="font-weight: 600; font-size: 1.1rem; margin: 0.5rem 0 1rem 0;">You are about to print labels. Are you sure?</p>
+    <div class="form-actions" style="margin-top: 1rem;">
+      <button class="button" type="button" id="cancelPrintQuantityWarningButton">Cancel (Esc)</button>
+      <button class="button primary" type="button" id="confirmPrintQuantityWarningButton">Print (Enter)</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -338,4 +400,5 @@
   }
 </script>
 <script src="{{ url_for('static', path='/receiving.js') }}"></script>
+<script src="{{ url_for('static', path='/spreadsheet_mode.js') }}"></script>
 {% endblock %}

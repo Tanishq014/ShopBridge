@@ -167,7 +167,13 @@ def _run_extraction_task(job_id: int, session_id: int, file_paths: list[str], mi
                     for key in ["brand", "size", "color", "article_number", "batch_number", "expiry", "serial_number", "manufacturer", "design", "model_no", "discount"]:
                         val = getattr(row, key, None)
                         if val is not None and safe_val(val) is not None:
-                            custom_attrs[key] = safe_val(val)
+                            # Map AI's verbose names to LabelDraft semantic keys
+                            target_key = key
+                            if key == "article_number": target_key = "article_no"
+                            elif key == "batch_number": target_key = "batch_no"
+                            elif key == "serial_number": target_key = "serial_no"
+                            
+                            custom_attrs[target_key] = safe_val(val)
 
                     r_item = ReceivingItem(
                         session_id=session_id,

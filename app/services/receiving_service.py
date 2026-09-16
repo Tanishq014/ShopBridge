@@ -270,16 +270,27 @@ def confirm_item_pricing(
     landing_price: Decimal | None, 
     mrp: Decimal | None, 
     selling_price: Decimal,
-    manual_barcode: str = ""
+    manual_barcode: str = "",
+    template_id: int | None = None
 ) -> ReceivingItem:
     item = db.get(ReceivingItem, item_id)
     if not item:
         raise ValueError("Receiving item not found")
         
+    final_template_id = template_id or item.template_id
+    if final_template_id:
+        item.template_id = final_template_id
+        
+    item.landing_price = landing_price
+    item.mrp = mrp
+    item.confirmed_selling_price = selling_price
+    item.pricing_status = "CONFIRMED"
+    item.pricing_confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
     from app.services.workflow.variant_resolution_service import resolve_variant_for_receiving
     from app.services.workflow.label_draft_service import resolve_draft
     
-    draft = resolve_draft(db, item)
+    draft = resolve_draft(db, item, template_id_override=final_template_id)
     
     # Safely resolve variant
     variant = resolve_variant_for_receiving(
@@ -291,13 +302,12 @@ def confirm_item_pricing(
         manual_barcode=manual_barcode
     )
     
+    if final_template_id and not variant.template_id:
+        variant.template_id = final_template_id
+        db.add(variant)
+    
     item.family_id = variant.family_id
     item.matched_variant_id = variant.id
-    item.landing_price = landing_price
-    item.mrp = mrp
-    item.confirmed_selling_price = selling_price
-    item.pricing_status = "CONFIRMED"
-    item.pricing_confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
     # Default label status if we haven't printed
     if item.label_status in ("UNRESOLVED", "NOT_REQUIRED", "FAILED"):
@@ -309,7 +319,13 @@ def confirm_item_pricing(
     return item
 
 
-def queue_print_item(db: Session, item_id: int, copies: int, force_reprint: bool = False) -> ReceivingItem:
+def queue_print_item(
+    db: Session, 
+    item_id: int, 
+    copies: int, 
+    force_reprint: bool = False, 
+    template_id: int | None = None
+) -> ReceivingItem:
     item = db.get(ReceivingItem, item_id)
     if not item:
         raise ValueError("Receiving item not found")
@@ -330,9 +346,14 @@ def queue_print_item(db: Session, item_id: int, copies: int, force_reprint: bool
     variant = item.matched_variant
     
     from app.services.workflow.form_state_service import variant_template_id
-    template_id = variant_template_id(variant)
+    final_template_id = template_id or variant_template_id(variant)
+    if final_template_id and not item.template_id:
+        item.template_id = final_template_id
+    if final_template_id and variant and not variant.template_id:
+        variant.template_id = final_template_id
+        db.add(variant)
     from app.models import TemplateMaster
-    template = db.get(TemplateMaster, template_id) if template_id else None
+    template = db.get(TemplateMaster, final_template_id) if final_template_id else None
     
     if not template:
         item.label_status = "MISSING_TEMPLATE"
@@ -349,6 +370,8 @@ def queue_print_item(db: Session, item_id: int, copies: int, force_reprint: bool
             item.label_status = "QUEUED" # CSV mode or async
         elif job.status == "printed":
             item.label_status = "PRINTED"
+    except ValueError:
+        raise
     except Exception as exc:
         item.label_status = "FAILED"
         

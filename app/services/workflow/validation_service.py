@@ -6,7 +6,7 @@ import re
 from app.models import LabelVariant, TemplateMaster
 from app.services.workflow.form_state_service import parse_extra_field_values, variant_template_id
 
-MAX_PRINT_COPIES = 24
+MAX_PRINT_COPIES = 1000
 
 
 def decimal_or_none(value: str | None) -> Decimal | None:
@@ -74,7 +74,7 @@ def label_details_changed(
     *,
     category: str,
     family_name: str,
-    template: TemplateMaster,
+    template: TemplateMaster | None,
     brand: str,
     item_display_name: str,
     article_no: str,
@@ -92,7 +92,7 @@ def label_details_changed(
     return (
         not same_text(family.category if family else "", category)
         or not same_text(family.family_name if family else "", family_name)
-        or variant_template_id(variant) != template.id
+        or variant_template_id(variant) != (template.id if template else None)
         or not same_text(variant.brand, brand)
         or not same_text(variant.item_display_name, item_display_name)
         or not same_text(variant.article_no, article_no)
