@@ -260,10 +260,22 @@ def get_grid_data(session_id: int, template_id: int | None = None, db: Session =
         except Exception:
             pass
             
+    code_target_length = 0
+    if template_id:
+        from app.models import TemplateMaster
+        from app.services.workflow.template_field_service import parse_field_defaults
+        tmpl = db.get(TemplateMaster, template_id)
+        if tmpl and tmpl.default_field_values:
+            defaults = parse_field_defaults(tmpl.default_field_values)
+            code_def = defaults.get("coded_price") or defaults.get("code") or defaults.get("price_code") or ""
+            if code_def:
+                code_target_length = len(str(code_def))
+
     return {
         "items": grid_rows, 
         "global_discounts": global_discounts, 
-        "global_taxes": global_taxes
+        "global_taxes": global_taxes,
+        "code_target_length": code_target_length
     }
 
 @router.get("/{session_id}", response_class=HTMLResponse)
@@ -276,8 +288,17 @@ def receiving_workspace(session_id: int, request: Request, db: Session = Depends
     item_dicts = [ReceivingItemRead.model_validate(item).model_dump(mode="json") for item in items]
     
     from app.models import TemplateMaster
+    from app.services.workflow.template_field_service import parse_field_defaults
     templates_list = db.execute(select(TemplateMaster).where(TemplateMaster.active_status == True)).scalars().all()
-    templates_json = [{"id": t.id, "name": t.template_name} for t in templates_list]
+    templates_json = []
+    for t in templates_list:
+        code_len = 0
+        if t.default_field_values:
+            defaults = parse_field_defaults(t.default_field_values)
+            c = defaults.get("coded_price") or defaults.get("code") or defaults.get("price_code") or ""
+            if c:
+                code_len = len(str(c))
+        templates_json.append({"id": t.id, "name": t.template_name, "code_target_length": code_len})
 
     from app.services.settings_service import get_price_code_settings, get_pricing_settings
     price_code_settings = get_price_code_settings()

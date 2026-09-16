@@ -48,9 +48,31 @@ document.addEventListener('DOMContentLoaded', () => {
         document.head.appendChild(style);
     }
     
-    // Global Search Handlers for Grid Mode (Initialized Once)
+    // Global Search & Active Row Handlers for Grid Mode (Initialized Once)
     let gridHighlightedIndex = -1;
+    let lastActiveRowIndex = null;
+    let lastFocusedColIndex = null;
+    let autoAdvanceTimer = null;
     
+    function updateActiveGridRow(tr, cell = null) {
+        if (!tr) return;
+        const table = document.getElementById('spreadsheet-table');
+        if (!table) return;
+
+        const allRows = table.querySelectorAll('.grid-row');
+        allRows.forEach(r => {
+            if (r !== tr) r.classList.remove('search-highlighted');
+        });
+        tr.classList.add('search-highlighted');
+
+        const visibleRows = Array.from(allRows).filter(r => r.style.display !== 'none');
+        const idx = visibleRows.indexOf(tr);
+        if (idx !== -1) {
+            gridHighlightedIndex = idx;
+        }
+    }
+    window.updateActiveGridRow = updateActiveGridRow;
+
     function updateGridSearchHighlight(visibleRows, table) {
         if (!table) return;
         const allRows = table.querySelectorAll('.grid-row');
@@ -59,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gridHighlightedIndex >= 0 && gridHighlightedIndex < visibleRows.length) {
             const target = visibleRows[gridHighlightedIndex];
             target.classList.add('search-highlighted');
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
 
@@ -67,21 +89,30 @@ document.addEventListener('DOMContentLoaded', () => {
         applyGridFilters();
     });
 
+    const savedGridFilter = localStorage.getItem('receiving_active_filter');
     const activeTab = document.querySelector('.filter-tab.active');
-    let currentGridFilter = activeTab ? (activeTab.getAttribute('data-filter') || 'PENDING') : 'PENDING';
+    let currentGridFilter = (savedGridFilter && ['PENDING', 'NEEDS_PRICING', 'PRINT_ISSUES', 'ALL'].includes(savedGridFilter))
+        ? savedGridFilter
+        : (activeTab ? (activeTab.getAttribute('data-filter') || 'PENDING') : 'PENDING');
     
     document.addEventListener('grid-tab-filter', (e) => {
-        currentGridFilter = e.detail || 'PENDING';
-        applyGridFilters();
+        const newFilter = (typeof e.detail === 'object' && e.detail !== null) ? e.detail.filter : (e.detail || 'PENDING');
+        const filterChanged = (typeof e.detail === 'object' && e.detail !== null) ? !!e.detail.filterChanged : (newFilter !== currentGridFilter);
+        currentGridFilter = newFilter;
+        applyGridFilters(filterChanged);
     });
 
-    function applyGridFilters() {
+    function applyGridFilters(filterChanged = false) {
         const table = document.getElementById('spreadsheet-table');
         if (!table) return;
 
         const term = (searchInput ? searchInput.value.toLowerCase().trim() : '');
         const rows = table.querySelectorAll('.grid-row');
         const visibleRows = [];
+
+        // Track active element before visibility changes
+        const activeEl = document.activeElement;
+        const activeRow = (activeEl && activeEl.closest) ? activeEl.closest('.grid-row') : null;
 
         rows.forEach(row => {
             // Check text search
@@ -123,12 +154,71 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        gridHighlightedIndex = visibleRows.length > 0 ? 0 : -1;
-        updateGridSearchHighlight(visibleRows, table);
+        if (filterChanged && visibleRows.length > 0) {
+            // When filter changes, make top line active from billing item!
+            gridHighlightedIndex = 0;
+            const topRow = visibleRows[0];
+            updateActiveGridRow(topRow);
+            const billingInput = topRow.querySelector('input[data-field="billing_item"]') || topRow.querySelector('.code-field') || topRow.querySelector('.grid-cell');
+            if (billingInput) {
+                setTimeout(() => {
+                    billingInput.focus();
+                    if (typeof billingInput.select === 'function') billingInput.select();
+                }, 30);
+            }
+            topRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else if (activeRow && visibleRows.includes(activeRow)) {
+            // Active row is still visible, keep it highlighted and active!
+            gridHighlightedIndex = visibleRows.indexOf(activeRow);
+            updateActiveGridRow(activeRow, activeEl);
+        } else if (activeRow && !visibleRows.includes(activeRow)) {
+            // The active row was just hidden (e.g. verified on PENDING tab)!
+            if (visibleRows.length > 0) {
+                const targetIdx = (lastActiveRowIndex !== null && lastActiveRowIndex < visibleRows.length)
+                    ? lastActiveRowIndex
+                    : (visibleRows.length - 1);
+                const targetRow = visibleRows[targetIdx];
+                gridHighlightedIndex = targetIdx;
+                updateActiveGridRow(targetRow);
+                
+                const focusableInTarget = Array.from(targetRow.querySelectorAll('.grid-cell, .btn-grid-print'));
+                const targetCell = (lastFocusedColIndex !== null && focusableInTarget[lastFocusedColIndex])
+                    ? focusableInTarget[lastFocusedColIndex]
+                    : (targetRow.querySelector('.code-field') || targetRow.querySelector('.grid-cell'));
+                if (targetCell) {
+                    setTimeout(() => {
+                        targetCell.focus();
+                        if (typeof targetCell.select === 'function') targetCell.select();
+                    }, 20);
+                }
+            } else {
+                gridHighlightedIndex = -1;
+                updateGridSearchHighlight(visibleRows, table);
+            }
+        } else if (term) {
+            gridHighlightedIndex = visibleRows.length > 0 ? 0 : -1;
+            updateGridSearchHighlight(visibleRows, table);
+        } else if (visibleRows.length > 0) {
+            if (gridHighlightedIndex < 0 || gridHighlightedIndex >= visibleRows.length) {
+                gridHighlightedIndex = 0;
+            }
+            updateActiveGridRow(visibleRows[gridHighlightedIndex]);
+        } else {
+            gridHighlightedIndex = -1;
+            updateGridSearchHighlight(visibleRows, table);
+        }
     }
 
     const searchInput = document.getElementById('receiving-search');
     if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            applyGridFilters(false);
+        });
+
+        document.addEventListener('grid-search', () => {
+            applyGridFilters(false);
+        });
+
         searchInput.addEventListener('keydown', (e) => {
             const itemListVisible = document.getElementById('item-list')?.style.display !== 'none';
             if (itemListVisible) return; // List mode handles its own
@@ -219,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tid = e.target.value;
         if (!tid) {
             localStorage.removeItem('grid_mode_template');
+            window.codeTargetLength = 0;
             spreadsheetContainer.style.display = 'none';
             itemList.style.display = 'flex';
             workspaceFilters.style.display = 'flex';
@@ -226,6 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         localStorage.setItem('grid_mode_template', tid);
+        const selTmpl = (window.templatesData || []).find(t => String(t.id) === String(tid));
+        window.codeTargetLength = selTmpl ? (selTmpl.code_target_length || 0) : 0;
         spreadsheetContainer.style.display = 'block';
         itemList.style.display = 'none';
         // workspaceFilters.style.display = 'none'; // Keep filters visible in grid mode
@@ -240,6 +333,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             currentGridData = data.items || [];
             currentGridTemplate = tid;
+            if (data.code_target_length !== undefined) {
+                window.codeTargetLength = data.code_target_length || 0;
+            }
             
             // Populate Global Adjustments UI
             const panel = document.getElementById('global-adjustments-panel');
@@ -297,6 +393,81 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 50);
 
+    function renderTallyStatusBadge(receivedQty, expectedQty, tallyStatus) {
+        const rec = (receivedQty !== null && receivedQty !== undefined && !isNaN(Number(receivedQty))) ? Number(receivedQty) : 0;
+        const exp = (expectedQty !== null && expectedQty !== undefined && !isNaN(Number(expectedQty))) ? Number(expectedQty) : null;
+        
+        // Check if verified / done
+        if (tallyStatus === 'VERIFIED' || (exp !== null && rec === exp && rec > 0)) {
+            return `<span class="badge verified tally-status-badge" style="background: rgba(52,199,89,0.15); color: #15803d; font-weight: 700;">✓ Rec: ${rec} (Done)</span>`;
+        }
+        
+        // If received exceeds expected
+        if (exp !== null && rec > exp) {
+            const extra = Number.isInteger(rec - exp) ? (rec - exp) : parseFloat((rec - exp).toFixed(3));
+            return `<span class="badge mismatch tally-status-badge" style="background: rgba(255,59,48,0.15); color: var(--accent-red, #ff3b30); font-weight: 700;">Rec: ${rec} (Extra ${extra})</span>`;
+        }
+        
+        // If partially received / mismatch short
+        if (exp !== null && rec > 0 && rec < exp) {
+            const shortQty = Number.isInteger(exp - rec) ? (exp - rec) : parseFloat((exp - rec).toFixed(3));
+            return `<span class="badge mismatch short tally-status-badge" style="background: rgba(255,149,0,0.15); color: #c2410c; font-weight: 700;">Rec: ${rec} (Short ${shortQty})</span>`;
+        }
+        
+        // If received is 0 or unverified / untouched
+        if (rec === 0) {
+            const pendingText = exp !== null ? `Pending ${exp}` : 'Pending';
+            return `<span class="badge pending tally-status-badge" style="background: rgba(142,142,147,0.15); color: #636366; font-weight: 600;">${pendingText}</span>`;
+        }
+        
+        // Fallback if no expected qty known but received > 0
+        return `<span class="badge verified tally-status-badge" style="background: rgba(52,199,89,0.15); color: #15803d; font-weight: 700;">Rec: ${rec}</span>`;
+    }
+    window.renderTallyStatusBadge = renderTallyStatusBadge;
+
+    function updateGridRowTallyBadge(gridRow, receivedQty, expectedQty, tallyStatus) {
+        if (!gridRow) return;
+        const rec = (receivedQty !== null && receivedQty !== undefined && !isNaN(Number(receivedQty))) ? Number(receivedQty) : 0;
+        let exp = (expectedQty !== null && expectedQty !== undefined && !isNaN(Number(expectedQty))) ? Number(expectedQty) : null;
+        if (exp === null) {
+            const expAttr = gridRow.getAttribute('data-expected-qty');
+            if (expAttr !== null && expAttr !== '' && !isNaN(Number(expAttr))) {
+                exp = Number(expAttr);
+            }
+        }
+        
+        // Compute effective tally status if not explicitly provided
+        let status = tallyStatus;
+        if (!status) {
+            if (exp !== null && rec === exp && rec > 0) status = 'VERIFIED';
+            else if (rec > 0) status = 'MISMATCH';
+            else status = 'UNVERIFIED';
+        }
+        
+        gridRow.setAttribute('data-received-qty', rec);
+        gridRow.setAttribute('data-tally-status', status);
+        
+        const tallyDisplay = gridRow.querySelector('.tally-display');
+        if (tallyDisplay) {
+            tallyDisplay.textContent = rec;
+        }
+        
+        let statusContainer = gridRow.querySelector('.tally-status-container');
+        if (!statusContainer) {
+            const badges = gridRow.querySelector('.badges');
+            if (badges) {
+                statusContainer = document.createElement('span');
+                statusContainer.className = 'tally-status-container';
+                badges.appendChild(statusContainer);
+            }
+        }
+        
+        if (statusContainer) {
+            statusContainer.innerHTML = renderTallyStatusBadge(rec, exp, status);
+        }
+    }
+    window.updateGridRowTallyBadge = updateGridRowTallyBadge;
+
     function renderGrid(data) {
         if (!data || data.length === 0) {
             spreadsheetContainer.innerHTML = '<div style="padding: 2rem;">No items to display.</div>';
@@ -323,28 +494,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return (fieldPriority[a] || 50) - (fieldPriority[b] || 50);
         });
 
-        let html = `<div class="sleek-grid" id="spreadsheet-table" style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
-            <div style="display: flex; flex-direction: row; align-items: center; justify-content: flex-end; padding-right: 0.75rem; gap: 0.5rem; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 0.25rem;">
-                <div style="width: 80px;">Cost</div>
-                <div style="width: 120px;">Billing Item</div>`;
+        let html = `<div class="sleek-grid" id="spreadsheet-table" style="display: flex; flex-direction: column; gap: 0.25rem; width: 100%;">
+            <div class="sleek-grid-header" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 0.4rem 0.25rem; gap: 0.5rem; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 20; background: var(--bg-color, #f2f2f7); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+                <div style="flex: 1; text-align: left; padding-left: 0.25rem;">Item Description</div>
+                <div style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem; padding-right: 0.25rem;">
+                    <div style="width: 80px;">Cost</div>
+                    <div style="width: 120px;">Billing Item</div>`;
         
         if (isTopDown) {
             html += `
-                <div style="width: 70px;">MRP</div>
-                <div style="width: 90px;">C Calc</div>
-                <div style="width: 90px;">Code</div>`;
+                    <div style="width: 70px;">MRP</div>
+                    <div style="width: 90px;">C Calc</div>
+                    <div style="width: 90px;">Code</div>`;
         } else {
             html += `
-                <div style="width: 70px;">Marg %</div>
-                <div style="width: 90px;">Code</div>
-                <div style="width: 70px;">Disc %</div>
-                <div style="width: 70px;">MRP</div>`;
+                    <div style="width: 70px;">Marg %</div>
+                    <div style="width: 90px;">Code</div>
+                    <div style="width: 70px;">Disc %</div>
+                    <div style="width: 70px;">MRP</div>`;
         }
 
         html += `
-                ${orderedCols.map(c => `<div style="width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c}</div>`).join('')}
-                <div style="width: 60px;">Qty</div>
-                <div style="width: 70px; text-align: center;">Action</div>
+                    ${orderedCols.map(c => `<div style="width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c}</div>`).join('')}
+                    <div style="width: 60px;">Qty</div>
+                    <div style="width: 70px; text-align: center;">Action</div>
+                </div>
             </div>
             <div class="sleek-grid-body" style="display: flex; flex-direction: column; gap: 0.15rem;">
         `;
@@ -365,39 +539,35 @@ document.addEventListener('DOMContentLoaded', () => {
             let codeStr = row.supplier_product_code || (row.selling_price ? window.generateCodedPrice(row.selling_price) : '');
             
             let decodedStr = '';
-            let targetLen = window.codeTargetLength || 0;
-            if (codeStr) {
-                let previewParts = [];
-                let deficit = targetLen - codeStr.length;
-                if (deficit > 0) {
-                    const junk = window.getJunkPadding ? window.getJunkPadding(deficit) : 'XXXXXX'.substring(0, deficit);
-                    const front = Math.floor(junk.length / 2);
-                    previewParts.push(junk.substring(0, front) + codeStr + junk.substring(front));
+            let sellVal = (row.selling_price && Number(row.selling_price) > 0) ? Math.round(Number(row.selling_price)) : '';
+            if (sellVal) {
+                decodedStr = `₹${sellVal}`;
+            } else if (codeStr && !/^\d+$/.test(codeStr)) {
+                const decoded = window.decodePriceCode ? window.decodePriceCode(codeStr) : null;
+                if (decoded !== null && decoded > 0) {
+                    sellVal = Math.round(decoded);
+                    decodedStr = `₹${sellVal}`;
                 }
-                if (row.selling_price) {
-                    previewParts.push(`₹${row.selling_price}`);
-                } else {
-                    const decoded = window.decodePriceCode ? window.decodePriceCode(codeStr) : null;
-                    if (decoded !== null) previewParts.push(`₹${Math.round(decoded)}`);
-                }
-                decodedStr = previewParts.join(' ');
             }
             
             let costVal = '';
             if (row.landing_price !== null && row.landing_price !== undefined) costVal = row.landing_price;
             else if (row.purchase_rate !== null && row.purchase_rate !== undefined) costVal = row.purchase_rate;
             
-            html += `<div class="item-row grid-row ${trClass}" data-item-id="${row.id}" data-tally-status="${row.tally_status}" data-pricing-status="${row.pricing_status}" data-label-status="${row.label_status}" data-received-qty="${row.received_qty || 0}" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin: 0; padding: 0.15rem 0.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px;">
+            html += `<div class="item-row grid-row ${trClass}" data-item-id="${row.id}" data-tally-status="${row.tally_status}" data-expected-qty="${row.expected_qty !== null && row.expected_qty !== undefined ? row.expected_qty : ''}" data-unit="${row.unit || 'PCS'}" data-pricing-status="${row.pricing_status}" data-label-status="${row.label_status}" data-received-qty="${row.received_qty || 0}" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin: 0; padding: 0.15rem 0.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px;">
                 
                 <!-- Left Side: Sleek Details -->
                 <div class="item-details readonly-cell" style="padding-left: 0.25rem; flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.5rem; overflow: hidden; white-space: nowrap;">
                     <div style="display: flex; align-items: baseline; gap: 0.5rem; overflow: hidden; text-overflow: ellipsis;">
                         ${row.source_row_number ? `<span style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 600; margin-right: 0.25rem;">#${row.source_row_number}</span>` : ''}
-                        <span style="font-size: 0.85rem; font-weight: 600; text-overflow: ellipsis; overflow: hidden;" title="${row.raw_description || ''}">${row.raw_description || ''}</span>
+                        <span class="item-title-text" style="font-size: 0.85rem; font-weight: 600; text-overflow: ellipsis; overflow: hidden;" title="${row.raw_description || ''}">${row.raw_description || ''}</span>
                     </div>
-                    <div class="badges" style="margin-top: 0; flex-shrink: 0;">
-                        <span class="badge qty-badge" style="background: var(--bg-body); border-color: transparent;"><span class="tally-display">${row.received_qty || 0}</span> / ${row.expected_qty || '—'} ${row.unit || 'PCS'}</span>
-                        ${row.label_status === 'PRINTED' ? '<span class="badge verified">Printed</span>' : ''}
+                    <div class="badges" style="margin-top: 0; flex-shrink: 0; display: flex; gap: 0.35rem; align-items: center;">
+                        <span class="badge qty-badge" style="background: #e5e5ea; color: #3a3a3c; font-weight: 600;"><span class="tally-display">${row.received_qty || 0}</span> / ${row.expected_qty !== null && row.expected_qty !== undefined ? row.expected_qty : '—'} ${row.unit || 'PCS'}</span>
+                        <span class="tally-status-container">
+                            ${renderTallyStatusBadge(row.received_qty, row.expected_qty, row.tally_status)}
+                        </span>
+                        ${row.label_status === 'PRINTED' ? '<span class="badge verified label-printed-badge" style="font-weight: 600;">Printed</span>' : ''}
                     </div>
                 </div>
 
@@ -412,17 +582,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div style="width: 70px;"><input type="number" step="1" class="grid-cell pricing-field" data-field="mrp" value="${row.mrp !== null ? row.mrp : ''}" style="width: 100%;"></div>
                     <div style="width: 90px;"><input type="text" class="grid-cell calc-field" placeholder="-200 / 50%" style="width: 100%;"></div>
                     <div style="width: 90px; position: relative;">
-                        <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 4px;">
-                        <span class="grid-code-preview" style="position: absolute; top: 50%; right: 4px; transform: translateY(-50%); font-size: 0.75rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 600; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap;">${decodedStr}</span>
-                        <input type="hidden" class="pricing-field" data-field="selling_price" value="${row.selling_price || ''}">
+                        <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 38px;">
+                        <span class="grid-code-preview" style="position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font-size: 0.72rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 700; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap; z-index: 2;">${decodedStr}</span>
+                        <input type="hidden" class="pricing-field" data-field="selling_price" value="${sellVal}">
                     </div>`;
             } else {
                 html += `
                     <div style="width: 70px;"><input type="number" step="0.1" class="grid-cell margin-field" placeholder="%" value="${margin}" style="width: 100%;"></div>
                     <div style="width: 90px; position: relative;">
-                        <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 4px;">
-                        <span class="grid-code-preview" style="position: absolute; top: 50%; right: 4px; transform: translateY(-50%); font-size: 0.75rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 600; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap;">${decodedStr}</span>
-                        <input type="hidden" class="pricing-field" data-field="selling_price" value="${row.selling_price || ''}">
+                        <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 38px;">
+                        <span class="grid-code-preview" style="position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font-size: 0.72rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 700; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap; z-index: 2;">${decodedStr}</span>
+                        <input type="hidden" class="pricing-field" data-field="selling_price" value="${sellVal}">
                     </div>
                     <div style="width: 70px;"><input type="number" step="0.1" class="grid-cell disc-field" placeholder="%" value="${disc}" style="width: 100%;"></div>
                     <div style="width: 70px;"><input type="number" step="1" class="grid-cell pricing-field" data-field="mrp" value="${row.mrp !== null ? row.mrp : ''}" style="width: 100%;"></div>`;
@@ -452,7 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         html += `</div></div>`;
         spreadsheetContainer.innerHTML = html;
         
-        applyGridFilters(); // apply filters after rendering
+        applyGridFilters(true); // apply filters after rendering and activate top line from billing item
 
         setupGridInteractions();
     }
@@ -464,9 +634,129 @@ document.addEventListener('DOMContentLoaded', () => {
         const isTopDown = localStorage.getItem('pricing_strategy_mode') === 'top_down';
         let lastPrintFocusTime = 0;
 
+        function refreshGridCodePreview(tr) {
+            if (!tr) return;
+            const codeInput = tr.querySelector('.code-field');
+            const previewSpan = tr.querySelector('.grid-code-preview');
+            const sellInput = tr.querySelector('input[data-field="selling_price"]');
+            if (!codeInput || !previewSpan) return;
+
+            const cleanCode = codeInput.value ? codeInput.value.trim().toUpperCase() : '';
+            const isNumbersOnly = cleanCode && /^\d+$/.test(cleanCode);
+            
+            if (isNumbersOnly) {
+                codeInput.classList.add('invalid-code');
+                codeInput.title = "Code cannot be only numbers. Use coded letters too.";
+                codeInput.setCustomValidity("Code cannot be only numbers. Use coded letters too.");
+            } else {
+                codeInput.classList.remove('invalid-code');
+                codeInput.title = "";
+                codeInput.setCustomValidity("");
+            }
+
+            let decoded = null;
+            if (cleanCode && !isNumbersOnly) {
+                decoded = window.decodePriceCode ? window.decodePriceCode(cleanCode) : null;
+            }
+            
+            if (decoded !== null && Number.isFinite(decoded) && decoded > 0) {
+                const rounded = Math.round(decoded);
+                previewSpan.textContent = `₹${rounded}`;
+                previewSpan.style.display = 'block';
+                if (sellInput) {
+                    sellInput.value = rounded;
+                }
+            } else {
+                previewSpan.textContent = '';
+                previewSpan.style.display = 'none';
+                if (cleanCode && sellInput) {
+                    sellInput.value = '';
+                }
+            }
+        }
+
+        let activeGridField = null;
+        let activeGridOriginalValue = null;
+        let activeGridDirty = false;
+
+        function isGridFieldActuallyEditing(input = document.activeElement) {
+            return Boolean(
+                input &&
+                input.classList &&
+                input.classList.contains('grid-cell') &&
+                activeGridField === input &&
+                activeGridDirty &&
+                input.value !== ""
+            );
+        }
+
+        table.addEventListener('focusin', (e) => {
+            if (e.target.classList && e.target.classList.contains('grid-cell')) {
+                activeGridField = e.target;
+                activeGridOriginalValue = e.target.value;
+                activeGridDirty = false;
+                e.target.dataset.justFocused = "true";
+                
+                const tr = e.target.closest('.grid-row');
+                if (tr) {
+                    updateActiveGridRow(tr, e.target);
+                    const visibleRows = Array.from(table.querySelectorAll('.grid-row')).filter(r => r.style.display !== 'none');
+                    lastActiveRowIndex = visibleRows.indexOf(tr);
+                    const focusable = Array.from(tr.querySelectorAll('.grid-cell, .btn-grid-print'));
+                    lastFocusedColIndex = focusable.indexOf(e.target);
+                }
+
+                if (typeof e.target.select === 'function') {
+                    e.target.select();
+                }
+            }
+        });
+
+        table.addEventListener('mouseup', (e) => {
+            if (e.target.classList && e.target.classList.contains('grid-cell')) {
+                if (e.target.dataset && e.target.dataset.justFocused === "true") {
+                    e.preventDefault();
+                    if (typeof e.target.select === 'function') {
+                        e.target.select();
+                    }
+                }
+            }
+        });
+
+        table.addEventListener('click', (e) => {
+            if (autoAdvanceTimer) {
+                clearTimeout(autoAdvanceTimer);
+                autoAdvanceTimer = null;
+            }
+            const tr = e.target.closest('.grid-row');
+            if (tr) {
+                updateActiveGridRow(tr);
+            }
+            if (e.target.classList && e.target.classList.contains('grid-cell')) {
+                if (e.target.dataset && e.target.dataset.justFocused === "true") {
+                    delete e.target.dataset.justFocused;
+                    if (typeof e.target.select === 'function') {
+                        e.target.select();
+                    }
+                }
+            }
+        });
+
+        table.addEventListener('focusout', (e) => {
+            if (e.target.classList && e.target.classList.contains('grid-cell')) {
+                if (e.target.dataset) {
+                    delete e.target.dataset.justFocused;
+                }
+            }
+        });
+
         // PRICING LOGIC
         table.addEventListener('input', (e) => {
             if (!e.target.classList.contains('grid-cell')) return;
+            
+            if (activeGridField === e.target) {
+                activeGridDirty = e.target.value !== activeGridOriginalValue;
+            }
             
             if (e.isTrusted && e.target.dataset.autoFilled) {
                 delete e.target.dataset.autoFilled;
@@ -480,38 +770,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const sellInput = tr.querySelector('input[data-field="selling_price"]'); // hidden
             const codeInput = tr.querySelector('.code-field');
             
-            function refreshPreview() {
-                const previewSpan = tr.querySelector('.grid-code-preview');
-                if (!previewSpan) return;
-                const cleanCode = codeInput.value;
-                const decoded = window.decodePriceCode(cleanCode);
-                const targetLen = window.codeTargetLength || 0;
-                const deficit = targetLen - cleanCode.length;
-                let previewParts = [];
-                
-                if (deficit > 0 && cleanCode.length > 0) {
-                    const junk = window.getJunkPadding ? window.getJunkPadding(deficit) : 'XXXXXX'.substring(0, deficit);
-                    const front = Math.floor(junk.length / 2);
-                    previewParts.push(junk.substring(0, front) + cleanCode + junk.substring(front));
-                }
-                
-                if (decoded !== null) {
-                    previewParts.push(`₹${Math.round(decoded)}`);
-                }
-                
-                const finalStr = previewParts.join(' ');
-                if (finalStr) {
-                    previewSpan.textContent = finalStr;
-                    previewSpan.style.display = 'block';
-                } else {
-                    previewSpan.style.display = 'none';
-                }
-            }
-
             if (isTopDown) {
                 const calcBox = tr.querySelector('.calc-field');
                 
-                if (e.target === calcBox || e.target === mrpInput) {
+                if (e.target === calcBox) {
                     const currentMrp = parseFloat(mrpInput.value) || 0;
                     const expr = calcBox ? calcBox.value.trim() : "";
                     if (currentMrp > 0 && expr) {
@@ -520,22 +782,29 @@ document.addEventListener('DOMContentLoaded', () => {
                             const roundedPrice = Math.max(1, Math.round(calcRate));
                             sellInput.value = roundedPrice;
                             const encoded = window.generateCodedPrice(roundedPrice);
-                            codeInput.value = encoded || String(roundedPrice);
-                            refreshPreview();
+                            if (encoded) {
+                                codeInput.value = encoded;
+                                codeInput.dataset.autoCalculated = 'true';
+                            }
+                            refreshGridCodePreview(tr);
                         }
-                    } else if (currentMrp <= 0) {
-                        sellInput.value = '';
-                        codeInput.value = '';
-                        refreshPreview();
                     }
                 } else if (e.target === codeInput) {
+                    delete codeInput.dataset.autoCalculated;
                     codeInput.value = codeInput.value.toUpperCase();
-                    refreshPreview();
-                    
-                    const decoded = window.decodePriceCode(codeInput.value);
-                    if (decoded !== null) {
-                        sellInput.value = Math.round(decoded);
+                    const cleanCode = codeInput.value.trim();
+                    let decoded = null;
+                    if (cleanCode && !/^\d+$/.test(cleanCode)) {
+                        decoded = window.decodePriceCode ? window.decodePriceCode(cleanCode) : null;
                     }
+                    if (decoded !== null && decoded > 0) {
+                        sellInput.value = Math.round(decoded);
+                    } else {
+                        sellInput.value = '';
+                    }
+                    refreshGridCodePreview(tr);
+                } else if (e.target === mrpInput) {
+                    // MRP is truth. User typing MRP does not wipe or overwrite code.
                 }
             } else {
                 const marginInput = tr.querySelector('.margin-field');
@@ -547,33 +816,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 const margin = parseFloat(marginInput.value);
                 const disc = parseFloat(discInput.value);
 
-                if (e.target === marginInput && !isNaN(margin) && !isNaN(rate)) {
-                    const calcSell = rate * (1 + margin / 100);
-                    sellInput.value = Math.round(calcSell);
-                    codeInput.value = window.generateCodedPrice(calcSell) || String(Math.round(calcSell));
-                    refreshPreview();
+                if (e.target === marginInput && !isNaN(margin) && !isNaN(rate) && rate > 0) {
+                    const calcSell = Math.round(rate * (1 + margin / 100));
+                    sellInput.value = calcSell;
+                    const encoded = window.generateCodedPrice(calcSell);
+                    if (encoded) {
+                        codeInput.value = encoded;
+                    }
+                    refreshGridCodePreview(tr);
                     
-                    // Cascade to MRP
-                    if (!isNaN(disc) && disc < 100 && mrpInput) {
+                    // If Disc % is set, calculate and put in MRP cell; otherwise update Disc % display if MRP exists
+                    if (!isNaN(disc) && disc < 100) {
                         mrpInput.value = Math.round(calcSell / (1 - disc / 100));
+                    } else if (!isNaN(mrp) && mrp > 0) {
+                        discInput.value = (((mrp - calcSell) / mrp) * 100).toFixed(1);
                     }
-                } else if (e.target === discInput && !isNaN(disc) && disc < 100 && !isNaN(sell)) {
-                    if (mrpInput) mrpInput.value = Math.round(sell / (1 - disc / 100));
+                } else if (e.target === discInput && !isNaN(disc) && disc < 100 && !isNaN(sell) && sell > 0) {
+                    // MRP Disc % calculates MRP from selling price and puts in the MRP cell!
+                    mrpInput.value = Math.round(sell / (1 - disc / 100));
                 } else if (e.target === codeInput) {
+                    delete codeInput.dataset.autoCalculated;
                     codeInput.value = codeInput.value.toUpperCase();
-                    refreshPreview();
-                    
-                    const decoded = window.decodePriceCode(codeInput.value);
-                    if (decoded !== null) {
-                        sellInput.value = Math.round(decoded);
-                        // Cascade back to margin/disc
-                        if (!isNaN(rate) && rate > 0) marginInput.value = (((decoded - rate) / rate) * 100).toFixed(1);
-                        if (!isNaN(mrp) && mrp > 0) discInput.value = (((mrp - decoded) / mrp) * 100).toFixed(1);
+                    const cleanCode = codeInput.value.trim();
+                    let decoded = null;
+                    if (cleanCode && !/^\d+$/.test(cleanCode)) {
+                        decoded = window.decodePriceCode ? window.decodePriceCode(cleanCode) : null;
                     }
-                } else if (e.target === rateInput && !isNaN(rate) && rate > 0 && !isNaN(sell)) {
-                    marginInput.value = (((sell - rate) / rate) * 100).toFixed(1);
-                } else if (e.target === mrpInput && !isNaN(mrp) && mrp > 0 && !isNaN(sell)) {
-                    discInput.value = (((mrp - sell) / mrp) * 100).toFixed(1);
+                    if (decoded !== null && decoded > 0) {
+                        const rounded = Math.round(decoded);
+                        sellInput.value = rounded;
+                        // Cascade back to margin/disc calculation box indicators for user reference ONLY (NEVER touch mrpInput!)
+                        if (!isNaN(rate) && rate > 0) marginInput.value = (((rounded - rate) / rate) * 100).toFixed(1);
+                        if (!isNaN(mrp) && mrp > 0) discInput.value = (((mrp - rounded) / mrp) * 100).toFixed(1);
+                    } else {
+                        sellInput.value = '';
+                    }
+                    refreshGridCodePreview(tr);
+                } else if (e.target === rateInput && !isNaN(rate) && rate > 0) {
+                    // Changing purchase rate updates Margin % calculation box for user reference ONLY.
+                    // Code and MRP are TRUTH and must NEVER be overwritten!
+                    if (!isNaN(sell) && sell > 0) {
+                        marginInput.value = (((sell - rate) / rate) * 100).toFixed(1);
+                    }
+                } else if (e.target === mrpInput && !isNaN(mrp) && mrp > 0) {
+                    // Changing MRP updates Disc % calculation box for user reference ONLY.
+                    // Code is TRUTH and must NEVER be overwritten!
+                    if (!isNaN(sell) && sell > 0) {
+                        discInput.value = (((mrp - sell) / mrp) * 100).toFixed(1);
+                    }
                 }
             }
         });
@@ -583,17 +873,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target.classList.contains('grid-cell')) {
                 // Formatting on blur for Code
                 if (e.target.classList.contains('code-field')) {
-                    const previewSpan = e.target.parentElement.querySelector('.grid-code-preview');
-                    if (previewSpan) previewSpan.style.display = 'none';
-                    
-                    const targetLen = window.codeTargetLength || 0;
-                    const cleanCode = e.target.value;
-                    const deficit = targetLen - cleanCode.length;
-                    if (deficit > 0) {
-                        const junk = window.getJunkPadding(deficit);
-                        const front = Math.floor(junk.length / 2);
-                        e.target.value = junk.substring(0, front) + cleanCode + junk.substring(front);
-                    }
+                    e.target.value = e.target.value.trim().toUpperCase();
+                    const tr = e.target.closest('.grid-row');
+                    refreshGridCodePreview(tr);
                 }
                 await saveCell(e.target);
                 
@@ -621,12 +903,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             const nextRow = allRows[i];
                             if (nextRow.dataset.pricingStatus === 'PENDING') {
                                 const targetInput = nextRow.querySelector(fieldSelector);
+                                const nextCodeInput = nextRow.querySelector('.code-field');
+                                const hasExistingCode = nextCodeInput && nextCodeInput.value.trim() && nextCodeInput.dataset.autoCalculated !== 'true';
+                                
+                                // Do not overwrite calculation boxes or code if user explicitly set code on nextRow
+                                if (hasExistingCode) {
+                                    continue;
+                                }
+
                                 if (targetInput && (!targetInput.value || targetInput.dataset.autoFilled === 'true')) { 
                                     targetInput.value = val;
                                     targetInput.dataset.autoFilled = 'true';
                                     targetInput.dispatchEvent(new Event('input', { bubbles: true }));
                                 } else if (targetInput && targetInput.value) {
-                                    // Stop cascading if we hit a row the user explicitly priced
+                                    // Stop cascading if we hit a row the user explicitly entered
                                     break;
                                 }
                             }
@@ -639,6 +929,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // NAVIGATION
         table.addEventListener('keydown', (e) => {
             if (!e.target.classList.contains('grid-cell') && !e.target.classList.contains('btn-grid-print')) return;
+
+            if (autoAdvanceTimer && ['Tab', 'Enter', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                clearTimeout(autoAdvanceTimer);
+                autoAdvanceTimer = null;
+            }
 
             if ((e.key === 'Enter' || e.key === 'Tab') && (Date.now() - lastPrintFocusTime < 350)) {
                 e.preventDefault();
@@ -673,6 +968,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (prevRow) {
                         const prevFocusable = Array.from(prevRow.querySelectorAll('.grid-cell, .btn-grid-print'));
                         prev = prevFocusable[prevFocusable.length - 1];
+                        updateActiveGridRow(prevRow, prev);
+                    }
+                }
+                if (prev) {
+                    prev.focus();
+                    if (prev.select) prev.select();
+                }
+                return;
+            }
+
+            if (e.key === 'Backspace' && !isGridFieldActuallyEditing(e.target)) {
+                e.preventDefault();
+                e.stopPropagation();
+                let prev = focusable[currentIdx - 1];
+                if (!prev) {
+                    const prevRow = rows[rowIdx - 1];
+                    if (prevRow) {
+                        const prevFocusable = Array.from(prevRow.querySelectorAll('.grid-cell, .btn-grid-print'));
+                        prev = prevFocusable[prevFocusable.length - 1];
+                        updateActiveGridRow(prevRow, prev);
                     }
                 }
                 if (prev) {
@@ -693,6 +1008,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (nextRow) {
                             const nextCell = nextRow.querySelector('.grid-cell');
                             if (nextCell) {
+                                updateActiveGridRow(nextRow, nextCell);
                                 nextCell.focus();
                                 if (nextCell.select) nextCell.select();
                             }
@@ -706,6 +1022,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const nextRow = rows[rowIdx + 1];
                     if (nextRow) {
                         next = nextRow.querySelector('.grid-cell');
+                        if (next) updateActiveGridRow(nextRow, next);
                     }
                 }
                 
@@ -717,8 +1034,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const prevRow = rows[rowIdx - 1];
                 if (prevRow) {
-                    const nextTarget = Array.from(prevRow.querySelectorAll('.grid-cell, .btn-grid-print'))[currentIdx];
+                    const nextTarget = Array.from(prevRow.querySelectorAll('.grid-cell, .btn-grid-print'))[currentIdx] || prevRow.querySelector('.grid-cell');
                     if (nextTarget) {
+                        updateActiveGridRow(prevRow, nextTarget);
                         nextTarget.focus();
                         if (nextTarget.select) nextTarget.select();
                     }
@@ -727,8 +1045,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const nextRow = rows[rowIdx + 1];
                 if (nextRow) {
-                    const nextTarget = Array.from(nextRow.querySelectorAll('.grid-cell, .btn-grid-print'))[currentIdx];
+                    const nextTarget = Array.from(nextRow.querySelectorAll('.grid-cell, .btn-grid-print'))[currentIdx] || nextRow.querySelector('.grid-cell');
                     if (nextTarget) {
+                        updateActiveGridRow(nextRow, nextTarget);
                         nextTarget.focus();
                         if (nextTarget.select) nextTarget.select();
                     }
@@ -737,6 +1056,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 
                 const currentQty = parseInt(tr.getAttribute('data-received-qty')) || 0;
+                const expQtyStr = tr.getAttribute('data-expected-qty');
+                const expQty = (expQtyStr !== null && expQtyStr !== '') ? parseFloat(expQtyStr) : null;
                 let newQty = currentQty;
                 
                 if (e.key === '+' || e.key === '=') {
@@ -746,17 +1067,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 if (newQty !== currentQty) {
-                    tr.setAttribute('data-received-qty', newQty);
+                    const prevStatus = tr.getAttribute('data-tally-status');
+                    let optStatus = 'UNVERIFIED';
+                    if (expQty !== null && newQty === expQty && newQty > 0) optStatus = 'VERIFIED';
+                    else if (newQty > 0) optStatus = 'MISMATCH';
                     
-                    const tallyDisplay = tr.querySelector('.tally-display');
-                    if (tallyDisplay) {
-                        tallyDisplay.textContent = newQty;
-                    }
+                    updateGridRowTallyBadge(tr, newQty, expQty, optStatus);
 
                     if (typeof window.showToast === 'function') {
                         window.showToast(`Tally: ${newQty}`, 'success');
                     }
                     
+                    if (autoAdvanceTimer) {
+                        clearTimeout(autoAdvanceTimer);
+                        autoAdvanceTimer = null;
+                    }
+
+                    // Auto-advance cursor to next line upon successful verification
+                    // (Only if not in ALL filter, because in ALL filter rows don't hide and user may want to print labels immediately!)
+                    if (optStatus === 'VERIFIED' && currentGridFilter !== 'ALL') {
+                        autoAdvanceTimer = setTimeout(() => {
+                            autoAdvanceTimer = null;
+                            const currentVisible = Array.from(table.querySelectorAll('.grid-row')).filter(r => r.style.display !== 'none');
+                            const cIdx = currentVisible.indexOf(tr);
+                            let targetRow = null;
+                            if (cIdx !== -1 && cIdx + 1 < currentVisible.length) {
+                                targetRow = currentVisible[cIdx + 1];
+                            } else if (cIdx > 0) {
+                                targetRow = currentVisible[cIdx - 1];
+                            }
+                            if (targetRow) {
+                                const nextFocusable = Array.from(targetRow.querySelectorAll('.grid-cell, .btn-grid-print'));
+                                const targetCell = (currentIdx >= 0 && nextFocusable[currentIdx])
+                                    ? nextFocusable[currentIdx]
+                                    : (targetRow.querySelector('.code-field') || targetRow.querySelector('.grid-cell'));
+                                if (targetCell) {
+                                    updateActiveGridRow(targetRow, targetCell);
+                                    targetCell.focus();
+                                    if (typeof targetCell.select === 'function') targetCell.select();
+                                }
+                            }
+                        }, 180);
+                    }
+
                     const itemId = tr.getAttribute('data-item-id');
                     const isDraftSession = (window.SESSION_STATUS === 'DRAFT');
                     const url = isDraftSession ? `/receiving/items/${itemId}/draft` : `/receiving/items/${itemId}/tally`;
@@ -771,13 +1124,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         if(res.ok) return res.json();
                         throw new Error('Failed to save tally');
                     }).then(data => {
-                        tr.setAttribute('data-tally-status', data.tally_status);
+                        updateGridRowTallyBadge(tr, data.received_qty, expQty, data.tally_status);
                         if (typeof window.updateRowDOM === 'function') {
                             window.updateRowDOM(itemId, data);
                         }
+                        if (typeof window.renderItems === 'function') {
+                            window.renderItems();
+                        }
                     }).catch(err => {
                         if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
-                        tr.setAttribute('data-received-qty', currentQty);
+                        updateGridRowTallyBadge(tr, currentQty, expQty, prevStatus);
+                        if (typeof window.renderItems === 'function') {
+                            window.renderItems();
+                        }
                     });
                 }
             } else if (e.key === 'ArrowLeft') {
@@ -834,15 +1193,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const mrpInput = tr.querySelector('input[data-field="mrp"]');
                 const sellInput = tr.querySelector('input[data-field="selling_price"]');
+                const codeInput = tr.querySelector('.code-field');
                 
                 let mrp = 0;
                 let sell = 0;
                 
                 if (mrpInput && sellInput) {
                     mrp = parseFloat(mrpInput.value) || 0;
-                    sell = parseFloat(sellInput.value) || 0;
                     
-                    if (mrpInput && mrp <= 0) {
+                    if (mrp <= 0) {
                         if (typeof window.showToast === 'function') window.showToast('MRP is required', 'error');
                         tr.classList.add('error');
                         mrpInput.focus();
@@ -850,58 +1209,57 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    // If sell is not yet computed but MRP & C CALC exist, calculate now
-                    if (sell <= 0 && mrp > 0) {
-                        const calcBox = tr.querySelector('.calc-field');
-                        const expr = calcBox ? calcBox.value.trim() : "";
-                        if (expr) {
-                            const calcRate = window.computeMrpCalculation(mrp, expr);
-                            if (calcRate !== null && Number.isFinite(calcRate) && calcRate > 0) {
-                                sell = Math.max(1, Math.round(calcRate));
-                                sellInput.value = sell;
-                                const encoded = window.generateCodedPrice(sell);
-                                const codeInput = tr.querySelector('.code-field');
-                                if (codeInput) codeInput.value = encoded || String(sell);
-                            }
-                        }
-                    }
-                    
-                    if (sell <= 0) {
-                        if (typeof window.showToast === 'function') window.showToast('Selling Price is required', 'error');
+                    const rawCode = codeInput ? codeInput.value.trim() : "";
+                    if (!rawCode) {
+                        if (typeof window.showToast === 'function') window.showToast("Price code is required.", "error");
                         tr.classList.add('error');
-                        if (sellInput.type === 'hidden') {
-                            const calcBox = tr.querySelector('.calc-field');
-                            if (calcBox && !calcBox.value.trim()) {
-                                calcBox.focus();
-                            } else if (mrp <= 0) {
-                                mrpInput.focus();
-                            } else if (calcBox) {
-                                calcBox.focus();
-                            }
-                        } else {
-                            sellInput.focus();
+                        if (codeInput) {
+                            codeInput.focus();
+                            codeInput.select();
                         }
                         return;
                     }
+
+                    if (/^\d+$/.test(rawCode)) {
+                        if (typeof window.showToast === 'function') window.showToast("Code cannot be only numbers. Use coded letters too.", "error");
+                        tr.classList.add('error');
+                        if (codeInput) {
+                            codeInput.focus();
+                            codeInput.select();
+                        }
+                        return;
+                    }
+
+                    let decoded = window.decodePriceCode ? window.decodePriceCode(rawCode) : null;
+                    if (decoded === null || decoded <= 0) {
+                        if (typeof window.showToast === 'function') window.showToast("Code cannot be decoded. Ensure it contains valid price letters.", "error");
+                        tr.classList.add('error');
+                        if (codeInput) {
+                            codeInput.focus();
+                            codeInput.select();
+                        }
+                        return;
+                    }
+
+                    sell = Math.round(decoded);
+                    sellInput.value = sell;
+                    refreshGridCodePreview(tr);
                     
                     if (sell > mrp && mrp > 0) {
                         if (typeof window.showToast === 'function') window.showToast('Selling Price cannot exceed MRP', 'error');
                         tr.classList.add('error');
-                        if (sellInput.type === 'hidden') {
-                            const calcBox = tr.querySelector('.calc-field');
-                            if (calcBox) calcBox.focus();
-                        } else {
-                            sellInput.focus();
+                        if (codeInput) {
+                            codeInput.focus();
+                            codeInput.select();
                         }
                         return;
                     }
+
                     if (sell < (mrp * 0.5) && mrp > 0) {
                         if (!window.confirm(`WARNING: Selling price (₹${sell}) is suspiciously low (less than 50% of MRP ₹${mrp}).\n\nPress OK/Enter to proceed with printing, or Cancel/Escape to abort.`)) {
-                            if (sellInput.type === 'hidden') {
-                                const calcBox = tr.querySelector('.calc-field');
-                                if (calcBox) calcBox.focus();
-                            } else {
-                                sellInput.focus();
+                            if (codeInput) {
+                                codeInput.focus();
+                                codeInput.select();
                             }
                             return;
                         }
@@ -932,21 +1290,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                const codeInput = tr.querySelector('.code-field');
-                const cleanCode = codeInput ? String(codeInput.value || "").trim() : "";
+                let cleanCode = codeInput ? String(codeInput.value || "").trim() : "";
                 
                 if (!cleanCode) {
                     if (typeof window.showToast === 'function') window.showToast("Price code is required.", "error");
                     tr.classList.add('error');
-                    if (codeInput) codeInput.focus();
+                    if (codeInput) {
+                        codeInput.focus();
+                        codeInput.select();
+                    }
                     return;
                 }
                 
                 if (/^\d+$/.test(cleanCode)) {
                     if (typeof window.showToast === 'function') window.showToast("Code cannot be only numbers. Use coded letters too.", "error");
                     tr.classList.add('error');
-                    if (codeInput) codeInput.focus();
+                    if (codeInput) {
+                        codeInput.focus();
+                        codeInput.select();
+                    }
                     return;
+                }
+
+                // Compute padded code matching the template default text length
+                const targetLen = window.codeTargetLength || 0;
+                let paddedCode = cleanCode;
+                const deficit = targetLen - cleanCode.length;
+                if (deficit > 0) {
+                    const junk = window.getJunkPadding ? window.getJunkPadding(deficit) : '';
+                    if (junk) {
+                        const front = Math.floor(junk.length / 2);
+                        paddedCode = junk.substring(0, front) + cleanCode + junk.substring(front);
+                    }
                 }
 
                 const missingDynamicCell = tr.querySelector('.dynamic-cell.missing-field');
@@ -977,6 +1352,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     const tid = document.getElementById('grid-template-select')?.value;
+
+                    const printOverrides = {};
+                    tr.querySelectorAll('.dynamic-cell').forEach(inp => {
+                        printOverrides[inp.getAttribute('data-dynamic-field')] = inp.value;
+                    });
+                    printOverrides['coded_price'] = paddedCode.toUpperCase();
+
+                    // Force save the exact padded Code into the draft so BarTender receives the padded code
+                    const draftPayload = {
+                        template_id: tid ? parseInt(tid, 10) : null,
+                        billing_item: tr.querySelector('input[data-field="billing_item"]')?.value || null,
+                        purchase_rate: parseFloat(tr.querySelector('input[data-field="purchase_rate"]')?.value) || null,
+                        mrp: mrp > 0 ? mrp : null,
+                        selling_price: sell,
+                        supplier_product_code: rawCode,
+                        manual_overrides: JSON.stringify(printOverrides)
+                    };
+                    await fetch(`/receiving/items/${itemId}/draft`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(draftPayload)
+                    });
 
                     const priceRes = await fetch(`/receiving/items/${itemId}/price`, {
                         method: 'POST',
@@ -1022,6 +1419,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     tr.classList.remove('error');
                     tr.classList.add('row-printed');
                     tr.setAttribute('data-label-status', printedItem.label_status);
+                    
+                    const badgesContainer = tr.querySelector('.badges');
+                    if (badgesContainer) {
+                        let pb = badgesContainer.querySelector('.label-printed-badge');
+                        if (!pb) {
+                            pb = document.createElement('span');
+                            pb.className = 'badge verified label-printed-badge';
+                            pb.style.fontWeight = '600';
+                            badgesContainer.appendChild(pb);
+                        }
+                        pb.textContent = statusText;
+                    }
                     
                     const listModeRow = document.getElementById('item-row-' + itemId);
                     if (listModeRow) {
@@ -1101,7 +1510,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveCell(input) {
         if (input.classList.contains('calc-field') || input.classList.contains('margin-field') || input.classList.contains('disc-field')) {
-            // Derived fields don't save themselves, they just wait for the core fields to save.
+            // Calculation boxes are scratchpads for the operator only.
+            // Core fields (Code, MRP, Rate) are the sole truth for draft persistence.
         }
 
         input.classList.add('saving');
@@ -1123,12 +1533,32 @@ document.addEventListener('DOMContentLoaded', () => {
         let mrp = parseFloat(tr.querySelector('input[data-field="mrp"]')?.value);
         mrp = isNaN(mrp) ? null : mrp;
         
-        let sellingPrice = parseFloat(tr.querySelector('input[data-field="selling_price"]')?.value);
-        sellingPrice = isNaN(sellingPrice) ? null : sellingPrice;
-        
-        const codedPrice = tr.querySelector('.code-field')?.value || null;
-        if (codedPrice && codedPrice.trim()) {
-            dynamicFields['coded_price'] = codedPrice.trim().toUpperCase();
+        const rawCode = tr.querySelector('.code-field')?.value?.trim()?.toUpperCase() || null;
+        let sellingPrice = null;
+        if (rawCode && !/^\d+$/.test(rawCode)) {
+            const decoded = window.decodePriceCode ? window.decodePriceCode(rawCode) : null;
+            if (decoded !== null && decoded > 0) {
+                sellingPrice = Math.round(decoded);
+            }
+        }
+        if (sellingPrice === null) {
+            const fallbackSell = parseFloat(tr.querySelector('input[data-field="selling_price"]')?.value);
+            sellingPrice = isNaN(fallbackSell) ? null : fallbackSell;
+        }
+        let printCode = rawCode;
+        if (rawCode && !/^\d+$/.test(rawCode)) {
+            const targetLen = window.codeTargetLength || 0;
+            const deficit = targetLen - rawCode.length;
+            if (deficit > 0) {
+                const junk = window.getJunkPadding ? window.getJunkPadding(deficit) : '';
+                if (junk) {
+                    const front = Math.floor(junk.length / 2);
+                    printCode = junk.substring(0, front) + rawCode + junk.substring(front);
+                }
+            }
+        }
+        if (printCode) {
+            dynamicFields['coded_price'] = printCode;
         }
         const copies = parseInt(tr.querySelector('input[data-field="copies"]')?.value) || 1;
         const tid = document.getElementById('grid-template-select')?.value;
@@ -1140,7 +1570,7 @@ document.addEventListener('DOMContentLoaded', () => {
             purchase_rate: purchaseRate,
             mrp: mrp,
             selling_price: sellingPrice,
-            supplier_product_code: codedPrice,
+            supplier_product_code: rawCode,
             landing_price: purchaseRate // Note: usually updated via global discounts, but keeping sync
         };
 
@@ -1155,7 +1585,10 @@ document.addEventListener('DOMContentLoaded', () => {
             input.classList.remove('saving');
             const data = await res.json();
             
-            if (data.tally_status) tr.setAttribute('data-tally-status', data.tally_status);
+            if (data.tally_status) {
+                tr.setAttribute('data-tally-status', data.tally_status);
+                updateGridRowTallyBadge(tr, data.received_qty, tr.getAttribute('data-expected-qty'), data.tally_status);
+            }
             if (data.pricing_status) tr.setAttribute('data-pricing-status', data.pricing_status);
 
             tr.querySelectorAll('.dynamic-cell').forEach(inp => {
@@ -1181,6 +1614,45 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    // Global keyboard navigation fallback for arrow keys when activeElement is outside grid cells
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        
+        const spreadsheetContainer = document.getElementById('spreadsheet-container');
+        if (!spreadsheetContainer || spreadsheetContainer.style.display === 'none') return;
+        
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.classList.contains('grid-cell') || activeEl.closest('.grid-row'))) {
+            return;
+        }
+        
+        const tallySheet = document.getElementById('tally-sheet');
+        if (tallySheet && !tallySheet.classList.contains('hidden') && tallySheet.style.display !== 'none') return;
+        
+        const table = document.getElementById('spreadsheet-table');
+        if (!table) return;
+        const visibleRows = Array.from(table.querySelectorAll('.grid-row')).filter(r => r.style.display !== 'none');
+        if (visibleRows.length === 0) return;
+        
+        e.preventDefault();
+        let targetIndex = gridHighlightedIndex;
+        if (e.key === 'ArrowDown') {
+            targetIndex = (targetIndex + 1 < visibleRows.length) ? targetIndex + 1 : 0;
+        } else if (e.key === 'ArrowUp') {
+            targetIndex = (targetIndex - 1 >= 0) ? targetIndex - 1 : visibleRows.length - 1;
+        }
+        
+        const targetRow = visibleRows[targetIndex];
+        if (targetRow) {
+            updateActiveGridRow(targetRow);
+            const cellToFocus = targetRow.querySelector('.code-field') || targetRow.querySelector('.grid-cell') || targetRow.querySelector('input[data-field="billing_item"]');
+            if (cellToFocus) {
+                cellToFocus.focus();
+                if (typeof cellToFocus.select === 'function') cellToFocus.select();
+            }
+        }
+    });
 });
 // ==========================================
 // Global Pricing Adjustments Logic
@@ -1261,8 +1733,8 @@ window.applyGlobalAdjustments = async function() {
                 const rowData = currentGridData.find(r => r.id === itemId);
                 if (rowData) {
                     rowData.mrp = mrp;
-                    rowData.purchase_rate = purchaseRate.toFixed(2);
-                    rowData.landing_price = landingPrice.toFixed(2);
+                    rowData.purchase_rate = parseFloat(purchaseRate.toFixed(2));
+                    rowData.landing_price = parseFloat(landingPrice.toFixed(2));
                 }
             }
             

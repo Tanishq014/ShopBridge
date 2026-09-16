@@ -13,8 +13,8 @@
 <div class="receiving-workspace">
   <header class="workspace-header">
     <div class="workspace-title" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.75rem; margin-bottom: 0.5rem;">
-      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <div class="workspace-header-row" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+        <div class="workspace-header-left" style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
           <a href="/receiving" class="back-link">←</a>
           <h2 style="font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
             {{ session.supplier.name }}
@@ -26,7 +26,11 @@
           </div>
         </div>
         
-        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <div class="workspace-search">
+          <input type="text" id="receiving-search" placeholder="Search name, code, price..." autofocus>
+        </div>
+
+        <div class="workspace-header-right" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
           {% if session.status in ['DRAFT', 'RECEIVING'] %}
           <button class="button primary" id="btn-ai-extract" style="width: max-content; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px;" onclick="document.getElementById('file-upload').click()">
             📷 Scan Invoice
@@ -85,9 +89,6 @@
       <button class="button primary" onclick="applyGlobalAdjustments()" style="padding: 0.5rem 1rem;">Apply to All Rows</button>
     </div>
 
-    <div class="workspace-search">
-      <input type="text" id="receiving-search" placeholder="Search name, code, price..." autofocus>
-    </div>
 
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <div class="workspace-filters">
@@ -236,7 +237,7 @@
     {% endfor %}
   </main>
   
-  <main class="spreadsheet-container" id="spreadsheet-container" style="display: none; flex: 1; overflow: auto; padding: 0.5rem; padding-bottom: 5rem;">
+  <main class="spreadsheet-container" id="spreadsheet-container" style="display: none; flex: 1; overflow: auto; padding: 0 0.5rem 5rem 0.5rem;">
     <!-- Grid will be rendered here by JS -->
   </main>
 </div>
@@ -383,6 +384,7 @@
   };
   window.priceCodeSettings = {{ price_code_settings_json|tojson }};
   window.pricingSettings = {{ pricing_settings|tojson }};
+  window.templatesData = {{ templates_json|tojson }};
   
   async function copySessionJson(sessionId) {
     try {

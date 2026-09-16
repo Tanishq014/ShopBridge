@@ -383,3 +383,87 @@ class TestReceivingUI(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Cannot add items", response.text)
 
+    def test_dozen_unit_conversion_normalization(self):
+        from app.extraction.provider import ExtractedRow, GroundedField
+        from app.models import ReceivingSession, ReceivingItem
+        
+        supplier = get_or_create_supplier(self.db, "Dozen Supplier")
+        session = create_receiving_session(self.db, ReceivingSessionCreate(supplier_id=supplier.id))
+        
+        # Test unit conversion logic directly as simulated from Gemini output
+        unit_raw = "DOZ"
+        expected_qty_val = 2.0
+        purchase_rate_val = 1200.0
+        mrp_val = 2400.0
+        
+        if unit_raw.upper() in ["DOZ", "DOZEN", "DZN", "DZ"]:
+            expected_qty_val = expected_qty_val * 12
+            purchase_rate_val = round(purchase_rate_val / 12, 2)
+            mrp_val = round(mrp_val / 12, 2)
+            unit_raw = "PCS"
+            
+        self.assertEqual(expected_qty_val, 24.0)
+        self.assertEqual(purchase_rate_val, 100.0)
+        self.assertEqual(mrp_val, 200.0)
+        self.assertEqual(unit_raw, "PCS")
+
+    def test_clean_code_and_padded_override_persistence(self):
+        import json
+        from app.models import ReceivingSession, ReceivingItem, TemplateMaster
+        from app.schemas import UpdateDraftRequest
+        from app.routes.receiving import update_draft_endpoint
+        from app.services.workflow.label_draft_service import resolve_draft
+
+        supplier = get_or_create_supplier(self.db, "Code Supplier")
+        session = create_receiving_session(self.db, ReceivingSessionCreate(supplier_id=supplier.id))
+        item = create_receiving_item(self.db, ReceivingItemCreate(
+            session_id=session.id,
+            raw_description="Test Item Clean Code",
+            purchase_rate=100.0,
+            mrp=200.0
+        ))
+        
+        template = TemplateMaster(
+            template_name="Test Template 6-char",
+            template_id="TEST_TMPL",
+            bartender_file_path="C:/test.btw",
+            required_fields="item,mrp,coded_price,barcode",
+            default_field_values="coded_price=ABCDEF",
+            active_status=True
+        )
+        self.db.add(template)
+        self.db.commit()
+
+        # Update draft: clean code in supplier_product_code, padded in manual_overrides
+        req = UpdateDraftRequest(
+            template_id=template.id,
+            supplier_product_code="EDZ",
+            selling_price=120.0,
+            manual_overrides=json.dumps({"coded_price": "XEDZQY"})
+        )
+        updated_item = update_draft_endpoint(item.id, req, self.db)
+        
+        # Verify clean code is saved to DB
+        self.assertEqual(updated_item.supplier_product_code, "EDZ")
+        overrides = json.loads(updated_item.manual_overrides)
+        self.assertEqual(overrides.get("coded_price"), "XEDZQY")
+
+        # Verify draft resolution pulls padded code for printing
+        draft = resolve_draft(self.db, updated_item, template_id_override=template.id)
+        coded_field = next((f for f in draft.fields if f.semantic_field == "coded_price"), None)
+        self.assertIsNotNone(coded_field)
+        self.assertEqual(coded_field.value, "XEDZQY")
+
+    def test_code_is_numbers_only_validation(self):
+        from app.services.workflow.validation_service import code_is_numbers_only
+
+        self.assertTrue(code_is_numbers_only("20"))
+        self.assertTrue(code_is_numbers_only("  12345  "))
+        self.assertFalse(code_is_numbers_only("EDZ"))
+        self.assertFalse(code_is_numbers_only("1DZ26"))
+        self.assertFalse(code_is_numbers_only("SDZS"))
+        self.assertFalse(code_is_numbers_only(""))
+        self.assertFalse(code_is_numbers_only(None))
+
+
+

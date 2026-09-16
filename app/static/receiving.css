@@ -108,21 +108,55 @@ body {
 }
 
 /* Search */
+.workspace-search {
+  width: 100%;
+  order: 3;
+}
 .workspace-search input {
   width: 100%;
-  padding: 0.35rem 0.5rem;
+  height: 30px;
+  padding: 0.2rem 0.6rem;
   background: rgba(118, 118, 128, 0.12);
-  border: none;
-  border-radius: 8px;
-  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.85rem;
   box-sizing: border-box;
   outline: none;
-  transition: box-shadow 0.2s, background 0.2s;
+  transition: box-shadow 0.2s, background 0.2s, border-color 0.2s;
   font-family: inherit;
 }
 .workspace-search input:focus {
   background: var(--card-bg);
-  box-shadow: 0 0 0 2px var(--accent-blue);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
+}
+
+@media (min-width: 768px) {
+  .workspace-search {
+    flex: 1;
+    max-width: 320px;
+    min-width: 180px;
+    margin: 0 0.5rem;
+    order: 2;
+  }
+  .workspace-header-left {
+    order: 1;
+  }
+  .workspace-header-right {
+    order: 3;
+  }
+}
+
+/* Sticky Spreadsheet Grid Header */
+.sleek-grid-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-color, #f2f2f7);
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 /* Filters */
@@ -144,6 +178,7 @@ body {
     display: flex !important;
   }
 }
+
 
 .filter-tab {
   padding: 0.25rem 0.75rem;
@@ -700,3 +735,39 @@ body {
 .toast.error { background: rgba(255, 59, 48, 0.9); }
 @keyframes fadein { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeout { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(20px); } }
+
+/* Sleek Grid Row & Tally Visual Indicators */
+.grid-row {
+  border-left: 3.5px solid #d1d1d6 !important;
+  transition: border-left-color 0.2s ease, background-color 0.2s ease;
+}
+.grid-row[data-tally-status="MISMATCH"] {
+  border-left-color: var(--accent-orange, #ff9500) !important;
+}
+.grid-row[data-tally-status="VERIFIED"] {
+  border-left-color: var(--accent-green, #34c759) !important;
+}
+.grid-row.row-printed {
+  background: rgba(52, 199, 89, 0.05) !important;
+}
+.badge.pending {
+  background: rgba(142, 142, 147, 0.15);
+  color: #636366;
+}
+.badge.short {
+  background: rgba(255, 149, 0, 0.15);
+  color: #c2410c;
+}
+.tally-status-container {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Invalid Price Code Feedback */
+.code-field.invalid-code,
+#input-coded-price.invalid-code {
+  border-color: var(--accent-red, #ff3b30) !important;
+  box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.25) !important;
+  background-color: rgba(255, 59, 48, 0.05) !important;
+}
+

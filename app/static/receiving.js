@@ -248,7 +248,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputQty = document.getElementById('input-receive-qty');
   const diffIndicator = document.getElementById('diff-indicator');
   
-  let activeFilter = 'PENDING';
+  const savedFilter = localStorage.getItem('receiving_active_filter');
+  let activeFilter = (savedFilter && ['PENDING', 'NEEDS_PRICING', 'PRINT_ISSUES', 'ALL'].includes(savedFilter))
+    ? savedFilter
+    : 'PENDING';
+
+  const initialTab = Array.from(filterTabs).find(t => t.getAttribute('data-filter') === activeFilter);
+  if (initialTab) {
+    filterTabs.forEach(t => t.classList.remove('active'));
+    initialTab.classList.add('active');
+  }
   let searchTerm = '';
   let currentItemId = null;
   let currentExpectedQty = 0;
@@ -346,15 +355,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // Filter tabs logic
   filterTabs.forEach(tab => {
     tab.addEventListener('click', (e) => {
+      const targetBtn = e.target.closest('.filter-tab') || e.target;
       filterTabs.forEach(t => t.classList.remove('active'));
-      e.target.classList.add('active');
-      activeFilter = e.target.getAttribute('data-filter');
-      renderItems();
+      targetBtn.classList.add('active');
+      activeFilter = targetBtn.getAttribute('data-filter');
+      localStorage.setItem('receiving_active_filter', activeFilter);
+      renderItems(true);
     });
   });
 
-  function renderItems() {
-    document.dispatchEvent(new CustomEvent('grid-tab-filter', { detail: activeFilter }));
+  function renderItems(filterChanged = false) {
+    document.dispatchEvent(new CustomEvent('grid-tab-filter', { detail: { filter: activeFilter, filterChanged: filterChanged } }));
     let total = 0, pending = 0, pricing = 0, issues = 0, visibleCount = 0, verifiedCount = 0;
 
     itemRows.forEach(row => {
@@ -571,9 +582,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedDisc = localStorage.getItem('saved_disc_pct');
     if (savedDisc) {
         document.getElementById('input-calc-markup').value = savedDisc;
-        if (isNaN(mrp) && !isNaN(selling)) {
-            mrp = selling / (1 - parseFloat(savedDisc) / 100);
-        }
     }
 
     // Set final UI values
@@ -701,40 +709,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateRowDOM(itemId, itemData) {
     const row = document.getElementById('item-row-' + itemId);
-    if (!row) return;
-    row.setAttribute('data-tally-status', itemData.tally_status);
-    row.setAttribute('data-family-id', itemData.family_id || '');
-    row.setAttribute('data-pricing-status', itemData.pricing_status || '');
-    row.setAttribute('data-label-status', itemData.label_status || '');
-    row.setAttribute('data-landing-price', itemData.landing_price || '');
-    row.setAttribute('data-mrp', itemData.mrp || '');
-    row.setAttribute('data-confirmed-selling-price', itemData.confirmed_selling_price || '');
-    row.setAttribute('data-received-qty', itemData.received_qty);
+    if (row) {
+      row.setAttribute('data-tally-status', itemData.tally_status);
+      row.setAttribute('data-family-id', itemData.family_id || '');
+      row.setAttribute('data-pricing-status', itemData.pricing_status || '');
+      row.setAttribute('data-label-status', itemData.label_status || '');
+      row.setAttribute('data-landing-price', itemData.landing_price || '');
+      row.setAttribute('data-mrp', itemData.mrp || '');
+      row.setAttribute('data-confirmed-selling-price', itemData.confirmed_selling_price || '');
+      row.setAttribute('data-received-qty', itemData.received_qty);
 
-    const mismatchBadge = document.getElementById('mismatch-badge-' + itemId);
-    const verifiedBadge = document.getElementById('verified-badge-' + itemId);
-    
-    if (mismatchBadge && verifiedBadge) {
-      if (itemData.tally_status === 'VERIFIED') {
-        mismatchBadge.style.display = 'none';
-        verifiedBadge.style.display = 'flex';
-        verifiedBadge.textContent = `Rec: ${itemData.received_qty}`;
-      } else if (itemData.tally_status === 'MISMATCH') {
-        verifiedBadge.style.display = 'none';
-        mismatchBadge.style.display = 'flex';
-        let diffStr = '';
-        if (itemData.received_qty < itemData.expected_qty) diffStr = `(Short ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
-        else if (itemData.received_qty > itemData.expected_qty) diffStr = `(Extra ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
-        mismatchBadge.textContent = `Rec: ${itemData.received_qty} ${diffStr}`;
-      } else {
-        mismatchBadge.style.display = 'none';
-        verifiedBadge.style.display = 'none';
+      const mismatchBadge = document.getElementById('mismatch-badge-' + itemId);
+      const verifiedBadge = document.getElementById('verified-badge-' + itemId);
+      
+      if (mismatchBadge && verifiedBadge) {
+        if (itemData.tally_status === 'VERIFIED') {
+          mismatchBadge.style.display = 'none';
+          verifiedBadge.style.display = 'flex';
+          verifiedBadge.textContent = `Rec: ${itemData.received_qty}`;
+        } else if (itemData.tally_status === 'MISMATCH') {
+          verifiedBadge.style.display = 'none';
+          mismatchBadge.style.display = 'flex';
+          let diffStr = '';
+          if (itemData.received_qty < itemData.expected_qty) diffStr = `(Short ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
+          else if (itemData.received_qty > itemData.expected_qty) diffStr = `(Extra ${Math.abs(itemData.expected_qty - itemData.received_qty)})`;
+          mismatchBadge.textContent = `Rec: ${itemData.received_qty} ${diffStr}`;
+        } else {
+          mismatchBadge.style.display = 'none';
+          verifiedBadge.style.display = 'none';
+        }
+      }
+      
+      const codeSpan = row.querySelector('.code');
+      if (codeSpan && itemData.coded_price) {
+          codeSpan.textContent = itemData.coded_price;
       }
     }
-    
-    const codeSpan = row.querySelector('.code');
-    if (codeSpan && itemData.coded_price) {
-        codeSpan.textContent = itemData.coded_price;
+
+    const gridRow = document.querySelector(`.grid-row[data-item-id="${itemId}"]`);
+    if (gridRow && typeof window.updateGridRowTallyBadge === 'function') {
+      const expQty = itemData.expected_qty !== undefined ? itemData.expected_qty : (parseFloat(gridRow.getAttribute('data-expected-qty')) || null);
+      window.updateGridRowTallyBadge(gridRow, itemData.received_qty, expQty, itemData.tally_status);
+      if (itemData.label_status) {
+        gridRow.setAttribute('data-label-status', itemData.label_status);
+        if (itemData.label_status === 'PRINTED') {
+          gridRow.classList.add('row-printed');
+          const badges = gridRow.querySelector('.badges');
+          if (badges && !badges.querySelector('.label-printed-badge')) {
+            const pb = document.createElement('span');
+            pb.className = 'badge verified label-printed-badge';
+            pb.style.fontWeight = '600';
+            pb.textContent = 'Printed';
+            badges.appendChild(pb);
+          }
+        }
+      }
     }
   }
   document.getElementById('btn-receive-all')?.addEventListener('click', () => {
@@ -778,8 +807,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Keep track of coded price in the dedicated UI field
     const codeInput = document.getElementById('input-coded-price');
-    if (codeInput && document.activeElement !== codeInput) {
-      if (!isNaN(selling)) {
+    if (codeInput && document.activeElement !== codeInput && source === 'calc') {
+      if (!isNaN(selling) && selling > 0) {
           const generated = window.generateCodedPrice(selling);
           const decodedTyped = window.decodePriceCode(codeInput.value);
           
@@ -896,16 +925,22 @@ document.addEventListener('DOMContentLoaded', () => {
   
   window.decodePriceCode = function(code) {
       if (!code) return null;
+      const clean = String(code).trim().toUpperCase();
+      if (!clean) return null;
       const map = window.priceCodeSettings?.code_to_digit || {};
       let priceStr = '';
-      for (const char of code.toUpperCase()) {
+      for (const char of clean) {
           if (char === ' ') continue;
           const digit = map[char];
           if (digit !== undefined) {
               priceStr += digit;
           }
       }
-      return priceStr ? parseFloat(priceStr) : null;
+      if (priceStr) {
+          const val = parseFloat(priceStr);
+          if (!isNaN(val) && val > 0) return val;
+      }
+      return null;
   };
   
   window.getJunkPadding = function(deficit) {
@@ -981,10 +1016,9 @@ document.addEventListener('DOMContentLoaded', () => {
               document.getElementById('input-selling-price').value = String(roundedPrice);
               
               const encoded = window.generateCodedPrice(roundedPrice);
-              const codeToDisplay = encoded || String(roundedPrice);
               const codeInput = document.getElementById('input-coded-price');
-              if (codeInput.value !== codeToDisplay) {
-                  codeInput.value = codeToDisplay;
+              if (encoded && codeInput && codeInput.value !== encoded) {
+                  codeInput.value = encoded;
                   codeInput.dispatchEvent(new Event("input", { bubbles: true }));
               }
           }
@@ -1004,38 +1038,69 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.target.tagName === 'INPUT') {
           const landing = parseFloat(document.getElementById('input-landing-price').value);
           const mrp = parseFloat(document.getElementById('input-mrp').value);
-          const selling = parseFloat(document.getElementById('input-selling-price').value);
+          const rawCode = document.getElementById('input-coded-price')?.value?.trim()?.toUpperCase();
+          
+          let selling = null;
+          if (rawCode && !/^\d+$/.test(rawCode)) {
+              const decoded = window.decodePriceCode ? window.decodePriceCode(rawCode) : null;
+              if (decoded !== null && decoded > 0) {
+                  selling = Math.round(decoded);
+              }
+          }
+          if (selling === null) {
+              const fallbackSell = parseFloat(document.getElementById('input-selling-price').value);
+              selling = isNaN(fallbackSell) ? null : fallbackSell;
+          }
           
           updateDraft({
               purchase_rate: isNaN(landing) ? null : landing,
               mrp: isNaN(mrp) ? null : mrp,
-              selling_price: isNaN(selling) ? null : selling
+              selling_price: isNaN(selling) ? null : selling,
+              supplier_product_code: rawCode || null
           });
       }
   });
   
   document.getElementById('input-coded-price')?.addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase(); // Force uppercase
-      const raw = e.target.value;
-      const decoded = window.decodePriceCode(raw);
+      const raw = e.target.value.trim();
+      const isNumbersOnly = raw && /^\d+$/.test(raw);
+      
+      if (isNumbersOnly) {
+          e.target.classList.add('invalid-code');
+          e.target.title = "Code cannot be only numbers. Use coded letters too.";
+          e.target.setCustomValidity("Code cannot be only numbers. Use coded letters too.");
+      } else {
+          e.target.classList.remove('invalid-code');
+          e.target.title = "";
+          e.target.setCustomValidity("");
+      }
+
+      let decoded = null;
+      if (raw && !isNumbersOnly) {
+          decoded = window.decodePriceCode(raw);
+      }
       
       const previewSpan = document.getElementById('clean-code-preview');
       
-      if (decoded !== null) {
+      if (decoded !== null && decoded > 0) {
           document.getElementById('input-selling-price').value = Math.round(decoded).toString();
+          updatePricingIndicators();
+      } else if (!raw) {
+          document.getElementById('input-selling-price').value = '';
           updatePricingIndicators();
       }
       
       const targetLen = window.codeTargetLength || 0;
       const deficit = targetLen - raw.length;
       let padded = raw;
-      if (deficit > 0) {
+      if (deficit > 0 && !isNumbersOnly) {
           const junk = getJunkPadding(deficit);
           const front = Math.floor(junk.length / 2);
           padded = junk.substring(0, front) + raw + junk.substring(front);
       }
       
-      if (previewSpan && raw) {
+      if (previewSpan && raw && !isNumbersOnly && decoded !== null && decoded > 0) {
           previewSpan.textContent = `(${padded})`;
           previewSpan.style.display = 'inline';
       } else if (previewSpan) {
@@ -1046,15 +1111,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('input-calc-margin')?.addEventListener('input', (e) => {
       const margin = parseFloat(e.target.value);
       const landing = parseFloat(document.getElementById('input-landing-price').value);
-      if (!isNaN(margin) && !isNaN(landing)) {
-          const selling = landing * (1 + margin / 100);
-          document.getElementById('input-selling-price').value = Math.round(selling).toString();
+      if (!isNaN(margin) && !isNaN(landing) && landing > 0) {
+          const selling = Math.round(landing * (1 + margin / 100));
+          document.getElementById('input-selling-price').value = selling.toString();
           updatePricingIndicators('calc');
           
           const markup = parseFloat(document.getElementById('input-calc-markup').value);
           if (!isNaN(markup) && markup < 100) {
               const mrp = Math.round(selling / (1 - markup / 100));
               document.getElementById('input-mrp').value = mrp.toString();
+          } else {
+              const mrp = parseFloat(document.getElementById('input-mrp').value);
+              if (!isNaN(mrp) && mrp > 0) {
+                  const disc = (((mrp - selling) / mrp) * 100).toFixed(1);
+                  document.getElementById('input-calc-markup').value = disc;
+              }
           }
       }
       localStorage.setItem('saved_margin_pct', e.target.value);
@@ -1063,7 +1134,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('input-calc-markup')?.addEventListener('input', (e) => {
       const markup = parseFloat(e.target.value);
       const selling = parseFloat(document.getElementById('input-selling-price').value);
-      if (!isNaN(markup) && !isNaN(selling) && markup < 100) {
+      if (!isNaN(markup) && !isNaN(selling) && markup < 100 && selling > 0) {
           const mrp = Math.round(selling / (1 - markup / 100));
           document.getElementById('input-mrp').value = mrp.toString();
           updatePricingIndicators('calc');
@@ -1085,10 +1156,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.getElementById('select-template')?.addEventListener('change', (e) => {
-    if (e.target.value) localStorage.setItem('saved_template_id', e.target.value);
+    const tid = e.target.value ? parseInt(e.target.value, 10) : null;
+    if (tid) localStorage.setItem('saved_template_id', tid.toString());
     const previewBtn = document.getElementById('btn-preview-template');
-    if (previewBtn) previewBtn.style.display = e.target.value ? 'inline-block' : 'none';
-    updateDraft({ template_id: e.target.value ? parseInt(e.target.value) : null });
+    if (previewBtn) previewBtn.style.display = tid ? 'inline-block' : 'none';
+    
+    if (window.templatesData && tid) {
+        const tmpl = window.templatesData.find(t => t.id === tid);
+        window.codeTargetLength = tmpl ? (tmpl.code_target_length || 0) : 0;
+    } else if (!tid) {
+        window.codeTargetLength = 0;
+    }
+    
+    updateDraft({ template_id: tid });
+    const codeInput = document.getElementById('input-coded-price');
+    if (codeInput && codeInput.value) {
+        updateCodedPriceBox(codeInput.value.trim());
+    }
   });
 
   document.getElementById('btn-preview-template')?.addEventListener('click', () => {
@@ -1301,7 +1385,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    if (!selling) return showToast('Selling Price is required', 'error');
+    if (!selling || isNaN(parseFloat(selling)) || parseFloat(selling) <= 0) {
+        showToast('Valid Selling Price / Decodable Code is required.', 'error');
+        document.getElementById('input-coded-price')?.focus();
+        document.getElementById('input-coded-price')?.select();
+        return;
+    }
     
     if (mrp && selling && parseFloat(selling) < (parseFloat(mrp) * 0.5)) {
         if (!window.confirm(`WARNING: Selling price (₹${selling}) is suspiciously low (less than 50% of MRP ₹${mrp}).\n\nPress OK/Enter to proceed with printing, or Cancel/Escape to abort.`)) {
@@ -1318,22 +1407,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     try {
+      const tidVal = document.getElementById('select-template')?.value;
+      const parsedTid = tidVal ? parseInt(tidVal, 10) : null;
+      
       // 1. Force save the exact padded Code into the draft so the backend doesn't overwrite it
       const previewSpan = document.getElementById('clean-code-preview');
-      let coded = document.getElementById('input-coded-price').value;
+      const rawCode = document.getElementById('input-coded-price')?.value?.trim()?.toUpperCase() || "";
+      let coded = rawCode;
       if (previewSpan && previewSpan.style.display !== 'none' && previewSpan.textContent) {
           coded = previewSpan.textContent.replace(/^\(|\)$/g, ''); 
       }
       
-      if (coded !== undefined && window.currentDraft) {
-          const manualOverrides = window.currentDraft.manual_overrides || {};
+      const manualOverrides = (window.currentDraft && window.currentDraft.manual_overrides) ? { ...window.currentDraft.manual_overrides } : {};
+      if (coded) {
           manualOverrides['coded_price'] = coded.toUpperCase();
-          await fetch(`/receiving/items/${currentItemId}/draft`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ manual_overrides: JSON.stringify(manualOverrides) })
-          });
       }
+      
+      await fetch(`/receiving/items/${currentItemId}/draft`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+              template_id: parsedTid,
+              supplier_product_code: rawCode || null,
+              manual_overrides: JSON.stringify(manualOverrides) 
+          })
+      });
       
       const priceRes = await fetch(`/receiving/items/${currentItemId}/price`, {
         method: 'POST',
@@ -1341,7 +1439,8 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ 
           landing_price: landing ? parseFloat(landing) : null,
           mrp: mrp ? parseFloat(mrp) : null,
-          selling_price: parseFloat(selling)
+          selling_price: parseFloat(selling),
+          template_id: parsedTid
         })
       });
       if (!priceRes.ok) throw new Error((await priceRes.json()).detail);
@@ -1351,7 +1450,8 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           copies: parseInt(copies),
-          force_reprint: isReprint
+          force_reprint: isReprint,
+          template_id: parsedTid
         })
       });
       if (!printRes.ok) throw new Error((await printRes.json()).detail);
@@ -1464,7 +1564,39 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   }
 
+  // Auto-select text on first click for all receiving text & number inputs
+  document.addEventListener('focusin', (e) => {
+    const input = e.target;
+    if (input && input.tagName === 'INPUT' && (input.type === 'text' || input.type === 'number' || !input.type)) {
+      input.dataset.justFocused = "true";
+      if (typeof input.select === 'function') input.select();
+    }
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    const input = e.target;
+    if (input && input.tagName === 'INPUT' && input.dataset?.justFocused === "true") {
+      e.preventDefault();
+      if (typeof input.select === 'function') input.select();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const input = e.target;
+    if (input && input.tagName === 'INPUT' && input.dataset?.justFocused === "true") {
+      delete input.dataset.justFocused;
+      if (typeof input.select === 'function') input.select();
+    }
+  });
+
+  document.addEventListener('focusout', (e) => {
+    if (e.target && e.target.dataset) {
+      delete e.target.dataset.justFocused;
+    }
+  });
+
   window.renderItems = renderItems;
+  window.updateRowDOM = updateRowDOM;
   renderItems(); // initial
 });
 // Spreadsheet Grid Logic

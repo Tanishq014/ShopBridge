@@ -187,15 +187,33 @@ def _run_extraction_task(job_id: int, session_id: int, file_paths: list[str], mi
                         billing_item=str(safe_val(row.suggested_billing_item)) if safe_val(row.suggested_billing_item) is not None else None,
                         supplier_product_code=str(safe_val(row.supplier_product_code)) if safe_val(row.supplier_product_code) is not None else None,
                         hsn_code=str(safe_val(row.hsn_code)) if safe_val(row.hsn_code) is not None else None,
-                        expected_qty=safe_float(safe_val(row.quantity)),
-                        unit=str(safe_val(row.unit)) if safe_val(row.unit) is not None else None,
-                        purchase_rate=safe_float(safe_val(row.purchase_rate)),
-                        mrp=safe_float(safe_val(row.mrp)),
-                        line_amount=safe_float(safe_val(row.line_amount)),
-                        extracted_attributes=json.dumps(custom_attrs),
-                        extracted_payload=row.model_dump_json(), # Full Document AI row JSON
-                        extraction_confidence=0.0 
                     )
+                    
+                    unit_raw = str(safe_val(row.unit)).strip() if safe_val(row.unit) is not None else None
+                    expected_qty_val = safe_float(safe_val(row.quantity))
+                    purchase_rate_val = safe_float(safe_val(row.purchase_rate))
+                    mrp_val = safe_float(safe_val(row.mrp))
+
+                    # Fallback check: If unit is still explicitly DOZ/DOZEN/DZN/DZ, convert to PCS
+                    if unit_raw and unit_raw.upper() in ["DOZ", "DOZEN", "DZN", "DZ"]:
+                        if expected_qty_val is not None:
+                            expected_qty_val = expected_qty_val * 12
+                            if expected_qty_val.is_integer():
+                                expected_qty_val = float(int(expected_qty_val))
+                        if purchase_rate_val is not None and purchase_rate_val > 0:
+                            purchase_rate_val = round(purchase_rate_val / 12, 2)
+                        if mrp_val is not None and mrp_val > 0:
+                            mrp_val = round(mrp_val / 12, 2)
+                        unit_raw = "PCS"
+
+                    r_item.expected_qty = expected_qty_val
+                    r_item.unit = unit_raw
+                    r_item.purchase_rate = purchase_rate_val
+                    r_item.mrp = mrp_val
+                    r_item.line_amount = safe_float(safe_val(row.line_amount))
+                    r_item.extracted_attributes = json.dumps(custom_attrs)
+                    r_item.extracted_payload = row.model_dump_json() # Full Document AI row JSON
+                    r_item.extraction_confidence = 0.0
                     db.add(r_item)
                     bill_row_idx += 1
             
