@@ -490,33 +490,160 @@ document.addEventListener('DOMContentLoaded', () => {
             article_no: 3, size: 4, batch_no: 5, expiry: 6
         };
 
-        const orderedCols = Array.from(dynamicCols).sort((a, b) => {
+        const orderedDynamicCols = Array.from(dynamicCols).sort((a, b) => {
             return (fieldPriority[a] || 50) - (fieldPriority[b] || 50);
         });
+
+        // Middle Columns Specification:
+        // 'pricing_group' moves together as a single unified group.
+        // Dynamic template columns can be reordered around or alongside the pricing group.
+        const colDefinitions = {};
+
+        // 1. Pricing Group Column Definition
+        if (isTopDown) {
+            colDefinitions['pricing_group'] = {
+                key: 'pricing_group',
+                headerHtml: `
+                    <div class="draggable-col-header pricing-group-header" data-col-key="pricing_group" draggable="true" title="Selling Group: MRP, C Calc, Code (Drag to move together)" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem; cursor: grab;">
+                        <div style="width: 70px; display: flex; align-items: center;"><span class="col-drag-handle">⠿</span>MRP</div>
+                        <div style="width: 90px;">C Calc</div>
+                        <div style="width: 90px;">Code</div>
+                    </div>`,
+                renderCell: (row) => {
+                    let codeStr = row.supplier_product_code || (row.selling_price ? window.generateCodedPrice(row.selling_price) : '');
+                    let decodedStr = '';
+                    let sellVal = (row.selling_price && Number(row.selling_price) > 0) ? Math.round(Number(row.selling_price)) : '';
+                    if (sellVal) {
+                        decodedStr = `₹${sellVal}`;
+                    } else if (codeStr && !/^\d+$/.test(codeStr)) {
+                        const decoded = window.decodePriceCode ? window.decodePriceCode(codeStr) : null;
+                        if (decoded !== null && decoded > 0) {
+                            sellVal = Math.round(decoded);
+                            decodedStr = `₹${sellVal}`;
+                        }
+                    }
+                    return `
+                    <div class="grid-col-cell pricing-group-row" data-col-key="pricing_group" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+                        <div style="width: 70px;"><input type="number" step="1" class="grid-cell pricing-field" data-field="mrp" value="${row.mrp !== null ? row.mrp : ''}" style="width: 100%;"></div>
+                        <div style="width: 90px;"><input type="text" class="grid-cell calc-field" placeholder="-200 / 50%" style="width: 100%;"></div>
+                        <div style="width: 90px; position: relative;">
+                            <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 38px;">
+                            <span class="grid-code-preview" style="position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font-size: 0.72rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 700; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap; z-index: 2;">${decodedStr}</span>
+                            <input type="hidden" class="pricing-field" data-field="selling_price" value="${sellVal}">
+                        </div>
+                    </div>`;
+                }
+            };
+        } else {
+            colDefinitions['pricing_group'] = {
+                key: 'pricing_group',
+                headerHtml: `
+                    <div class="draggable-col-header pricing-group-header" data-col-key="pricing_group" draggable="true" title="Selling Group: Marg %, Code, Disc %, MRP (Drag to move together)" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem; cursor: grab;">
+                        <div style="width: 70px; display: flex; align-items: center;"><span class="col-drag-handle">⠿</span>Marg %</div>
+                        <div style="width: 90px;">Code</div>
+                        <div style="width: 70px;">Disc %</div>
+                        <div style="width: 70px;">MRP</div>
+                    </div>`,
+                renderCell: (row) => {
+                    let margin = '';
+                    let disc = '';
+                    if (row.landing_price > 0 && row.selling_price > 0) {
+                        margin = (((row.selling_price - row.landing_price) / row.landing_price) * 100).toFixed(1);
+                    }
+                    if (row.selling_price > 0 && row.mrp > 0) {
+                        disc = (((row.mrp - row.selling_price) / row.mrp) * 100).toFixed(1);
+                    }
+                    let codeStr = row.supplier_product_code || (row.selling_price ? window.generateCodedPrice(row.selling_price) : '');
+                    let decodedStr = '';
+                    let sellVal = (row.selling_price && Number(row.selling_price) > 0) ? Math.round(Number(row.selling_price)) : '';
+                    if (sellVal) {
+                        decodedStr = `₹${sellVal}`;
+                    } else if (codeStr && !/^\d+$/.test(codeStr)) {
+                        const decoded = window.decodePriceCode ? window.decodePriceCode(codeStr) : null;
+                        if (decoded !== null && decoded > 0) {
+                            sellVal = Math.round(decoded);
+                            decodedStr = `₹${sellVal}`;
+                        }
+                    }
+                    return `
+                    <div class="grid-col-cell pricing-group-row" data-col-key="pricing_group" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+                        <div style="width: 70px;"><input type="number" step="0.1" class="grid-cell margin-field" placeholder="%" value="${margin}" style="width: 100%;"></div>
+                        <div style="width: 90px; position: relative;">
+                            <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 38px;">
+                            <span class="grid-code-preview" style="position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font-size: 0.72rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 700; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap; z-index: 2;">${decodedStr}</span>
+                            <input type="hidden" class="pricing-field" data-field="selling_price" value="${sellVal}">
+                        </div>
+                        <div style="width: 70px;"><input type="number" step="0.1" class="grid-cell disc-field" placeholder="%" value="${disc}" style="width: 100%;"></div>
+                        <div style="width: 70px;"><input type="number" step="1" class="grid-cell pricing-field" data-field="mrp" value="${row.mrp !== null ? row.mrp : ''}" style="width: 100%;"></div>
+                    </div>`;
+                }
+            };
+        }
+
+        // 2. Dynamic Template Column Definitions
+        orderedDynamicCols.forEach(colName => {
+            const key = `dyn_${colName}`;
+            colDefinitions[key] = {
+                key: key,
+                headerHtml: `
+                    <div class="draggable-col-header" data-col-key="${key}" draggable="true" title="${colName} (Drag to reposition)" style="width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; cursor: grab;">
+                        <span class="col-drag-handle">⠿</span><span style="overflow: hidden; text-overflow: ellipsis;">${colName}</span>
+                    </div>`,
+                renderCell: (row) => {
+                    const f = (row.dynamic_fields || {})[colName];
+                    const val = f ? (f.value || '') : '';
+                    const missingClass = (f && f.missing) ? 'missing-field' : '';
+                    return `<div class="grid-col-cell" data-col-key="${key}" style="width: 80px;"><input type="text" class="grid-cell dynamic-cell ${missingClass}" data-dynamic-field="${colName}" value="${val}" style="width: 100%;"></div>`;
+                }
+            };
+        });
+
+        // 3. Resolve Column Sequence from localStorage
+        const defaultOrderKeys = ['pricing_group', ...orderedDynamicCols.map(c => `dyn_${c}`)];
+        const templateStorageKey = `grid_middle_cols_${isTopDown ? 'td' : 'bu'}_${currentGridTemplate || 'default'}`;
+        const fallbackStorageKey = `grid_middle_cols_${isTopDown ? 'td' : 'bu'}`;
+        
+        let savedKeys = null;
+        try {
+            const raw = localStorage.getItem(templateStorageKey) || localStorage.getItem(fallbackStorageKey);
+            if (raw) savedKeys = JSON.parse(raw);
+        } catch (err) {}
+
+        let finalOrderKeys = [];
+        if (Array.isArray(savedKeys) && savedKeys.length > 0) {
+            // Keep saved keys that are currently valid
+            savedKeys.forEach(k => {
+                if (colDefinitions[k] && !finalOrderKeys.includes(k)) {
+                    finalOrderKeys.push(k);
+                }
+            });
+            // Append any available keys not present in saved order
+            defaultOrderKeys.forEach(k => {
+                if (!finalOrderKeys.includes(k) && colDefinitions[k]) {
+                    finalOrderKeys.push(k);
+                }
+            });
+        } else {
+            finalOrderKeys = defaultOrderKeys;
+        }
+
+        const middleCols = finalOrderKeys.map(k => colDefinitions[k]).filter(Boolean);
 
         let html = `<div class="sleek-grid" id="spreadsheet-table" style="display: flex; flex-direction: column; gap: 0.25rem; width: 100%;">
             <div class="sleek-grid-header" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 0.4rem 0.25rem; gap: 0.5rem; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 20; background: var(--bg-color, #f2f2f7); box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
                 <div style="flex: 1; text-align: left; padding-left: 0.25rem;">Item Description</div>
                 <div style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem; padding-right: 0.25rem;">
+                    <!-- Fixed Left Columns -->
                     <div style="width: 80px;">Cost</div>
-                    <div style="width: 120px;">Billing Item</div>`;
-        
-        if (isTopDown) {
-            html += `
-                    <div style="width: 70px;">MRP</div>
-                    <div style="width: 90px;">C Calc</div>
-                    <div style="width: 90px;">Code</div>`;
-        } else {
-            html += `
-                    <div style="width: 70px;">Marg %</div>
-                    <div style="width: 90px;">Code</div>
-                    <div style="width: 70px;">Disc %</div>
-                    <div style="width: 70px;">MRP</div>`;
-        }
+                    <div style="width: 120px;">Billing Item</div>
+                    
+                    <!-- Draggable Middle Columns Header Container -->
+                    <div class="grid-middle-cols-header" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+                        ${middleCols.map(col => col.headerHtml).join('')}
+                    </div>
 
-        html += `
-                    ${orderedCols.map(c => `<div style="width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c}</div>`).join('')}
-                    <div style="width: 60px;">Qty</div>
+                    <!-- Fixed Right Columns -->
+                    <div style="width: 60px; text-align: center;">Qty</div>
                     <div style="width: 70px; text-align: center;">Action</div>
                 </div>
             </div>
@@ -526,34 +653,13 @@ document.addEventListener('DOMContentLoaded', () => {
         data.forEach((row, rowIdx) => {
             const trClass = row.label_status === 'PRINTED' ? 'row-printed' : '';
             
-            // Calculate initial margins/discounts for display
-            let margin = '';
-            let disc = '';
-            if (row.landing_price > 0 && row.selling_price > 0) {
-                margin = (((row.selling_price - row.landing_price) / row.landing_price) * 100).toFixed(1);
-            }
-            if (row.selling_price > 0 && row.mrp > 0) {
-                disc = (((row.mrp - row.selling_price) / row.mrp) * 100).toFixed(1);
-            }
-
-            let codeStr = row.supplier_product_code || (row.selling_price ? window.generateCodedPrice(row.selling_price) : '');
-            
-            let decodedStr = '';
-            let sellVal = (row.selling_price && Number(row.selling_price) > 0) ? Math.round(Number(row.selling_price)) : '';
-            if (sellVal) {
-                decodedStr = `₹${sellVal}`;
-            } else if (codeStr && !/^\d+$/.test(codeStr)) {
-                const decoded = window.decodePriceCode ? window.decodePriceCode(codeStr) : null;
-                if (decoded !== null && decoded > 0) {
-                    sellVal = Math.round(decoded);
-                    decodedStr = `₹${sellVal}`;
-                }
-            }
-            
             let costVal = '';
             if (row.landing_price !== null && row.landing_price !== undefined) costVal = row.landing_price;
             else if (row.purchase_rate !== null && row.purchase_rate !== undefined) costVal = row.purchase_rate;
             
+            const rawCopies = parseInt(row.received_qty || row.expected_qty || 1, 10);
+            const defaultCopies = Math.max(1, isNaN(rawCopies) ? 1 : rawCopies);
+
             html += `<div class="item-row grid-row ${trClass}" data-item-id="${row.id}" data-tally-status="${row.tally_status}" data-expected-qty="${row.expected_qty !== null && row.expected_qty !== undefined ? row.expected_qty : ''}" data-unit="${row.unit || 'PCS'}" data-pricing-status="${row.pricing_status}" data-label-status="${row.label_status}" data-received-qty="${row.received_qty || 0}" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin: 0; padding: 0.15rem 0.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px;">
                 
                 <!-- Left Side: Sleek Details -->
@@ -573,42 +679,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <!-- Right Side: Excel Inputs -->
                 <div class="grid-inputs" style="display: flex; flex-direction: row; align-items: center; flex-shrink: 0; padding-right: 0.25rem; gap: 0.5rem;">
-                    
+                    <!-- Fixed Left -->
                     <div style="width: 80px;"><input type="number" step="0.01" class="grid-cell pricing-field" data-field="purchase_rate" value="${costVal}" style="width: 100%;"></div>
-                    <div style="width: 120px;"><input type="text" class="grid-cell" data-field="billing_item" value="${row.billing_item || ''}" style="width: 100%;"></div>`;
+                    <div style="width: 120px;"><input type="text" class="grid-cell" data-field="billing_item" value="${row.billing_item || ''}" style="width: 100%;"></div>
 
-            if (isTopDown) {
-                html += `
-                    <div style="width: 70px;"><input type="number" step="1" class="grid-cell pricing-field" data-field="mrp" value="${row.mrp !== null ? row.mrp : ''}" style="width: 100%;"></div>
-                    <div style="width: 90px;"><input type="text" class="grid-cell calc-field" placeholder="-200 / 50%" style="width: 100%;"></div>
-                    <div style="width: 90px; position: relative;">
-                        <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 38px;">
-                        <span class="grid-code-preview" style="position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font-size: 0.72rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 700; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap; z-index: 2;">${decodedStr}</span>
-                        <input type="hidden" class="pricing-field" data-field="selling_price" value="${sellVal}">
-                    </div>`;
-            } else {
-                html += `
-                    <div style="width: 70px;"><input type="number" step="0.1" class="grid-cell margin-field" placeholder="%" value="${margin}" style="width: 100%;"></div>
-                    <div style="width: 90px; position: relative;">
-                        <input type="text" class="grid-cell code-field" data-field="supplier_product_code" value="${codeStr}" style="font-family: monospace; width: 100%; padding-right: 38px;">
-                        <span class="grid-code-preview" style="position: absolute; top: 50%; right: 5px; transform: translateY(-50%); font-size: 0.72rem; color: var(--accent-green, #10b981); background: transparent; font-weight: 700; ${decodedStr ? 'display: block;' : 'display: none;'} pointer-events: none; white-space: nowrap; z-index: 2;">${decodedStr}</span>
-                        <input type="hidden" class="pricing-field" data-field="selling_price" value="${sellVal}">
+                    <!-- Draggable Middle Columns Row Container -->
+                    <div class="grid-middle-cols-row" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+                        ${middleCols.map(col => col.renderCell(row)).join('')}
                     </div>
-                    <div style="width: 70px;"><input type="number" step="0.1" class="grid-cell disc-field" placeholder="%" value="${disc}" style="width: 100%;"></div>
-                    <div style="width: 70px;"><input type="number" step="1" class="grid-cell pricing-field" data-field="mrp" value="${row.mrp !== null ? row.mrp : ''}" style="width: 100%;"></div>`;
-            }
 
-            orderedCols.forEach(col => {
-                const f = row.dynamic_fields[col];
-                const val = f ? (f.value || '') : '';
-                const missingClass = (f && f.missing) ? 'missing-field' : '';
-                html += `<div style="width: 80px;"><input type="text" class="grid-cell dynamic-cell ${missingClass}" data-dynamic-field="${col}" value="${val}" style="width: 100%;"></div>`;
-            });
-
-            const rawCopies = parseInt(row.received_qty || row.expected_qty || 1, 10);
-            const defaultCopies = Math.max(1, isNaN(rawCopies) ? 1 : rawCopies);
-
-            html += `
+                    <!-- Fixed Right -->
                     <div style="width: 60px;"><input type="number" class="grid-cell" data-field="copies" value="${defaultCopies}" min="1" max="1000" style="width: 100%; text-align: center;"></div>
                     <div style="width: 70px; text-align: center;">
                         <button class="button primary btn-grid-print" style="margin: 0; width: 100%; padding: 0.2rem 0.25rem; font-size: 0.75rem; border-radius: 4px;" ${row.label_status === 'PRINTED' ? 'disabled' : ''}>
@@ -625,7 +705,106 @@ document.addEventListener('DOMContentLoaded', () => {
         applyGridFilters(true); // apply filters after rendering and activate top line from billing item
 
         setupGridInteractions();
+        setupGridColumnDrag(isTopDown, currentGridTemplate);
     }
+
+    function setupGridColumnDrag(isTopDown, currentGridTemplate) {
+        const table = document.getElementById('spreadsheet-table');
+        if (!table) return;
+
+        const headerMiddle = table.querySelector('.grid-middle-cols-header');
+        if (!headerMiddle) return;
+
+        let draggedKey = null;
+
+        const headers = headerMiddle.querySelectorAll('.draggable-col-header');
+        headers.forEach(header => {
+            header.addEventListener('dragstart', (e) => {
+                draggedKey = header.getAttribute('data-col-key');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', draggedKey);
+                header.classList.add('col-dragging');
+            });
+
+            header.addEventListener('dragend', () => {
+                header.classList.remove('col-dragging');
+                headerMiddle.querySelectorAll('.draggable-col-header').forEach(h => {
+                    h.classList.remove('drop-target-left', 'drop-target-right');
+                });
+                draggedKey = null;
+            });
+
+            header.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (!draggedKey) return;
+                const target = e.target.closest('.draggable-col-header');
+                if (!target || target.getAttribute('data-col-key') === draggedKey) return;
+
+                e.dataTransfer.dropEffect = 'move';
+                const rect = target.getBoundingClientRect();
+                const isLeft = (e.clientX - rect.left) < (rect.width / 2);
+                target.classList.toggle('drop-target-left', isLeft);
+                target.classList.toggle('drop-target-right', !isLeft);
+            });
+
+            header.addEventListener('dragleave', (e) => {
+                const target = e.target.closest('.draggable-col-header');
+                if (target && (!e.relatedTarget || !target.contains(e.relatedTarget))) {
+                    target.classList.remove('drop-target-left', 'drop-target-right');
+                }
+            });
+
+            header.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const target = e.target.closest('.draggable-col-header');
+                headerMiddle.querySelectorAll('.draggable-col-header').forEach(h => {
+                    h.classList.remove('drop-target-left', 'drop-target-right');
+                });
+
+                if (!target || !draggedKey) return;
+                const targetKey = target.getAttribute('data-col-key');
+                if (targetKey === draggedKey) return;
+
+                const rect = target.getBoundingClientRect();
+                const isLeft = (e.clientX - rect.left) < (rect.width / 2);
+
+                // Reorder header elements
+                const draggedHeader = headerMiddle.querySelector(`[data-col-key="${draggedKey}"]`);
+                if (!draggedHeader) return;
+                if (isLeft) {
+                    headerMiddle.insertBefore(draggedHeader, target);
+                } else {
+                    headerMiddle.insertBefore(draggedHeader, target.nextSibling);
+                }
+
+                // Reorder cells in every row
+                const rows = table.querySelectorAll('.grid-row');
+                rows.forEach(r => {
+                    const rowMiddle = r.querySelector('.grid-middle-cols-row');
+                    if (!rowMiddle) return;
+                    const draggedCell = rowMiddle.querySelector(`[data-col-key="${draggedKey}"]`);
+                    const targetCell = rowMiddle.querySelector(`[data-col-key="${targetKey}"]`);
+                    if (draggedCell && targetCell) {
+                        if (isLeft) {
+                            rowMiddle.insertBefore(draggedCell, targetCell);
+                        } else {
+                            rowMiddle.insertBefore(draggedCell, targetCell.nextSibling);
+                        }
+                    }
+                });
+
+                // Persist new order to localStorage
+                const newOrder = Array.from(headerMiddle.querySelectorAll('.draggable-col-header')).map(h => h.getAttribute('data-col-key'));
+                const templateStorageKey = `grid_middle_cols_${isTopDown ? 'td' : 'bu'}_${currentGridTemplate || 'default'}`;
+                const fallbackStorageKey = `grid_middle_cols_${isTopDown ? 'td' : 'bu'}`;
+                try {
+                    localStorage.setItem(templateStorageKey, JSON.stringify(newOrder));
+                    localStorage.setItem(fallbackStorageKey, JSON.stringify(newOrder));
+                } catch (err) {}
+            });
+        });
+    }
+
 
     function setupGridInteractions() {
         const table = document.getElementById('spreadsheet-table');
@@ -1197,6 +1376,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 let mrp = 0;
                 let sell = 0;
+                let cleanCode = codeInput ? String(codeInput.value || "").trim().toUpperCase() : "";
+                if (codeInput && codeInput.value !== cleanCode) {
+                    codeInput.value = cleanCode;
+                }
                 
                 if (mrpInput && sellInput) {
                     mrp = parseFloat(mrpInput.value) || 0;
@@ -1209,8 +1392,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    const rawCode = codeInput ? codeInput.value.trim() : "";
-                    if (!rawCode) {
+                    if (!cleanCode) {
                         if (typeof window.showToast === 'function') window.showToast("Price code is required.", "error");
                         tr.classList.add('error');
                         if (codeInput) {
@@ -1220,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    if (/^\d+$/.test(rawCode)) {
+                    if (/^\d+$/.test(cleanCode)) {
                         if (typeof window.showToast === 'function') window.showToast("Code cannot be only numbers. Use coded letters too.", "error");
                         tr.classList.add('error');
                         if (codeInput) {
@@ -1230,7 +1412,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    let decoded = window.decodePriceCode ? window.decodePriceCode(rawCode) : null;
+                    let decoded = window.decodePriceCode ? window.decodePriceCode(cleanCode) : null;
                     if (decoded === null || decoded <= 0) {
                         if (typeof window.showToast === 'function') window.showToast("Code cannot be decoded. Ensure it contains valid price letters.", "error");
                         tr.classList.add('error');
@@ -1265,6 +1447,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
+
+                if (!sell && cleanCode && window.decodePriceCode) {
+                    const dec = window.decodePriceCode(cleanCode);
+                    if (dec !== null && dec > 0) {
+                        sell = Math.round(dec);
+                        if (sellInput) sellInput.value = sell;
+                    }
+                }
                 
                 const itemId = tr.getAttribute('data-item-id');
                 const copiesInput = tr.querySelector('input[data-field="copies"]');
@@ -1289,8 +1479,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                 }
-                
-                let cleanCode = codeInput ? String(codeInput.value || "").trim() : "";
                 
                 if (!cleanCode) {
                     if (typeof window.showToast === 'function') window.showToast("Price code is required.", "error");
@@ -1366,7 +1554,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         purchase_rate: parseFloat(tr.querySelector('input[data-field="purchase_rate"]')?.value) || null,
                         mrp: mrp > 0 ? mrp : null,
                         selling_price: sell,
-                        supplier_product_code: rawCode,
+                        supplier_product_code: cleanCode,
                         manual_overrides: JSON.stringify(printOverrides)
                     };
                     await fetch(`/receiving/items/${itemId}/draft`, {
@@ -1396,6 +1584,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             copies: copies,
+                            force_reprint: true,
                             template_id: tid ? parseInt(tid, 10) : null 
                         })
                     });
@@ -1451,23 +1640,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         nextRow = rows[0];
                     }
                     if (nextRow) {
-                        const billingInput = nextRow.querySelector('input[data-field="billing_item"]');
+                        const billingInput = nextRow.querySelector('input[data-field="billing_item"]') || nextRow.querySelector('.grid-cell');
                         if (billingInput) {
+                            updateActiveGridRow(nextRow, billingInput);
                             lastPrintFocusTime = Date.now();
                             billingInput.focus();
                             billingInput.select();
                         }
                     }
                 } catch (err) {
+                    console.error("Print error:", err);
                     if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
                     btn.disabled = false;
                     btn.textContent = origText;
                     tr.classList.add('error');
                     
-                    if (err.message.toLowerCase().includes('mrp')) {
+                    const msg = (err.message || '').toLowerCase();
+                    if (msg.includes('mrp')) {
                         if (mrpInput) mrpInput.focus();
-                    } else if (err.message.toLowerCase().includes('code')) {
-                        const codeInput = tr.querySelector('.code-field');
+                    } else if (msg.includes('price code') || msg.includes('coded letters') || msg.includes('valid price letters')) {
                         if (codeInput) codeInput.focus();
                     }
                 }
