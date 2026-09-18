@@ -144,64 +144,74 @@ def checkout_cart(
     ).rowcount
     if updated_rows == 0:
         raise CheckoutError("Cart is already being checked out.")
+    cart.status = "checking_out"
 
-    sale_items, subtotal = _build_sale_items(db, cart)
-    payment = (payment_mode or "cash").strip().lower() or "cash"
-    clean_notes = (notes or "").strip() or None
-    parsed_date = _parse_bill_date(bill_date)
-    buyer = _clean_buyer_name(buyer_name)
+    try:
+        sale_items, subtotal = _build_sale_items(db, cart)
+        payment = (payment_mode or "cash").strip().lower() or "cash"
+        clean_notes = (notes or "").strip() or None
+        parsed_date = _parse_bill_date(bill_date)
+        buyer = _clean_buyer_name(buyer_name)
 
-    for _ in range(5):
-        sale = Sale(
-            bill_number=next_bill_number(db),
-            status="completed",
-            subtotal=money(subtotal),
-            discount_total=Decimal("0.00"),
-            round_off=Decimal("0.00"),
-            total=money(subtotal),
-            payment_mode=payment,
-            buyer_name=buyer,
-            notes=clean_notes,
-            upi_vpa=upi_vpa,
-            print_status="not_printed",
-            tally_sync_status="not_started",
-        )
-        if parsed_date:
-            sale.created_at = parsed_date
-        sale.items = sale_items
-        cart.status = "checked_out"
-        db.add(sale)
-        db.add(cart)
-        try:
-            db.commit()
-            db.refresh(sale)
-            return sale
-        except IntegrityError:
-            db.rollback()
-            sale_items = [
-                SaleItem(
-                    label_variant_id=item.label_variant_id,
-                    barcode=item.barcode,
-                    item_name=item.item_name,
-                    tally_stock_item_name=item.tally_stock_item_name,
-                    qty=item.qty,
-                    rate=item.rate,
-                    mrp=item.mrp,
-                    discount_amount=item.discount_amount,
-                    amount=item.amount,
-                )
-                for item in sale_items
-            ]
-            
-            # Reset atomic lock for retry
-            db.execute(
-                update(PosCart)
-                .where(PosCart.id == cart.id)
-                .values(status="active")
+        for _ in range(5):
+            sale = Sale(
+                bill_number=next_bill_number(db),
+                status="completed",
+                subtotal=money(subtotal),
+                discount_total=Decimal("0.00"),
+                round_off=Decimal("0.00"),
+                total=money(subtotal),
+                payment_mode=payment,
+                buyer_name=buyer,
+                notes=clean_notes,
+                upi_vpa=upi_vpa,
+                print_status="not_printed",
+                tally_sync_status="not_started",
             )
-            cart.status = "active"
+            if parsed_date:
+                sale.created_at = parsed_date
+            sale.items = sale_items
+            cart.status = "checked_out"
+            db.add(sale)
+            db.add(cart)
+            try:
+                db.commit()
+                db.refresh(sale)
+                return sale
+            except IntegrityError:
+                db.rollback()
+                sale_items = [
+                    SaleItem(
+                        label_variant_id=item.label_variant_id,
+                        barcode=item.barcode,
+                        item_name=item.item_name,
+                        tally_stock_item_name=item.tally_stock_item_name,
+                        qty=item.qty,
+                        rate=item.rate,
+                        mrp=item.mrp,
+                        discount_amount=item.discount_amount,
+                        amount=item.amount,
+                    )
+                    for item in sale_items
+                ]
+                
+                # Reset atomic lock for retry
+                db.execute(
+                    update(PosCart)
+                    .where(PosCart.id == cart.id)
+                    .values(status="active")
+                )
+                cart.status = "active"
 
-    raise CheckoutError("Could not generate a unique bill number. Try checkout again.")
+        raise CheckoutError("Could not generate a unique bill number. Try checkout again.")
+    except Exception:
+        db.execute(
+            update(PosCart)
+            .where(PosCart.id == cart.id)
+            .values(status="active")
+        )
+        cart.status = "active"
+        raise
 
 
 def save_sale_edit_cart(
@@ -226,34 +236,44 @@ def save_sale_edit_cart(
     ).rowcount
     if updated_rows == 0:
         raise CheckoutError("Cart is already being checked out.")
+    cart.status = "checking_out"
 
-    sale = db.get(Sale, cart.source_sale_id)
-    if not sale:
-        raise CheckoutError("Original sale was not found.")
+    try:
+        sale = db.get(Sale, cart.source_sale_id)
+        if not sale:
+            raise CheckoutError("Original sale was not found.")
 
-    sale_items, subtotal = _build_sale_items(db, cart)
-    payment = (payment_mode or "cash").strip().lower() or "cash"
-    clean_notes = (notes or "").strip() or None
-    parsed_date = _parse_bill_date(bill_date)
-    buyer = _clean_buyer_name(buyer_name)
+        sale_items, subtotal = _build_sale_items(db, cart)
+        payment = (payment_mode or "cash").strip().lower() or "cash"
+        clean_notes = (notes or "").strip() or None
+        parsed_date = _parse_bill_date(bill_date)
+        buyer = _clean_buyer_name(buyer_name)
 
-    for existing_item in sale.items:
-        db.delete(existing_item)
-    
-    sale.items = sale_items
-    sale.subtotal = money(subtotal)
-    sale.total = money(subtotal)
-    sale.payment_mode = payment
-    sale.buyer_name = buyer
-    sale.notes = clean_notes
-    sale.upi_vpa = upi_vpa
-    if parsed_date:
-        sale.created_at = parsed_date
-    cart.status = "discarded"
-    db.add(sale)
-    db.add(cart)
-    db.commit()
-    db.refresh(sale)
-    return sale
+        for existing_item in sale.items:
+            db.delete(existing_item)
+        
+        sale.items = sale_items
+        sale.subtotal = money(subtotal)
+        sale.total = money(subtotal)
+        sale.payment_mode = payment
+        sale.buyer_name = buyer
+        sale.notes = clean_notes
+        sale.upi_vpa = upi_vpa
+        if parsed_date:
+            sale.created_at = parsed_date
+        cart.status = "discarded"
+        db.add(sale)
+        db.add(cart)
+        db.commit()
+        db.refresh(sale)
+        return sale
+    except Exception:
+        db.execute(
+            update(PosCart)
+            .where(PosCart.id == cart.id)
+            .values(status="active")
+        )
+        cart.status = "active"
+        raise
 
 

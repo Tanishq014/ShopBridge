@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -13,7 +14,35 @@ from app.models import Sale
 from app.routes import families, pos, print_jobs, sales, scan, tally, templates as template_routes, variants, voice as voice_routes, workflow, receiving
 
 
-app = FastAPI(title="ShopBridge", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    
+    # Auto-delete bills older than 20 days
+    db = SessionLocal()
+    try:
+        cutoff_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=20)
+        # We must use ORM delete to trigger 'delete-orphan' cascade on SaleItem
+        from sqlalchemy import select, update
+        from app.models import PosCart
+        old_sales = db.scalars(select(Sale).where(Sale.created_at < cutoff_date)).all()
+        count = len(old_sales)
+        if count > 0:
+            sale_ids = [s.id for s in old_sales]
+            db.execute(update(PosCart).where(PosCart.source_sale_id.in_(sale_ids)).values(source_sale_id=None))
+            for sale in old_sales:
+                db.delete(sale)
+            db.commit()
+            logging.info(f"Auto-deleted {count} old bills on startup.")
+    except Exception as e:
+        logging.error(f"Failed to auto-delete old bills on startup: {e}")
+        db.rollback()
+    finally:
+        db.close()
+    yield
+
+
+app = FastAPI(title="ShopBridge", version="0.1.0", lifespan=lifespan)
 app.state.pos_cart_mutation_lock = asyncio.Lock()
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -45,33 +74,6 @@ async def serialize_pos_cart_mutations(request, call_next):
         async with request.app.state.pos_cart_mutation_lock:
             return await call_next(request)
     return await call_next(request)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
-    
-    # Auto-delete bills older than 20 days
-    db = SessionLocal()
-    try:
-        cutoff_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=20)
-        # We must use ORM delete to trigger 'delete-orphan' cascade on SaleItem
-        from sqlalchemy import select, update
-        from app.models import PosCart
-        old_sales = db.scalars(select(Sale).where(Sale.created_at < cutoff_date)).all()
-        count = len(old_sales)
-        if count > 0:
-            sale_ids = [s.id for s in old_sales]
-            db.execute(update(PosCart).where(PosCart.source_sale_id.in_(sale_ids)).values(source_sale_id=None))
-            for sale in old_sales:
-                db.delete(sale)
-            db.commit()
-            logging.info(f"Auto-deleted {count} old bills on startup.")
-    except Exception as e:
-        logging.error(f"Failed to auto-delete old bills on startup: {e}")
-        db.rollback()
-    finally:
-        db.close()
 
 
 @app.get("/")

@@ -100,10 +100,16 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
             except Exception as e:
                 logger.error(f"Could not save debug receipt: {e}")
 
+        hDC = None
         try:
             hDC = win32ui.CreateDC()
             hDC.CreatePrinterDC(printer_name_clean)
         except pywintypes.error as e:
+            if hDC:
+                try:
+                    hDC.DeleteDC()
+                except Exception:
+                    pass
             raise ValueError(
                 f"Could not open printer '{printer_name_clean}'. "
                 f"Please verify the exact printer name in Windows Control Panel. Error: {e}"
@@ -148,4 +154,8 @@ def print_receipt_direct_image(printer_name: str, sale: Sale, receipt_url: str) 
                     hDC.EndDoc()
                 except Exception:
                     logger.exception("Failed to end receipt printer document")
-            hDC.DeleteDC()
+            if hDC:
+                try:
+                    hDC.DeleteDC()
+                except Exception:
+                    logger.exception("Failed to delete receipt printer DC")

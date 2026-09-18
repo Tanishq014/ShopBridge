@@ -62,7 +62,7 @@
         <div class="pos-title-row">
           <h1>ShopBridge POS</h1>
           <input type="datetime-local" id="billDateInput" title="Bill Date Override" class="input" style="padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px; font-weight: bold; width: auto; margin-left: 12px; color: var(--text);">
-          <button type="button" class="button outline" onclick="document.getElementById('posAddTallyItemModal').showModal()" style="margin-left: 4px; padding: 4px 10px; font-size: 13px; border-color: var(--border-color); color: var(--text);">Add Tally Item</button>
+          <button type="button" class="button outline" onclick="document.getElementById('posAddTallyItemModal').showModal(); setTimeout(() => document.getElementById('posTallyItemName')?.focus(), 50);" style="margin-left: 4px; padding: 4px 10px; font-size: 13px; border-color: var(--border-color); color: var(--text);">Add Tally Item</button>
         </div>
       </div>
       <div class="pos-top-actions" style="display: flex; align-items: center; gap: 8px;">
@@ -633,15 +633,27 @@
             input.select();
           }
         });
+      } else {
+        focusItemInput(false);
       }
     }
 
     function focusSelectedCartItem(selectText = true) {
-      if (state.selectedIndex < 0) {
+      if (!state.cart || !state.cart.items || state.cart.items.length === 0 || state.selectedIndex < 0) {
+        focusItemInput(false);
         return;
       }
       window.requestAnimationFrame(() => {
-        focusCartField(state.selectedIndex, "item", selectText);
+        if (!state.cart || !state.cart.items || state.cart.items.length === 0) {
+          focusItemInput(false);
+          return;
+        }
+        const targetIndex = Math.min(state.selectedIndex, state.cart.items.length - 1);
+        if (targetIndex >= 0) {
+          focusCartField(targetIndex, "item", selectText);
+        } else {
+          focusItemInput(false);
+        }
       });
     }
 
@@ -1904,6 +1916,7 @@
       cartRows.innerHTML = "";
 
       if (!items.length) {
+        state.selectedIndex = -1;
         const row = document.createElement("tr");
         row.className = "pos-empty-row";
         const cell = document.createElement("td");
@@ -1911,6 +1924,7 @@
         cell.textContent = "Cart is empty.";
         row.appendChild(cell);
         cartRows.appendChild(row);
+        focusItemInput(false);
         return;
       }
 
@@ -2136,11 +2150,18 @@
 
       state.hasMissingRate = items.some(item => item.missing_price);
       checkoutButton.disabled = items.length === 0 || state.hasMissingRate;
-      if (state.cart.cart_mode === "sale_edit") {
-        checkoutButton.textContent = `Save Bill Changes - ${money(state.cart.total || "0.00")}`;
-      } else {
-        checkoutButton.textContent = `Checkout - ${money(state.cart.total || "0.00")}`;
+      checkoutButton.textContent = getCheckoutButtonLabel();
+    }
+
+    function getCheckoutButtonLabel() {
+      const numTotal = Number.parseFloat((state.cart && state.cart.total) || "0");
+      if (state.openedSaleMode === "edit" || (state.cart && state.cart.cart_mode === "sale_edit")) {
+        return `Save Bill Changes - ${money((state.cart && state.cart.total) || "0.00")}`;
       }
+      if (numTotal < 0) {
+        return `Issue Refund - ${money(Math.abs(numTotal))}`;
+      }
+      return `Checkout - ${money((state.cart && state.cart.total) || "0.00")}`;
     }
 
     function recalculateOptimisticCart() {
@@ -2696,6 +2717,27 @@
             }, 50);
             return;
           }
+
+          const enteredVal = (input.value || "").trim();
+          let exactBarcodeItem = null;
+          if (state.searchCatalog && enteredVal) {
+            const bQuery = normalizedBarcodeSearch(enteredVal);
+            exactBarcodeItem = state.searchCatalog.find(c => c.barcode && String(c.barcode).toUpperCase() === bQuery);
+          }
+          const hasSuggestions = state.suggestionMode === "edit" && suggestionOptionCount() > 0;
+          if (exactBarcodeItem || (!hasSuggestions && enteredVal.length >= 4 && /^[a-zA-Z0-9_-]+$/.test(enteredVal))) {
+            state.focusTransition = true;
+            const replaced = await replaceCartItem(itemId, { barcode: enteredVal });
+            state.focusTransition = false;
+            if (replaced) {
+              closeSuggestions(true);
+              resetActiveEditState();
+              const replacementId = (replaced.item && replaced.item.id) || replaced.merged_item_id || itemId;
+              focusNextBillingField(replacementId, "qty");
+              return;
+            }
+          }
+
           if (state.suggestionMode === "edit" && suggestionOptionCount()) {
             if (state.suggestionIndex < 0) {
               const exactMatch = state.suggestions.find(s =>
@@ -2813,21 +2855,40 @@
       }
     });
 
+    let lastCartSyncVersion = null;
+
     async function loadCart(silent = false) {
       if (silent && (state.checkoutSubmitting || state.cartEditActive || state.billNavBusy || state.pendingLineSaves.size > 0 || lineEditIsActive() || !searchPanel.hidden || state.focusTransition)) {
         return;
       }
       try {
+        if (silent) {
+          try {
+            const vResp = await fetch("/pos/cart/version", {cache: "no-store"});
+            if (vResp.ok) {
+              const vData = await vResp.json();
+              if (lastCartSyncVersion && vData.version === lastCartSyncVersion) {
+                return;
+              }
+              lastCartSyncVersion = vData.version;
+            }
+          } catch (e) {
+            // fallback to normal cart load if version check fails
+          }
+        }
         const response = await fetch("/pos/cart", {cache: "no-store"});
         if (!response.ok) {
           throw new Error("Could not load cart.");
         }
-        renderCart(await response.json());
+        const cart = await response.json();
+        renderCart(cart);
         if (!silent) {
           setStatus("Cart refreshed.", "info");
         }
       } catch (error) {
-        setStatus(error.message || "Could not load cart.", "error");
+        if (!silent) {
+          setStatus(error.message || "Could not load cart.", "error");
+        }
       }
     }
 
@@ -2913,13 +2974,14 @@
         return false;
       }
       try {
+        const payload = selectedItem.barcode ? { barcode: selectedItem.barcode } : {
+          result_type: selectedItem.result_type,
+          id: selectedItem.id,
+        };
         const response = await fetch(`/pos/cart/items/${itemId}/replace`, {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            result_type: selectedItem.result_type,
-            id: selectedItem.id,
-          }),
+          body: JSON.stringify(payload),
         });
         const cart = await response.json();
         if (!response.ok) {
@@ -3344,7 +3406,7 @@
              await loadBillNavItems();
              state.checkoutSubmitting = false;
              checkoutButton.disabled = false;
-             checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+             checkoutButton.textContent = getCheckoutButtonLabel();
              
              searchInput.value = "";
              focusItemInput(false);
@@ -3381,7 +3443,7 @@
              setStatus(data.message || "Could not save bill.", "error");
              state.checkoutSubmitting = false;
              checkoutButton.disabled = false;
-             checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+             checkoutButton.textContent = getCheckoutButtonLabel();
 
              if (data.cart_item_id && data.field_name) {
                const rowIndex = (state.cart.items || []).findIndex(item => String(item.id) === String(data.cart_item_id));
@@ -3395,7 +3457,7 @@
           setStatus("Could not save bill.", "error");
           state.checkoutSubmitting = false;
           checkoutButton.disabled = false;
-          checkoutButton.textContent = state.openedSaleMode === "edit" ? `Save Bill Changes - ${money(state.cart.total || "0.00")}` : `Checkout - ${money(state.cart.total || "0.00")}`;
+          checkoutButton.textContent = getCheckoutButtonLabel();
           return false;
         }
       } else {
@@ -3805,12 +3867,18 @@
         const isCommand = checkBuffer.endsWith("SAVE-PRINT") || checkBuffer.endsWith("*SAVE-PRINT*");
         const active = document.activeElement;
         const isSearchInput = active === searchInput;
+        const isLineItemInput = Boolean(active && active.classList && active.classList.contains("pos-item-input"));
         const isFastScan = checkBuffer.length >= 5; 
 
         if (isCommand || (isFastScan && !isSearchInput)) {
           event.preventDefault();
           event.stopPropagation();
           
+          let lineItemId = null;
+          if (isLineItemInput && active && active.dataset && active.dataset.cartItemId) {
+            lineItemId = active.dataset.cartItemId;
+          }
+
           if (active) {
             if (active.tagName === "INPUT" || active.tagName === "TEXTAREA") {
                if (typeof active.value === "string" && active.value.toUpperCase().endsWith(checkBuffer)) {
@@ -3820,13 +3888,23 @@
             }
             if (active === searchInput) {
               active.value = "";
-            } else {
+            } else if (!lineItemId) {
               active.blur();
             }
           }
           
           if (isCommand) {
             await addBarcode("SAVE-PRINT", true, true, true);
+          } else if (lineItemId) {
+            closeSuggestions(true);
+            resetActiveEditState();
+            state.focusTransition = true;
+            const replaced = await replaceCartItem(lineItemId, { barcode: checkBuffer });
+            state.focusTransition = false;
+            if (replaced) {
+              const replacementId = (replaced.item && replaced.item.id) || replaced.merged_item_id || lineItemId;
+              focusNextBillingField(replacementId, "qty");
+            }
           } else {
             searchInput.value = "";
             await addBarcode(checkBuffer, true, true, true);
@@ -4028,7 +4106,37 @@
       });
     }
     
-    document.getElementById("posAddTallyItemForm")?.addEventListener("submit", async (e) => {
+    const addTallyModal = document.getElementById("posAddTallyItemModal");
+    const tallyItemNameInput = document.getElementById("posTallyItemName");
+    const tallyItemAliasInput = document.getElementById("posTallyItemAlias");
+    const addTallyForm = document.getElementById("posAddTallyItemForm");
+
+    if (tallyItemNameInput) {
+      tallyItemNameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          tallyItemAliasInput?.focus();
+          tallyItemAliasInput?.select();
+        }
+      });
+    }
+
+    if (tallyItemAliasInput) {
+      tallyItemAliasInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          addTallyForm?.requestSubmit();
+        }
+      });
+    }
+
+    addTallyModal?.addEventListener("close", () => {
+      focusItemInput(false);
+    });
+
+    addTallyForm?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.target;
       const formData = new FormData(form);
@@ -4040,9 +4148,13 @@
         if (response.url && response.url.includes("error=")) {
           setStatus("Item already exists or name missing.", "error");
         } else {
-          document.getElementById('posAddTallyItemModal').close();
+          addTallyModal?.close();
           setStatus("Tally Item added successfully.", "success");
           form.reset();
+          state.searchCatalog = null;
+          state.searchCatalogPromise = null;
+          ensureSearchCatalog();
+          focusItemInput(false);
         }
       } catch (err) {
         setStatus("Could not add Tally Item.", "error");

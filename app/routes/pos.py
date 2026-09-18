@@ -532,6 +532,29 @@ def pos_cart(db: Session = Depends(get_db)):
     return payload
 
 
+@router.get("/pos/cart/version")
+def pos_cart_version(db: Session = Depends(get_db)):
+    cart = _find_active_cart(db, normalize_duplicates=False)
+    if not cart:
+        return {"cart_id": None, "version": "empty", "count": 0}
+    items_summary = db.query(
+        func.count(PosCartItem.id),
+        func.coalesce(func.sum(PosCartItem.qty), 0),
+        func.coalesce(func.sum(PosCartItem.rate_snapshot * PosCartItem.qty), 0),
+        func.max(PosCartItem.updated_at)
+    ).filter(PosCartItem.cart_id == cart.id).first()
+    item_count = items_summary[0] if items_summary else 0
+    qty_sum = items_summary[1] if items_summary else 0
+    rate_sum = items_summary[2] if items_summary else 0
+    max_updated = items_summary[3] if items_summary else None
+    version_str = f"{cart.id}-{cart.cart_mode}-{cart.source_sale_id}-{item_count}-{qty_sum}-{rate_sum}-{cart.updated_at}-{max_updated}"
+    return {
+        "cart_id": cart.id,
+        "version": version_str,
+        "count": item_count,
+    }
+
+
 @router.get("/pos/cart/held")
 def list_held_carts(db: Session = Depends(get_db)):
     _cleanup_old_held_carts(db)
@@ -1135,7 +1158,7 @@ async def pos_scan(request: Request, db: Session = Depends(get_db)):
         .where(PosCartItem.qty > 0)
     )
     if item:
-        item.qty = PosCartItem.qty + 1
+        item.qty = (item.qty or 0) + 1
         is_update = True
         item.item_name_snapshot = item.item_name_snapshot or (variant.family.family_name if variant.family else variant.item_display_name)
         item.barcode_snapshot = item.barcode_snapshot or variant.barcode
@@ -1368,11 +1391,23 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
     except Exception:
         payload = {}
 
-    result_type = str(payload.get("result_type", "")).strip()
-    result_id = payload.get("id")
+    barcode_raw = payload.get("barcode")
+    variant = None
+    if barcode_raw:
+        barcode = normalize_barcode(str(barcode_raw))
+        variant = lookup_saved_price_by_barcode(db, barcode)
+        if not variant or variant.status != "active":
+            return _json_error("Barcode item was not found.", status_code=404, status="not_found")
+        result_type = "barcode"
+        result_id = variant.id
+    else:
+        result_type = str(payload.get("result_type", "")).strip()
+        result_id = payload.get("id")
+
     merged_item: PosCartItem | None = None
     if result_type == "barcode":
-        variant = db.get(LabelVariant, result_id)
+        if not variant:
+            variant = db.get(LabelVariant, result_id)
         if not variant or variant.status != "active":
             return _json_error("Barcode item was not found.", status_code=404, status="not_found")
         if item.variant_id == variant.id:
@@ -1383,7 +1418,7 @@ async def replace_pos_item(item_id: int, request: Request, db: Session = Depends
             if duplicate:
                 merged_item = _merge_replaced_item(db, target=item, duplicate=duplicate, replacement_rate=variant.selling_price)
             else:
-                _apply_variant_to_cart_item(item, variant, preserve_values=True)
+                _apply_variant_to_cart_item(item, variant, preserve_values=False)
     elif result_type == "tally_item":
         tally_item = db.get(TallyItem, result_id)
         if not tally_item or not tally_item.active_status:
@@ -1423,7 +1458,7 @@ def increase_pos_item(item_id: int, db: Session = Depends(get_db)):
     if isinstance(item, JSONResponse):
         return item
     cart = item.cart
-    item.qty = PosCartItem.qty + 1
+    item.qty = (item.qty or 0) + 1
     db.add(item)
     db.commit()
     return _cart_payload(db, cart)
@@ -1435,8 +1470,11 @@ def decrease_pos_item(item_id: int, db: Session = Depends(get_db)):
     if isinstance(item, JSONResponse):
         return item
     cart = item.cart
-    item.qty = PosCartItem.qty - 1
-    db.add(item)
+    if (item.qty or 1) <= 1:
+        db.delete(item)
+    else:
+        item.qty = (item.qty or 1) - 1
+        db.add(item)
     db.commit()
     return _cart_payload(db, cart)
 

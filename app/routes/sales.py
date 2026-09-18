@@ -324,6 +324,8 @@ def print_sale_receipt_direct(sale_id: int, request: Request, db: Session = Depe
 
     sale = _sale_or_404(db, sale_id)
     receipt_url = str(request.url_for("sale_receipt", sale_id=sale.id)) + "?hide_buttons=1"
+    if "://0.0.0.0:" in receipt_url:
+        receipt_url = receipt_url.replace("://0.0.0.0:", "://127.0.0.1:")
 
     try:
         try:

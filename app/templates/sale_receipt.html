@@ -149,8 +149,13 @@
       <div class="receipt-rule" style="margin-top: 4px;"></div>
 
       <dl class="receipt-totals">
+        {% if sale.total < 0 %}
+        <dt style="font-size: 13px; font-weight: bold;">REFUND DUE</dt>
+        <dd style="font-size: 13px; font-weight: bold;">₹{{ "%.2f"|format(sale.total|abs) }}</dd>
+        {% else %}
         <dt>Total</dt>
         <dd>₹{{ "%.2f"|format(sale.total) }}</dd>
+        {% endif %}
       </dl>
 
       {% if ns.total_saved > 0 %}
@@ -161,7 +166,7 @@
 
       <div
         style="display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; margin-bottom: 4px;">
-        {% if sale.upi_vpa %}
+        {% if sale.upi_vpa and sale.total > 0 %}
         <div style="text-align: center;">
           <p style="font-size: 12px; margin-bottom: 4px; font-weight: bold; margin-top: 0; color: #000;">Scan to Pay</p>
           <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 6px;">
