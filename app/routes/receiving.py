@@ -60,6 +60,46 @@ def change_session_status(session_id: int, status: str, db: Session = Depends(ge
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/sessions/delete-all")
+@router.delete("/sessions")
+def delete_all_sessions(request: Request, db: Session = Depends(get_db)):
+    from app.models import ExtractionJob
+    # Clean up any source documents stored on disk
+    sessions = db.query(ReceivingSession).all()
+    for s in sessions:
+        if s.source_document_path and os.path.exists(s.source_document_path):
+            try:
+                os.remove(s.source_document_path)
+            except Exception:
+                pass
+    db.query(ExtractionJob).delete(synchronize_session=False)
+    db.query(ReceivingItem).delete(synchronize_session=False)
+    count = db.query(ReceivingSession).delete(synchronize_session=False)
+    db.commit()
+    if "application/json" in request.headers.get("accept", ""):
+        return {"status": "deleted", "deleted_count": count}
+    return RedirectResponse(url="/receiving/", status_code=303)
+
+@router.post("/sessions/{session_id}/delete")
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: int, request: Request, db: Session = Depends(get_db)):
+    from app.models import ExtractionJob
+    session = db.get(ReceivingSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.source_document_path and os.path.exists(session.source_document_path):
+        try:
+            os.remove(session.source_document_path)
+        except Exception:
+            pass
+    db.query(ExtractionJob).filter(ExtractionJob.session_id == session_id).delete(synchronize_session=False)
+    db.query(ReceivingItem).filter(ReceivingItem.session_id == session_id).delete(synchronize_session=False)
+    db.delete(session)
+    db.commit()
+    if "application/json" in request.headers.get("accept", ""):
+        return {"status": "deleted", "session_id": session_id}
+    return RedirectResponse(url="/receiving/", status_code=303)
+
 @router.post("/items", response_model=ReceivingItemRead)
 def add_item(data: ReceivingItemCreate, db: Session = Depends(get_db)):
     try:

@@ -654,6 +654,31 @@ class TestReceivingPhase35(unittest.TestCase):
         self.assertIn("codeInput.dataset.autoCalculated = 'true';", spreadsheet_js)
         self.assertIn("mrpInput.dataset.autoCalculated = 'true';", spreadsheet_js)
 
+    def test_delete_receiving_session_endpoints(self):
+        # 31. test_delete_receiving_session_endpoints
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        item = ReceivingItem(session_id=session.id, billing_item="To Delete")
+        self.db.add(item)
+        self.db.commit()
+
+        # Delete single session
+        session_id = session.id
+        res = self.client.post(f"/receiving/sessions/{session_id}/delete", headers={"accept": "application/json"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["status"], "deleted")
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(ReceivingSession, session_id))
+
+        # Create another session and test delete-all
+        session2 = ReceivingSession(supplier_id=supplier.id, status="DRAFT")
+        self.db.add(session2)
+        self.db.commit()
+
+        res_all = self.client.post("/receiving/sessions/delete-all", headers={"accept": "application/json"})
+        self.assertEqual(res_all.status_code, 200)
+        self.assertEqual(res_all.json()["status"], "deleted")
+        self.assertEqual(len(self.db.query(ReceivingSession).all()), 0)
+
 if __name__ == "__main__":
     unittest.main()
 

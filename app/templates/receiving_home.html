@@ -6,9 +6,16 @@
 <link rel="stylesheet" href="{{ url_for('static', path='/receiving.css') }}">
 
 <div class="receiving-home">
-  <div class="receiving-header">
+  <div class="receiving-header" style="display: flex; justify-content: space-between; align-items: center;">
     <h1>Smart Stock Receiving</h1>
-    <button class="button primary" onclick="document.getElementById('new-session-form').hidden = false;">[+] NEW RECEIVING</button>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      {% if active_sessions or recent_sessions %}
+      <form action="/receiving/sessions/delete-all" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL receiving sessions? This cannot be undone.');" style="margin: 0;">
+        <button type="submit" class="button danger outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; border-color: #ff3b30; color: #ff3b30;">DELETE ALL SESSIONS</button>
+      </form>
+      {% endif %}
+      <button class="button primary" onclick="document.getElementById('new-session-form').hidden = false;">[+] NEW RECEIVING</button>
+    </div>
   </div>
   
   <div id="new-session-form" class="session-card" hidden style="background: #f1f8ff; border-color: #c8e1ff; margin-bottom: 2rem;">
@@ -53,7 +60,12 @@
         {% set checked_count = verified_count + mismatch_count %}
         {% set total_count = session.items | length %}
         <p>{{ checked_count }} / {{ total_count }} checked {% if mismatch_count > 0 %}({{ mismatch_count }} mismatches){% endif %}</p>
-        <a href="/receiving/{{ session.id }}" class="button">CONTINUE</a>
+        <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem;">
+          <a href="/receiving/{{ session.id }}" class="button" style="flex: 1; text-align: center;">CONTINUE</a>
+          <form action="/receiving/sessions/{{ session.id }}/delete" method="POST" onsubmit="return confirm('Delete this receiving session?');" style="margin: 0;">
+            <button type="submit" class="button danger" style="padding: 0.4rem 0.6rem; font-size: 0.8rem; background: #ff3b30; color: #fff;">DELETE</button>
+          </form>
+        </div>
       </div>
     {% else %}
       <p>No active receiving sessions.</p>
@@ -71,7 +83,12 @@
         {% set checked_count = verified_count + mismatch_count %}
         {% set total_count = session.items | length %}
         <p>{{ checked_count }} / {{ total_count }} checked</p>
-        <a href="/receiving/{{ session.id }}" class="button outline">VIEW</a>
+        <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem;">
+          <a href="/receiving/{{ session.id }}" class="button outline" style="flex: 1; text-align: center;">VIEW</a>
+          <form action="/receiving/sessions/{{ session.id }}/delete" method="POST" onsubmit="return confirm('Delete this receiving session?');" style="margin: 0;">
+            <button type="submit" class="button danger" style="padding: 0.4rem 0.6rem; font-size: 0.8rem; background: #ff3b30; color: #fff;">DELETE</button>
+          </form>
+        </div>
       </div>
     {% else %}
       <p>No recent sessions.</p>
