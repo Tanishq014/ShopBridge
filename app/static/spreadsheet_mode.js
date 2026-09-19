@@ -479,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dynamicCols = new Set();
         data.forEach(row => {
             Object.keys(row.dynamic_fields || {}).forEach(k => {
-                if (!['mrp', 'selling_price', 'coded_price', 'family_name'].includes(k)) {
+                if (!['mrp', 'selling_price', 'coded_price', 'family_name', 'barcode'].includes(k)) {
                     dynamicCols.add(k);
                 }
             });
