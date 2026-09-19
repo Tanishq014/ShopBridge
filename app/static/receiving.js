@@ -376,9 +376,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const labelStatus = row.getAttribute('data-label-status');
       const isReceived = tally !== 'UNVERIFIED';
 
-      if (tally === 'UNVERIFIED' || tally === 'MISMATCH') {
-        pending++; // Mismatches bundle into pending
-      } else if (isReceived) {
+      if (tally === 'UNVERIFIED' || tally === 'MISMATCH' || labelStatus !== 'PRINTED') {
+        pending++; // Untallied, mismatch, or tallied but not yet printed stay in pending
+      }
+      if (isReceived && labelStatus !== 'PRINTED') {
         if (pricingStatus === 'PENDING') pricing++;
         else if (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE') issues++;
       }
@@ -390,9 +391,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Filtering logic
       let visibleFilter = false;
       if (activeFilter === 'ALL') visibleFilter = true;
-      else if (activeFilter === 'PENDING' && (tally === 'UNVERIFIED' || tally === 'MISMATCH')) visibleFilter = true;
-      else if (activeFilter === 'NEEDS_PRICING' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && pricingStatus === 'PENDING') visibleFilter = true;
-      else if (activeFilter === 'PRINT_ISSUES' && tally !== 'UNVERIFIED' && tally !== 'MISMATCH' && isReceived && (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE')) visibleFilter = true;
+      else if (activeFilter === 'PENDING' && (tally === 'UNVERIFIED' || tally === 'MISMATCH' || labelStatus !== 'PRINTED')) visibleFilter = true;
+      else if (activeFilter === 'NEEDS_PRICING' && labelStatus !== 'PRINTED' && pricingStatus === 'PENDING') visibleFilter = true;
+      else if (activeFilter === 'PRINT_ISSUES' && (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE')) visibleFilter = true;
 
 
       // Search logic

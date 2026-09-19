@@ -16,6 +16,9 @@ from app.services.workflow.form_state_service import parse_extra_field_values
 from app.services.workflow.pricing_workflow_service import money, compact_money
 
 UNSAFE_INHERITANCE_FIELDS = {
+    "barcode",
+    "mrp", "selling_price", "coded_price",
+    "item_display_name", "design", "itemname", "item",
     "batch", "batch_no", "batchno", "expiry", 
     "serial", "serial_number", "serialno", "srno", "sr_no"
 }
@@ -173,9 +176,8 @@ def resolve_draft(db: Session, item: ReceivingItem, template_id_override: int | 
             val = previous[sem_field]
             source = "PREVIOUS"
         # 5. DEFAULT
-        elif t_field in defaults:
-            val = defaults[t_field]
-            source = "DEFAULT"
+        # Template sample/dummy values from BarTender files must NEVER contaminate invoice grid cells.
+        # The default_value is retained on DraftField for metadata/placeholder only.
             
         is_strictly_required = not template_field_settings.is_optional(sem_field) and sem_field not in ["barcode", "coded_price"]
         
@@ -218,8 +220,12 @@ def draft_to_persistence_adapter(draft: LabelDraft, billing_item: str) -> tuple[
         "coded_price": "",
     }
     
-    # We must explicitly resolve item_display_name, falling back to billing_item.
-    item_display_name = billing_item
+    # Check if template actually defines an item display name / design field
+    template_has_item_field = any(
+        f.semantic_field in ("item_display_name", "design", "itemname", "item")
+        for f in draft.fields
+    )
+    item_display_name = ""
     
     extra_values = {}
     
@@ -260,6 +266,11 @@ def draft_to_persistence_adapter(draft: LabelDraft, billing_item: str) -> tuple[
     # The adapter GUARANTEES structural parity by parsing the extra values again.
     normalized_extra = parse_extra_field_values(json.dumps(extra_values))
     
+    # If the template requires/contains item_display_name but no explicit value was given, fall back to billing_item.
+    # If the template does not contain item_display_name (like Small 1, Small 2), leave it empty to match New Stock.
+    if template_has_item_field and not item_display_name:
+        item_display_name = billing_item
+        
     core_fields["item_display_name"] = item_display_name
     
     return core_fields, normalized_extra

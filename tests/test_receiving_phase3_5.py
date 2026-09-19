@@ -379,8 +379,26 @@ class TestReceivingPhase35(unittest.TestCase):
         
         draft = resolve_draft(self.db, item)
         resolved = resolve_variant_for_receiving(self.db, draft, "Fallback Name", Decimal("100"), Decimal("80"))
-        self.assertEqual(resolved.item_display_name, "Fallback Name")
+        # When template does not have item_display_name, it stays empty (parity with New Stock)
+        self.assertEqual(resolved.item_display_name, "")
         self.assertEqual(resolved.family.family_name, "Fallback Name")
+        
+        # When template DOES have an item display field (e.g. design), it falls back to billing_item
+        tmpl_with_design = TemplateMaster(
+            template_id="TEST_DESIGN",
+            template_name="Test Design",
+            bartender_file_path="C:\\test_design.btw",
+            required_fields="mrp,selling_price,design"
+        )
+        self.db.add(tmpl_with_design)
+        self.db.commit()
+        
+        item2 = ReceivingItem(session_id=session.id, billing_item="Fallback Name", template_id=tmpl_with_design.id)
+        self.db.add(item2)
+        self.db.commit()
+        draft2 = resolve_draft(self.db, item2)
+        resolved2 = resolve_variant_for_receiving(self.db, draft2, "Fallback Name", Decimal("100"), Decimal("80"))
+        self.assertEqual(resolved2.item_display_name, "Fallback Name")
 
     def test_confirm_pricing_with_template_id(self):
         # 19. test_confirm_pricing_with_template_id
@@ -560,6 +578,81 @@ class TestReceivingPhase35(unittest.TestCase):
         self.assertIn('max="1000"', phone_print)
         self.assertIn('phoneCopyCountError', phone_print)
         self.assertIn('cleanCopies > 1000', phone_print)
+
+    def test_template_defaults_never_populate_draft_values(self):
+        # 28. test_template_defaults_never_populate_draft_values
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        tmpl_with_defaults = TemplateMaster(
+            template_id="TEST_DEFAULTS",
+            template_name="Template With Defaults",
+            bartender_file_path="C:\\defaults.btw",
+            required_fields="article,mrp,coded_price,barcode",
+            default_field_values=json.dumps({
+                "article": "narration",
+                "mrp": "749",
+                "coded_price": "KSKK",
+                "barcode": "6291040000000"
+            })
+        )
+        self.db.add(tmpl_with_defaults)
+        self.db.commit()
+
+        item = ReceivingItem(session_id=session.id, billing_item="Test Item")
+        self.db.add(item)
+        self.db.commit()
+
+        draft = resolve_draft(self.db, item, template_id_override=tmpl_with_defaults.id)
+        field_map = {f.semantic_field: f for f in draft.fields}
+
+        # Grid cell values must NEVER be populated with template defaults
+        self.assertIsNone(field_map["article"].value)
+        self.assertIsNone(field_map["mrp"].value)
+        self.assertIsNone(field_map["coded_price"].value)
+        self.assertIsNone(field_map["barcode"].value)
+
+    def test_unsafe_inheritance_fields_not_inherited_from_family(self):
+        # 29. test_unsafe_inheritance_fields_not_inherited_from_family
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        old_var = LabelVariant(
+            barcode="OLD_CODE",
+            family_id=family.id,
+            item_display_name="Custom Old Name",
+            mrp=Decimal("999"),
+            selling_price=Decimal("799"),
+            coded_price="ZZZZ",
+            template_id=template.id,
+        )
+        self.db.add(old_var)
+        self.db.commit()
+
+        # Unlinked item sharing only the family / billing_item name
+        new_item = ReceivingItem(session_id=session.id, billing_item="Test Family")
+        self.db.add(new_item)
+        self.db.commit()
+
+        draft = resolve_draft(self.db, new_item, template_id_override=template.id)
+        field_map = {f.semantic_field: f for f in draft.fields}
+
+        # mrp, barcode, selling_price, item_display_name must NOT be inherited from old variant
+        if "mrp" in field_map:
+            self.assertIsNone(field_map["mrp"].value)
+        if "barcode" in field_map:
+            self.assertIsNone(field_map["barcode"].value)
+
+    def test_sticky_pricing_and_pending_filter_logic(self):
+        # 30. test_sticky_pricing_and_pending_filter_logic
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        spreadsheet_js = (root / "app" / "static" / "spreadsheet_mode.js").read_text(encoding="utf-8")
+        receiving_js = (root / "app" / "static" / "receiving.js").read_text(encoding="utf-8")
+
+        # Verify Pending filter keeps unprinted items even if tallied
+        self.assertIn("tabMatch = tallyStatus === 'UNVERIFIED' || tallyStatus === 'MISMATCH' || labelStatus !== 'PRINTED';", spreadsheet_js)
+        self.assertIn("activeFilter === 'PENDING' && (tally === 'UNVERIFIED' || tally === 'MISMATCH' || labelStatus !== 'PRINTED')", receiving_js)
+
+        # Verify autoCalculated flag on Marg %, Disc %, and C Calc
+        self.assertIn("codeInput.dataset.autoCalculated = 'true';", spreadsheet_js)
+        self.assertIn("mrpInput.dataset.autoCalculated = 'true';", spreadsheet_js)
 
 if __name__ == "__main__":
     unittest.main()

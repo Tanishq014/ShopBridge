@@ -139,11 +139,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const labelStatus = row.getAttribute('data-label-status');
 
             if (currentGridFilter === 'PENDING') {
-                tabMatch = tallyStatus === 'UNVERIFIED' || tallyStatus === 'MISMATCH';
+                tabMatch = tallyStatus === 'UNVERIFIED' || tallyStatus === 'MISMATCH' || labelStatus !== 'PRINTED';
             } else if (currentGridFilter === 'NEEDS_PRICING') {
-                tabMatch = tallyStatus !== 'UNVERIFIED' && tallyStatus !== 'MISMATCH' && pricingStatus === 'PENDING';
+                tabMatch = labelStatus !== 'PRINTED' && pricingStatus === 'PENDING';
             } else if (currentGridFilter === 'PRINT_ISSUES') {
-                tabMatch = tallyStatus !== 'UNVERIFIED' && tallyStatus !== 'MISMATCH' && (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE');
+                tabMatch = (labelStatus === 'FAILED' || labelStatus === 'MISSING_TEMPLATE');
             }
 
             if (textMatch && tabMatch) {
@@ -153,6 +153,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.style.display = 'none';
             }
         });
+
+        // Update Tab Counts
+        let countPending = 0, countPricing = 0, countIssues = 0, countTotal = rows.length;
+        rows.forEach(r => {
+            const ts = r.getAttribute('data-tally-status');
+            const ps = r.getAttribute('data-pricing-status');
+            const ls = r.getAttribute('data-label-status');
+            if (ts === 'UNVERIFIED' || ts === 'MISMATCH' || ls !== 'PRINTED') countPending++;
+            if (ls !== 'PRINTED' && ps === 'PENDING') countPricing++;
+            if (ls === 'FAILED' || ls === 'MISSING_TEMPLATE') countIssues++;
+        });
+        const pEl = document.getElementById('count-pending');
+        if (pEl) pEl.textContent = countPending;
+        const prEl = document.getElementById('count-pricing');
+        if (prEl) prEl.textContent = countPricing;
+        const iEl = document.getElementById('count-issues');
+        if (iEl) iEl.textContent = countIssues;
+        const aEl = document.getElementById('count-all');
+        if (aEl) aEl.textContent = countTotal;
 
         if (filterChanged && visibleRows.length > 0) {
             // When filter changes, make top line active from billing item!
@@ -593,7 +612,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const f = (row.dynamic_fields || {})[colName];
                     const val = f ? (f.value || '') : '';
                     const missingClass = (f && f.missing) ? 'missing-field' : '';
-                    return `<div class="grid-col-cell" data-col-key="${key}" style="width: 80px;"><input type="text" class="grid-cell dynamic-cell ${missingClass}" data-dynamic-field="${colName}" value="${val}" style="width: 100%;"></div>`;
+                    const placeholder = (colName === 'item_display_name' || colName === 'design') ? (row.billing_item || colName) : '';
+                    return `<div class="grid-col-cell" data-col-key="${key}" style="width: 80px;"><input type="text" class="grid-cell dynamic-cell ${missingClass}" data-dynamic-field="${colName}" value="${val}" placeholder="${placeholder}" style="width: 100%;"></div>`;
                 }
             };
         });
@@ -983,7 +1003,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     refreshGridCodePreview(tr);
                 } else if (e.target === mrpInput) {
-                    // MRP is truth. User typing MRP does not wipe or overwrite code.
+                    const currentMrp = parseFloat(mrpInput.value) || 0;
+                    const expr = calcBox ? calcBox.value.trim() : "";
+                    if (currentMrp > 0 && expr) {
+                        const calcRate = window.computeMrpCalculation(currentMrp, expr);
+                        if (calcRate !== null && Number.isFinite(calcRate) && calcRate > 0) {
+                            const roundedPrice = Math.max(1, Math.round(calcRate));
+                            sellInput.value = roundedPrice;
+                            const encoded = window.generateCodedPrice(roundedPrice);
+                            if (encoded) {
+                                codeInput.value = encoded;
+                                codeInput.dataset.autoCalculated = 'true';
+                            }
+                            refreshGridCodePreview(tr);
+                        }
+                    }
                 }
             } else {
                 const marginInput = tr.querySelector('.margin-field');
@@ -1001,18 +1035,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     const encoded = window.generateCodedPrice(calcSell);
                     if (encoded) {
                         codeInput.value = encoded;
+                        codeInput.dataset.autoCalculated = 'true';
                     }
                     refreshGridCodePreview(tr);
                     
                     // If Disc % is set, calculate and put in MRP cell; otherwise update Disc % display if MRP exists
                     if (!isNaN(disc) && disc < 100) {
                         mrpInput.value = Math.round(calcSell / (1 - disc / 100));
+                        mrpInput.dataset.autoCalculated = 'true';
                     } else if (!isNaN(mrp) && mrp > 0) {
                         discInput.value = (((mrp - calcSell) / mrp) * 100).toFixed(1);
                     }
                 } else if (e.target === discInput && !isNaN(disc) && disc < 100 && !isNaN(sell) && sell > 0) {
                     // MRP Disc % calculates MRP from selling price and puts in the MRP cell!
-                    mrpInput.value = Math.round(sell / (1 - disc / 100));
+                    if (e.isTrusted || !mrpInput.value || mrpInput.dataset.autoCalculated === 'true') {
+                        mrpInput.value = Math.round(sell / (1 - disc / 100));
+                        mrpInput.dataset.autoCalculated = 'true';
+                    }
                 } else if (e.target === codeInput) {
                     delete codeInput.dataset.autoCalculated;
                     codeInput.value = codeInput.value.toUpperCase();
@@ -1038,8 +1077,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         marginInput.value = (((sell - rate) / rate) * 100).toFixed(1);
                     }
                 } else if (e.target === mrpInput && !isNaN(mrp) && mrp > 0) {
-                    // Changing MRP updates Disc % calculation box for user reference ONLY.
-                    // Code is TRUTH and must NEVER be overwritten!
+                    delete mrpInput.dataset.autoCalculated;
                     if (!isNaN(sell) && sell > 0) {
                         discInput.value = (((mrp - sell) / mrp) * 100).toFixed(1);
                     }
@@ -1056,6 +1094,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     const tr = e.target.closest('.grid-row');
                     refreshGridCodePreview(tr);
                 }
+                
+                if (e.target.dataset && e.target.dataset.field === 'billing_item') {
+                    e.target.value = e.target.value.toLowerCase().replace(/(?:^|\s)\S/g, function(a) { return a.toUpperCase(); });
+                }
+
                 await saveCell(e.target);
                 
                 // Sticky Fill-Down Logic

@@ -10,6 +10,11 @@ from app.services.workflow.label_draft_service import LabelDraft, draft_to_persi
 
 def _resolve_family_for_billing_item(db: Session, billing_item: str) -> ProductFamily:
     clean_name = (billing_item or "").strip()
+    if not clean_name:
+        clean_name = "Uncategorized"
+        
+    title_name = clean_name.title() if (clean_name.isupper() or clean_name.islower()) else clean_name
+    
     families = db.scalars(
         select(ProductFamily)
         .where(ProductFamily.family_name.ilike(clean_name))
@@ -17,10 +22,15 @@ def _resolve_family_for_billing_item(db: Session, billing_item: str) -> ProductF
     ).all()
     
     if families:
-        return families[0]
+        family = families[0]
+        # Normalize legacy all-caps family names (e.g., BASKET -> Basket)
+        if family.family_name.isupper() and not title_name.isupper():
+            family.family_name = title_name
+            db.add(family)
+        return family
         
     new_family = ProductFamily(
-        family_name=clean_name,
+        family_name=title_name,
         category="Uncategorized",
         default_unit="PCS"
     )

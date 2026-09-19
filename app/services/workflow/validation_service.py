@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 import re
 
 from app.models import LabelVariant, TemplateMaster
+from app.services.field_config import parse_required_fields
 from app.services.workflow.form_state_service import parse_extra_field_values, variant_template_id
 
 MAX_PRINT_COPIES = 1000
@@ -89,12 +90,25 @@ def label_details_changed(
     if not variant:
         return False
     family = variant.family
+    req_fields = parse_required_fields(template.required_fields) if template else []
+    template_has_item = any(f in ("item_display_name", "design", "itemname", "item") for f in req_fields)
+    
+    if template_has_item:
+        item_changed = not same_text(variant.item_display_name, item_display_name)
+    else:
+        # If template doesn't have an item display field, empty and family_name matching are considered identical
+        item_changed = not (
+            same_text(variant.item_display_name, item_display_name)
+            or (not item_display_name and same_text(variant.item_display_name, family_name))
+            or (not variant.item_display_name and same_text(item_display_name, family_name))
+        )
+
     return (
         not same_text(family.category if family else "", category)
         or not same_text(family.family_name if family else "", family_name)
         or variant_template_id(variant) != (template.id if template else None)
         or not same_text(variant.brand, brand)
-        or not same_text(variant.item_display_name, item_display_name)
+        or item_changed
         or not same_text(variant.article_no, article_no)
         or not same_text(variant.size, size)
         or not same_text(variant.batch_no, batch_no)

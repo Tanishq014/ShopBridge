@@ -36,6 +36,10 @@ def find_or_create_family(
         select(ProductFamily).where(func.lower(ProductFamily.family_name) == final_name.lower())
     )
     if family:
+        title_name = final_name.title() if (final_name.isupper() or final_name.islower()) else final_name
+        if family.family_name.isupper() and not title_name.isupper():
+            family.family_name = title_name
+            db.add(family)
         if category and family.category != category:
             family.category = category
             family.active_status = True
