@@ -679,6 +679,62 @@ class TestReceivingPhase35(unittest.TestCase):
         self.assertEqual(res_all.json()["status"], "deleted")
         self.assertEqual(len(self.db.query(ReceivingSession).all()), 0)
 
+    def test_article_inheritance_blocked(self):
+        # 32. Verify article/article_no is in UNSAFE_INHERITANCE_FIELDS and not inherited from family
+        from app.services.workflow.label_draft_service import UNSAFE_INHERITANCE_FIELDS, resolve_draft
+        self.assertIn("article", UNSAFE_INHERITANCE_FIELDS)
+        self.assertIn("article_no", UNSAFE_INHERITANCE_FIELDS)
+
+        supplier, template, template_no_size, family, session = self.setup_base_data()
+        
+        # Create a previous variant with article = "10"
+        variant = LabelVariant(
+            barcode="ART10TEST",
+            family_id=family.id,
+            article_no="10",
+            item_display_name=family.family_name,
+            mrp=Decimal("100.00"),
+            selling_price=Decimal("90.00"),
+            template_id=template.id,
+            status="active"
+        )
+        self.db.add(variant)
+        self.db.commit()
+
+        # Create a new item matching this family name
+        new_item = ReceivingItem(
+            session_id=session.id,
+            billing_item=family.family_name,
+            raw_description="NEW BASKET ITEM",
+            template_id=template.id
+        )
+        self.db.add(new_item)
+        self.db.commit()
+
+        draft = resolve_draft(self.db, new_item)
+        # Template required_fields has article
+        article_field = next((f for f in draft.fields if f.semantic_field == "article"), None)
+        if article_field:
+            self.assertNotEqual(article_field.value, "10", "Article number must never be inherited from previous variants")
+            self.assertIsNone(article_field.value)
+
+    def test_clean_suggested_billing_item(self):
+        # 33. Verify clean_suggested_billing_item strips pack/piece/combo quantities
+        from app.services.extraction_service import clean_suggested_billing_item
+
+        self.assertEqual(clean_suggested_billing_item("Food Saver 3Pc"), "Food Saver")
+        self.assertEqual(clean_suggested_billing_item("Signature 4PC"), "Signature")
+        self.assertEqual(clean_suggested_billing_item("Mug Cafe 2Pc"), "Mug Cafe")
+        self.assertEqual(clean_suggested_billing_item("Five Luxe 4+1"), "Five Luxe")
+        self.assertEqual(clean_suggested_billing_item("Tea Toast 6+1"), "Tea Toast")
+        self.assertEqual(clean_suggested_billing_item("Luxe Brew 4+2"), "Luxe Brew")
+        self.assertEqual(clean_suggested_billing_item("Nice Cont - 5 (3PCS)"), "Nice Cont - 5")
+        self.assertEqual(clean_suggested_billing_item("Blossom Bowl - 600 2PC SHRINK"), "Blossom Bowl - 600")
+        self.assertEqual(clean_suggested_billing_item("Basket"), "Basket")
+        self.assertEqual(clean_suggested_billing_item("Spray Bottle"), "Spray Bottle")
+        self.assertIsNone(clean_suggested_billing_item(""))
+        self.assertIsNone(clean_suggested_billing_item(None))
+
 if __name__ == "__main__":
     unittest.main()
 

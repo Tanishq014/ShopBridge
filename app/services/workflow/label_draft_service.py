@@ -19,6 +19,7 @@ UNSAFE_INHERITANCE_FIELDS = {
     "barcode",
     "mrp", "selling_price", "coded_price",
     "item_display_name", "design", "itemname", "item",
+    "article", "article_no", "article_number", "articleno",
     "batch", "batch_no", "batchno", "expiry", 
     "serial", "serial_number", "serialno", "srno", "sr_no"
 }

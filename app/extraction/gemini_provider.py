@@ -90,7 +90,7 @@ class GeminiProvider(ExtractionProvider):
             "  * Set the extracted `unit` to 'PCS'.\n"
             "  * The `line_amount` remains the same total printed amount (e.g. 24 * 100 = 2400).\n"
             "- For `global_discounts` / `global_taxes`, extract bottom-of-page percentage numbers into those lists.\n"
-            "- `suggested_billing_item`: ultra-short generic name (10-15 chars max), strip brands/sizes/genders.\n"
+            "- `suggested_billing_item`: ultra-short generic name (10-15 chars max), strip brands/sizes/genders/colors. Crucially, STRIP ALL pack counts, piece counts, and combo quantities (e.g. '3PC', '2PC', '4PC', '3PCS', '6+1', '4+2', 'PACK OF 2', 'SET OF 3', 'SHRINK') — the billing item must be the clean generic product family noun only (e.g. 'Food Saver', 'Mug', 'Bowl', 'Container').\n"
             "- OBEY any 'Supplier Specific Instructions' and 'Column Aliases' below absolutely, even if they contradict your understanding.\n"
             "- Omit fields that are genuinely absent; do not invent values (except `suggested_billing_item`).\n"
         )

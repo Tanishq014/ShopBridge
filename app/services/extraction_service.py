@@ -1,12 +1,40 @@
 import json
 import uuid
 import time
+import re
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks
 
 from app.models import ExtractionJob, ReceivingSession, ReceivingItem, Supplier, TemplateMaster, SupplierExtractionExample
 from app.extraction.gemini_provider import GeminiProvider
+
+def clean_suggested_billing_item(val: str | None) -> str | None:
+    if not val:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+
+    # 1. Strip pack/piece expressions like: 4PC, 2PC, 3PC, 3PCS, 12PCS, 4 PC, 2 PIECES, 3-PC
+    s = re.sub(r'(?i)\b\d+[\s\-]*(?:pcs?|pieces?|pk|pack)\b', '', s)
+    
+    # 2. Strip combo/set additions like: 4+1, 6+2, 6+1, 4 + 1
+    s = re.sub(r'\b\d+\s*\+\s*\d+\b', '', s)
+    
+    # 3. Strip standalone expressions like "SET OF 3", "PACK OF 2"
+    s = re.sub(r'(?i)\b(?:set|pack|pk)\s+of\s+\d+\b', '', s)
+
+    # 4. Strip standalone packaging words like "SHRINK"
+    s = re.sub(r'(?i)\bshrink\b', '', s)
+    
+    # 5. Clean up dangling punctuation, empty parentheses, extra spaces
+    s = re.sub(r'\(\s*\)', '', s)
+    s = re.sub(r'[\s\-_/]+$', '', s)
+    s = re.sub(r'^[\s\-_/]+', '', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    
+    return s or None
 
 def start_extraction_job(
     db: Session,
@@ -184,7 +212,7 @@ def _run_extraction_task(job_id: int, session_id: int, file_paths: list[str], mi
                         source_page_number=current_page_number,
                         raw_description=str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None,
                         normalized_description=str(safe_val(row.normalized_description)) if safe_val(row.normalized_description) is not None else (str(safe_val(row.raw_description)) if safe_val(row.raw_description) is not None else None),
-                        billing_item=str(safe_val(row.suggested_billing_item)) if safe_val(row.suggested_billing_item) is not None else None,
+                        billing_item=clean_suggested_billing_item(str(safe_val(row.suggested_billing_item))) if safe_val(row.suggested_billing_item) is not None else None,
                         supplier_product_code=str(safe_val(row.supplier_product_code)) if safe_val(row.supplier_product_code) is not None else None,
                         hsn_code=str(safe_val(row.hsn_code)) if safe_val(row.hsn_code) is not None else None,
                     )
