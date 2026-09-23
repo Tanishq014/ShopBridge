@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+
+{% block title %}Voice POS Billing - ShopBridge{% endblock %}
+
+{% block content %}
+<div class="voice-billing-container">
+  <!-- Top Control Banner -->
+  <div class="voice-header-card">
+    <div class="voice-header-left">
+      <div class="voice-title-row">
+        <h1>Voice POS Billing</h1>
+        <span class="badge" id="connectionStatusBadge">Disconnected</span>
+        <span class="badge muted" id="tokenUsageBadge" title="Tokens used in this active session">Tokens: 0</span>
+      </div>
+      <p class="muted-text">
+        Gemini 3.8 Live incremental voice billing. Speak naturally in Hindi, Hinglish, or English.
+      </p>
+    </div>
+
+    <div class="voice-header-controls">
+      <div class="voice-select-wrapper">
+        <label for="voiceSelect" class="voice-select-label">Voice</label>
+        <select id="voiceSelect" class="voice-select-input" title="Choose natural AI voice">
+          <option value="Aoede" selected>Aoede (Natural Hindi/Hinglish)</option>
+          <option value="Puck">Puck (Upbeat Male)</option>
+          <option value="Kore">Kore (Calm Female)</option>
+          <option value="Fenrir">Fenrir (Dynamic Male)</option>
+          <option value="Charon">Charon (Direct Male)</option>
+        </select>
+      </div>
+
+      <div class="mic-status-wrapper">
+        <button type="button" id="micToggleBtn" class="button primary mic-btn" aria-label="Microphone Control">
+          <span class="mic-icon" id="micIcon">🎙️</span>
+          <span id="micBtnText">Hold Space to Speak</span>
+        </button>
+      </div>
+
+      <div class="mode-toggle-group">
+        <label class="toggle-label" title="Full-duplex continuous streaming with live barge-in interruption (recommended with earphones)">
+          <input type="checkbox" id="continuousMicCheck">
+          <span>🎧 Earphones (Hands-Free Live)</span>
+        </label>
+      </div>
+
+      <button type="button" id="clearCartBtn" class="button danger small">Clear Bill</button>
+    </div>
+  </div>
+
+  <!-- Main POS Grid -->
+  <div class="voice-grid">
+    <!-- Left Column: Transcripts & Catalogue -->
+    <div class="voice-panel transcript-panel">
+      <div class="panel-header">
+        <h2>Live Conversation</h2>
+        <span class="transcript-indicator" id="transcriptIndicator">Idle</span>
+      </div>
+
+      <div class="transcript-log" id="transcriptLog">
+        <div class="transcript-msg system-msg">
+          <span class="sender">System</span>
+          <span class="text">Connecting to ShopBridge Gemini Live agent...</span>
+        </div>
+      </div>
+
+      <!-- Injected Catalogue Summary for Reference -->
+      <div class="catalogue-reference-card">
+        <div class="panel-header-small">
+          <h3>Shop Inventory Active</h3>
+          <span class="muted-text">580+ Items with Auto-Approximation</span>
+        </div>
+        <div class="catalogue-chips" id="catalogueChips">
+          <span class="chip">Kajal / Lakmé</span>
+          <span class="chip">Cosmetics (Fallback)</span>
+          <span class="chip">Rakhi</span>
+          <span class="chip">Cotton Hanky</span>
+          <span class="chip">Soap & Shampoo</span>
+          <span class="chip">Perfume & Deo</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Authoritative Real-Time Cart -->
+    <div class="voice-panel cart-panel">
+      <div class="panel-header cart-header">
+        <div>
+          <h2>Current Cart</h2>
+          <span class="muted-text" id="itemCountLabel">0 items</span>
+        </div>
+        <div class="cart-total-badge">
+          <span class="total-label">Grand Total</span>
+          <span class="total-amount" id="cartTotalDisplay">₹0.00</span>
+        </div>
+      </div>
+
+      <div class="cart-table-wrapper">
+        <table class="data-table cart-table" id="cartTable">
+          <thead>
+            <tr>
+              <th style="width: 55px;">Line</th>
+              <th>Item Name</th>
+              <th style="width: 60px; text-align: center;">Qty</th>
+              <th style="width: 80px; text-align: right;">MRP</th>
+              <th style="width: 85px; text-align: right;">Rate</th>
+              <th style="width: 95px; text-align: right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="cartTableBody">
+            <tr class="empty-row" id="emptyCartRow">
+              <td colspan="6" style="text-align: center; color: var(--muted); padding: 32px;">
+                Cart is empty. Speak an item (e.g. <em>"Lakmé ka kajal 160 MRP 100 selling price"</em>) to start.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Example Hint Box -->
+      <div class="hints-box">
+        <strong>Try speaking naturally:</strong>
+        <ul>
+          <li><em>"Lakmé ka kajal 160 MRP aur 100 selling price"</em></li>
+          <li><em>"2 rakhi 20 wali"</em></li>
+          <li><em>"3 hand soap MRP 60 rate 55"</em></li>
+          <li><em>"nahi rakhi 5 kar do"</em></li>
+          <li><em>"total kitna hua?"</em></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .voice-billing-container {
+    max-width: 1300px;
+    margin: 16px auto;
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .voice-header-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .voice-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .voice-title-row h1 {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+
+  .voice-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .voice-select-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .voice-select-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .voice-select-input {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+
+  .voice-select-input:focus {
+    border-color: var(--primary, #2563eb);
+  }
+
+  .mic-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+  }
+
+  .mic-btn.active-listening {
+    background: #dc2626 !important;
+    box-shadow: 0 0 12px rgba(220, 38, 38, 0.5);
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .voice-grid {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 16px;
+    min-height: 520px;
+  }
+
+  @media (max-width: 900px) {
+    .voice-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .voice-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fafbfc;
+  }
+
+  .panel-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .transcript-log {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 280px;
+    max-height: 380px;
+    background: #fbfcfd;
+  }
+
+  .transcript-msg {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+    max-width: 90%;
+  }
+
+  .transcript-msg.user {
+    align-self: flex-end;
+    background: #e1f0ff;
+    border: 1px solid #c8e1ff;
+  }
+
+  .transcript-msg.assistant {
+    align-self: flex-start;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+  }
+
+  .transcript-msg.system-msg {
+    align-self: center;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-style: italic;
+  }
+
+  .transcript-msg .sender {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+
+  .catalogue-reference-card {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: #f8fafc;
+  }
+
+  .panel-header-small h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .catalogue-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    background: #e2e8f0;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    color: #334155;
+  }
+
+  .cart-header {
+    background: #fff;
+    padding: 14px 20px;
+  }
+
+  .cart-total-badge {
+    text-align: right;
+  }
+
+  .total-label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .total-amount {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .cart-table-wrapper {
+    flex: 1;
+    overflow-x: auto;
+  }
+
+  .cart-table th, .cart-table td {
+    padding: 10px 14px;
+  }
+
+  .line-highlight {
+    animation: greenFlash 1.2s ease;
+  }
+
+  @keyframes greenFlash {
+    0% { background-color: #bbf7d0; }
+    100% { background-color: transparent; }
+  }
+
+  .hints-box {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: #f8fafc;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .hints-box ul {
+    margin: 4px 0 0 16px;
+    padding: 0;
+  }
+</style>
+
+<script src="{{ url_for('static', path='/voice_billing.js') }}"></script>
+{% endblock %}

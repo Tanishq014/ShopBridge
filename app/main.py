@@ -4,14 +4,14 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete
 
 from app.config import STATIC_DIR
 from app.db import init_db, SessionLocal
 from app.models import Sale
-from app.routes import families, pos, print_jobs, sales, scan, tally, templates as template_routes, variants, voice as voice_routes, workflow, receiving
+from app.routes import families, pos, print_jobs, sales, scan, tally, templates as template_routes, variants, voice as voice_routes, workflow, receiving, voice_billing
 
 
 @asynccontextmanager
@@ -81,6 +81,11 @@ def home():
     return RedirectResponse("/new-stock", status_code=303)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
+
 app.include_router(workflow.router)
 app.include_router(voice_routes.router)
 app.include_router(pos.router)
@@ -92,3 +97,4 @@ app.include_router(template_routes.router)
 app.include_router(print_jobs.router)
 app.include_router(tally.router)
 app.include_router(receiving.router)
+app.include_router(voice_billing.router)

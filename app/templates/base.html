@@ -19,7 +19,8 @@
       <nav class="nav">
         {% set path = request.url.path %}
         <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">Print Label</a>
-        <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS</a>
+        <a class="{{ 'active' if (path.startswith('/pos') and not path.startswith('/pos/voice')) or path.startswith('/scanner') else '' }}" href="/pos">POS</a>
+        <a class="{{ 'active' if path.startswith('/pos/voice') else '' }}" href="/pos/voice">🎙️ Voice POS</a>
         <a class="{{ 'active' if path.startswith('/sales') else '' }}" href="/sales">Sales</a>
         <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
         <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
@@ -52,7 +53,8 @@
         <nav class="nav topbar-menu-nav">
           {% set path = request.url.path %}
           <a class="{{ 'active' if path.startswith('/new-stock') or path.startswith('/phone-print') else '' }}" href="/new-stock">Print Label</a>
-          <a class="{{ 'active' if path.startswith('/pos') or path.startswith('/scanner') else '' }}" href="/pos">POS</a>
+          <a class="{{ 'active' if (path.startswith('/pos') and not path.startswith('/pos/voice')) or path.startswith('/scanner') else '' }}" href="/pos">POS</a>
+          <a class="{{ 'active' if path.startswith('/pos/voice') else '' }}" href="/pos/voice">🎙️ Voice POS</a>
           <a class="{{ 'active' if path.startswith('/sales') else '' }}" href="/sales">Sales</a>
           <a class="{{ 'active' if path.startswith('/variants') else '' }}" href="/variants">All Items</a>
           <a class="{{ 'active' if path.startswith('/templates') else '' }}" href="/templates">Templates</a>
